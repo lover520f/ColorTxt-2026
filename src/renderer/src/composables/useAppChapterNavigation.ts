@@ -2,6 +2,7 @@ import { nextTick, type Ref } from "vue";
 import type ReaderMain from "../components/ReaderMain.vue";
 import {
   detectChapterTitle,
+  filterChaptersByMinCharCount,
   getChapterMatchRules,
   setChapterMatchRules,
   type Chapter,
@@ -38,6 +39,7 @@ export function useAppChapterNavigation(deps: {
   ) => void;
   chapterListScrollSmooth: Ref<boolean>;
   chapterRuleState: Ref<{ rules: ChapterMatchRule[] }>;
+  chapterMinCharCount: Ref<number>;
   chapterRuleErrorText: Ref<string>;
   showChapterRulePanel: Ref<boolean>;
   sidebarTab: Ref<"files" | "chapters" | "bookmarks" | "highlights">;
@@ -161,10 +163,14 @@ export function useAppChapterNavigation(deps: {
       }
     }
 
-    deps.chapters.value = next;
-    deps.stream.setChapterWriteIndex(next.length - 1);
+    const filtered = filterChaptersByMinCharCount(
+      next,
+      deps.chapterMinCharCount.value,
+    );
+    deps.chapters.value = filtered;
+    deps.stream.setChapterWriteIndex(filtered.length - 1);
     deps.readerRef.value?.setChapters(
-      next.map((ch) => ({ title: ch.title, lineNumber: ch.lineNumber })),
+      filtered.map((ch) => ({ title: ch.title, lineNumber: ch.lineNumber })),
     );
     deps.activeChapterIdx.value = pickActiveChapterIdx(
       deps.chapters.value,

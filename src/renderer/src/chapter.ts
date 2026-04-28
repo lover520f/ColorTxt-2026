@@ -232,6 +232,15 @@ export function detectChapterTitle(line: string): string | null {
   return null;
 }
 
+export function filterChaptersByMinCharCount(
+  chapters: Chapter[],
+  minCharCount: number,
+): Chapter[] {
+  const floor = Math.max(0, Math.floor(minCharCount));
+  if (floor <= 0) return chapters;
+  return chapters.filter((ch) => ch.charCount >= floor);
+}
+
 /** 行首缩进：非空行且非章节标题时，去掉行首空白后统一为两个全角空格「　　」 */
 const RE_LEADING_WHITE_FOR_INDENT = /^[\p{White_Space}]+/u;
 const FULL_WIDTH_INDENT_TWO = "　　";

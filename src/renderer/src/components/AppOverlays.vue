@@ -27,6 +27,7 @@ const props = defineProps<{
   restoreSessionOnStartup: boolean;
   syncCurrentFile: boolean;
   recentFilesHistoryLimit: number;
+  chapterMinCharCount: number;
   fullscreenReaderWidthPercent: number;
   readerFontSize: number;
   readerLineHeightMultiple: number;
@@ -160,6 +161,7 @@ onBeforeUnmount(() => {
     :restore-session-on-startup="restoreSessionOnStartup"
     :sync-current-file="syncCurrentFile"
     :recent-files-history-limit="recentFilesHistoryLimit"
+    :chapter-min-char-count="chapterMinCharCount"
     :fullscreen-reader-width-percent="fullscreenReaderWidthPercent"
     :reader-font-size="readerFontSize"
     :reader-line-height-multiple="readerLineHeightMultiple"

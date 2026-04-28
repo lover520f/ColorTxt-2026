@@ -94,6 +94,10 @@ export const defaultCompressBlankKeepOneBlank = false;
 /** 为 true 时正文行统一行首两个全角空格（章节标题行与空行除外） */
 export const defaultLeadIndentFullWidth = false;
 export const defaultShowChapterCounts = true;
+/** 少于该字数的片段不作为章节（作用于章节列表/导航） */
+export const defaultChapterMinCharCount = 100;
+export const minChapterMinCharCount = 0;
+export const maxChapterMinCharCount = 100000;
 export const defaultReaderFontSize = 24;
 export const defaultReaderLineHeightMultiple = 1.5;
 export const defaultRestoreSessionOnStartup = true;

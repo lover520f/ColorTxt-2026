@@ -35,6 +35,7 @@ import {
   applyReaderSurfaceToDocument,
   defaultCompressBlankKeepOneBlank,
   defaultCompressBlankLines,
+  defaultChapterMinCharCount,
   defaultFullscreenReaderWidthPercent,
   defaultLeadIndentFullWidth,
   defaultMonacoAdvancedWrapping,
@@ -61,10 +62,12 @@ import {
   maxFullscreenReaderWidthPercent,
   clampLineHeightMultipleForFontSize,
   maxFontSize,
+  maxChapterMinCharCount,
   maxLineHeightMultipleForFontSize,
   maxRecentFilesHistoryLimit,
   minFullscreenReaderWidthPercent,
   minFontSize,
+  minChapterMinCharCount,
   minLineHeightMultiple,
   SIDEBAR_ACTIVITY_BAR_WIDTH,
   type ReaderSurfacePalette,
@@ -273,6 +276,8 @@ const restoreSessionOnStartup = ref(defaultRestoreSessionOnStartup);
 const syncCurrentFile = ref(defaultSyncCurrentFile);
 /** 最近打开文件条数上限，0 表示不记录 */
 const recentFilesHistoryLimit = ref(defaultRecentFilesHistoryLimit);
+/** 小于该字数的章节不纳入章节列表与导航 */
+const chapterMinCharCount = ref(defaultChapterMinCharCount);
 /** Monaco wrappingStrategy：advanced 换行更优、更重 */
 const monacoAdvancedWrapping = ref(defaultMonacoAdvancedWrapping);
 /** Monaco 阅读区平滑滚动（设置可关） */
@@ -431,6 +436,7 @@ const persistence = useAppPersistence({
   recentFiles,
   restoreSessionOnStartup,
   recentFilesHistoryLimit,
+  chapterMinCharCount,
   monacoAdvancedWrapping,
   monacoSmoothScrolling,
   fullscreenReaderWidthPercent,
@@ -714,6 +720,7 @@ const chapterNav = useAppChapterNavigation({
   touchRecentFile,
   chapterListScrollSmooth,
   chapterRuleState,
+  chapterMinCharCount,
   chapterRuleErrorText,
   showChapterRulePanel,
   sidebarTab,
@@ -890,6 +897,7 @@ function onFindHighlightTermFromSidebar(text: string) {
 
 function applySettings(payload: SettingsApplyPayload) {
   const prevCompressBlankKeepOneBlank = compressBlankKeepOneBlank.value;
+  const prevChapterMinCharCount = chapterMinCharCount.value;
   monacoSmoothScrolling.value = payload.monacoSmoothScrolling;
   compressBlankKeepOneBlank.value = payload.compressBlankKeepOneBlank;
   txtrDelimitedMatchCrossLine.value = payload.txtrDelimitedMatchCrossLine;
@@ -901,6 +909,10 @@ function applySettings(payload: SettingsApplyPayload) {
       maxRecentFilesHistoryLimit,
       Math.floor(payload.recentFilesHistoryLimit),
     ),
+  );
+  chapterMinCharCount.value = Math.max(
+    minChapterMinCharCount,
+    Math.min(maxChapterMinCharCount, Math.floor(payload.chapterMinCharCount)),
   );
   fullscreenReaderWidthPercent.value = Math.max(
     minFullscreenReaderWidthPercent,
@@ -929,6 +941,9 @@ function applySettings(payload: SettingsApplyPayload) {
   applyRecentFilesHistoryLimitFromSettings();
   readerRef.value?.setWrappingStrategyAdvanced(monacoAdvancedWrapping.value);
   showSettingsPanel.value = false;
+  if (prevChapterMinCharCount !== chapterMinCharCount.value) {
+    chapterNav.rebuildChaptersFromCurrentText();
+  }
 
   if (
     prevCompressBlankKeepOneBlank !== compressBlankKeepOneBlank.value &&
@@ -1319,6 +1334,7 @@ useAppShellThemeWatch({
       :restore-session-on-startup="restoreSessionOnStartup"
       :sync-current-file="syncCurrentFile"
       :recent-files-history-limit="recentFilesHistoryLimit"
+      :chapter-min-char-count="chapterMinCharCount"
       :fullscreen-reader-width-percent="fullscreenReaderWidthPercent"
       :reader-font-size="readerFontSize"
       :reader-line-height-multiple="readerLineHeightMultiple"

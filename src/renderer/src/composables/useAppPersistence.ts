@@ -52,14 +52,17 @@ import {
   parseHighlightColorsArray,
 } from "../constants/highlightColors";
 import {
+  defaultChapterMinCharCount,
   defaultFullscreenReaderWidthPercent,
   defaultRecentFilesHistoryLimit,
   maxFullscreenReaderWidthPercent,
   clampLineHeightMultipleForFontSize,
   maxFontSize,
+  maxChapterMinCharCount,
   maxRecentFilesHistoryLimit,
   minFullscreenReaderWidthPercent,
   minFontSize,
+  minChapterMinCharCount,
   fileListKey,
   fileMetaKey,
   persistKey,
@@ -130,6 +133,7 @@ export function useAppPersistence(deps: {
   recentFiles: Ref<RecentFileItem[]>;
   restoreSessionOnStartup: Ref<boolean>;
   recentFilesHistoryLimit: Ref<number>;
+  chapterMinCharCount: Ref<number>;
   monacoAdvancedWrapping: Ref<boolean>;
   monacoSmoothScrolling: Ref<boolean>;
   fullscreenReaderWidthPercent: Ref<number>;
@@ -589,6 +593,20 @@ export function useAppPersistence(deps: {
     } else {
       deps.recentFilesHistoryLimit.value = defaultRecentFilesHistoryLimit;
     }
+    if (
+      typeof data.chapterMinCharCount === "number" &&
+      Number.isFinite(data.chapterMinCharCount)
+    ) {
+      deps.chapterMinCharCount.value = Math.max(
+        minChapterMinCharCount,
+        Math.min(
+          maxChapterMinCharCount,
+          Math.floor(data.chapterMinCharCount),
+        ),
+      );
+    } else {
+      deps.chapterMinCharCount.value = defaultChapterMinCharCount;
+    }
 
     if (typeof data.monacoAdvancedWrapping === "boolean") {
       deps.monacoAdvancedWrapping.value = data.monacoAdvancedWrapping;
@@ -690,6 +708,7 @@ export function useAppPersistence(deps: {
       restoreSessionOnStartup: deps.restoreSessionOnStartup.value,
       syncCurrentFile: deps.syncCurrentFile.value,
       recentFilesHistoryLimit: recentLimit(),
+      chapterMinCharCount: deps.chapterMinCharCount.value,
       monacoAdvancedWrapping: deps.monacoAdvancedWrapping.value,
       monacoSmoothScrolling: deps.monacoSmoothScrolling.value,
       fullscreenReaderWidthPercent: deps.fullscreenReaderWidthPercent.value,

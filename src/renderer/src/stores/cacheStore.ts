@@ -42,6 +42,8 @@ export type PersistedSettingsData = {
   restoreSessionOnStartup?: boolean;
   /** 最近打开文件条数上限，0 表示不记录 */
   recentFilesHistoryLimit?: number;
+  /** 小于该字数的章节不纳入章节列表与导航 */
+  chapterMinCharCount?: number;
   /** Monaco 换行是否使用 advanced 策略（性能开销更大） */
   monacoAdvancedWrapping?: boolean;
   /** Monaco 阅读区平滑滚动（滚轮、程序性 setScrollTop/revealLine 等） */
@@ -173,6 +175,12 @@ export function loadPersistedSettingsData(
       0,
       Math.min(100, Math.floor(obj.recentFilesHistoryLimit)),
     );
+  }
+  if (
+    typeof obj.chapterMinCharCount === "number" &&
+    Number.isFinite(obj.chapterMinCharCount)
+  ) {
+    data.chapterMinCharCount = Math.max(0, Math.floor(obj.chapterMinCharCount));
   }
   if (typeof obj.monacoAdvancedWrapping === "boolean") {
     data.monacoAdvancedWrapping = obj.monacoAdvancedWrapping;

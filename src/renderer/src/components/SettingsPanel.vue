@@ -7,11 +7,14 @@ import SwitchToggle from "./SwitchToggle.vue";
 import PathPickerInput from "./PathPickerInput.vue";
 import {
   clampLineHeightMultipleForFontSize,
+  defaultChapterMinCharCount,
   lineHeightMultipleStep,
+  maxChapterMinCharCount,
   maxFontSize,
   maxFullscreenReaderWidthPercent,
   maxLineHeightMultipleForFontSize,
   maxRecentFilesHistoryLimit,
+  minChapterMinCharCount,
   minFontSize,
   minFullscreenReaderWidthPercent,
   minLineHeightMultiple,
@@ -25,6 +28,7 @@ export type SettingsApplyPayload = {
   /** 监控当前打开文件，磁盘变更后自动重新加载 */
   syncCurrentFile: boolean;
   recentFilesHistoryLimit: number;
+  chapterMinCharCount: number;
   fullscreenReaderWidthPercent: number;
   /** Monaco 阅读区平滑滚动 */
   monacoSmoothScrolling: boolean;
@@ -44,6 +48,7 @@ const props = defineProps<{
   restoreSessionOnStartup: boolean;
   syncCurrentFile: boolean;
   recentFilesHistoryLimit: number;
+  chapterMinCharCount: number;
   fullscreenReaderWidthPercent: number;
   readerFontSize: number;
   readerLineHeightMultiple: number;
@@ -61,6 +66,7 @@ const emit = defineEmits<{
 const draftRestore = ref(true);
 const draftSyncCurrentFile = ref(false);
 const draftRecentLimit = ref(20);
+const draftChapterMinCharCount = ref(defaultChapterMinCharCount);
 const draftFullscreenReaderWidthPercent = ref(50);
 const draftFontSize = ref(14);
 const draftLineHeightMultiple = ref(1.5);
@@ -78,6 +84,7 @@ watch(modelValue, (open) => {
   draftRestore.value = props.restoreSessionOnStartup;
   draftSyncCurrentFile.value = props.syncCurrentFile;
   draftRecentLimit.value = props.recentFilesHistoryLimit;
+  draftChapterMinCharCount.value = props.chapterMinCharCount;
   draftFullscreenReaderWidthPercent.value = props.fullscreenReaderWidthPercent;
   draftFontSize.value = props.readerFontSize;
   draftLineHeightMultiple.value = clampLineHeightMultipleForFontSize(
@@ -106,6 +113,7 @@ function onConfirm() {
     restoreSessionOnStartup: draftRestore.value,
     syncCurrentFile: draftSyncCurrentFile.value,
     recentFilesHistoryLimit: draftRecentLimit.value,
+    chapterMinCharCount: draftChapterMinCharCount.value,
     fullscreenReaderWidthPercent: draftFullscreenReaderWidthPercent.value,
     monacoSmoothScrolling: draftMonacoSmoothScrolling.value,
     fontSize: draftFontSize.value,
@@ -259,6 +267,22 @@ async function onClearCache() {
         </div>
         <p class="settingsHint">
           仅在开启「压缩空行」时生效，在每行下方保留一个空行。
+        </p>
+      </div>
+
+      <div class="settingsRow">
+        <div class="settingsRowMain settingsRowMain--baseline">
+          <span class="settingsLabel">章节最少字数</span>
+          <NumericInput
+            v-model="draftChapterMinCharCount"
+            :min="minChapterMinCharCount"
+            :max="maxChapterMinCharCount"
+            integer
+            aria-label="章节最少字数"
+          />
+        </div>
+        <p class="settingsHint">
+          少于该字数的将不会被识别为章节；设置为 0 时不限制。
         </p>
       </div>
 
