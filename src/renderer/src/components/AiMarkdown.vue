@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { marked } from "marked";
+import "katex/dist/katex.min.css";
+import { marked } from "../utils/aiMarkdownMarkedSetup";
 import {
   ensureMarkedStrongDelimiterSpacing,
   normalizeMarkdownAsterisks,
@@ -142,5 +143,17 @@ function onClick(e: MouseEvent) {
 
 .aiMarkdown :deep(.aiChRef:hover) {
   filter: brightness(1.08);
+}
+
+.aiMarkdown :deep(.katex-display) {
+  display: block;
+  margin: 0.55em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.aiMarkdown :deep(span.katex) {
+  max-width: 100%;
 }
 </style>
