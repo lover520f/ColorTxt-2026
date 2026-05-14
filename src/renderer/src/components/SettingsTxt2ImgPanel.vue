@@ -154,18 +154,29 @@ function onSamplerSelect(id: string) {
 }
 
 const sdCheckpointScrollItems = computed((): CustomSelectItem[] => {
+  const normCkpt = (s: string) => s.trim();
   const head: CustomSelectItem = {
     kind: "item",
     id: SD_CHECKPOINT_DEFAULT_ID,
     label: "使用 WebUI 当前模型",
   };
-  const fromApi = sdModelOptions.value.map((title) => ({
-    kind: "item" as const,
-    id: title,
-    label: title,
-  }));
-  const cur = modelValue.value.txt2img.sdCheckpointTitle.trim();
-  if (cur && !sdModelOptions.value.includes(cur)) {
+  const seenNorm = new Set<string>();
+  const fromApi: CustomSelectItem[] = [];
+  for (const title of sdModelOptions.value) {
+    const k = normCkpt(title);
+    if (!k || seenNorm.has(k)) continue;
+    seenNorm.add(k);
+    fromApi.push({
+      kind: "item" as const,
+      id: title,
+      label: title,
+    });
+  }
+  const cur = normCkpt(modelValue.value.txt2img.sdCheckpointTitle);
+  const inList =
+    cur !== "" &&
+    sdModelOptions.value.some((t) => normCkpt(t) === cur);
+  if (cur && !inList) {
     return [head, { kind: "item" as const, id: cur, label: cur }, ...fromApi];
   }
   return [head, ...fromApi];
