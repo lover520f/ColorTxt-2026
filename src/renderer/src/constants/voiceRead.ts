@@ -27,7 +27,7 @@ export const voiceReadRateMax = 2;
 export const voiceReadPitchMin = 0.5;
 export const voiceReadPitchMax = 2;
 
-/** DashScope qwen3-tts-flash 音色（与 ReadAny DASHSCOPE_VOICES 一致） */
+/** DashScope qwen3-tts-flash 音色 */
 export const DASHSCOPE_TTS_VOICES: { id: string; label: string }[] = [
   { id: "Cherry", label: "芊悦 (Cherry)" },
   { id: "Ethan", label: "晨煦 (Ethan)" },
@@ -57,16 +57,22 @@ export function mergeVoiceReadSettings(
   const d = defaultVoiceReadSettings;
   if (!raw || typeof raw !== "object") return { ...d };
   const engine: VoiceReadEngineId =
-    raw.engine === "edge" || raw.engine === "dashscope" || raw.engine === "system"
+    raw.engine === "edge" ||
+    raw.engine === "dashscope" ||
+    raw.engine === "system"
       ? raw.engine
       : d.engine;
   return {
     engine,
     voiceId: typeof raw.voiceId === "string" ? raw.voiceId : d.voiceId,
     rate: clampVoiceReadRate(typeof raw.rate === "number" ? raw.rate : d.rate),
-    pitch: clampVoiceReadPitch(typeof raw.pitch === "number" ? raw.pitch : d.pitch),
+    pitch: clampVoiceReadPitch(
+      typeof raw.pitch === "number" ? raw.pitch : d.pitch,
+    ),
     dashscopeApiKey:
-      typeof raw.dashscopeApiKey === "string" ? raw.dashscopeApiKey : d.dashscopeApiKey,
+      typeof raw.dashscopeApiKey === "string"
+        ? raw.dashscopeApiKey
+        : d.dashscopeApiKey,
   };
 }
 
@@ -74,16 +80,18 @@ export function mergeVoiceReadSettings(
 export function voiceReadDashScopeRequiresApiKey(
   settings: Pick<VoiceReadSettings, "engine" | "dashscopeApiKey">,
 ): boolean {
-  return (
-    settings.engine === "dashscope" && !settings.dashscopeApiKey.trim()
-  );
+  return settings.engine === "dashscope" && !settings.dashscopeApiKey.trim();
 }
 
-export function voiceReadEngineSupportsPitch(engine: VoiceReadEngineId): boolean {
+export function voiceReadEngineSupportsPitch(
+  engine: VoiceReadEngineId,
+): boolean {
   return engine === "system" || engine === "edge";
 }
 
-export function voiceReadEngineSupportsRate(engine: VoiceReadEngineId): boolean {
+export function voiceReadEngineSupportsRate(
+  engine: VoiceReadEngineId,
+): boolean {
   return engine === "system" || engine === "edge" || engine === "dashscope";
 }
 
@@ -100,8 +108,7 @@ export function toVoiceReadEdgeTtsRequest(
   settings: VoiceReadSettings,
   text: string,
 ): VoiceReadEdgeTtsRequest {
-  const voice =
-    settings.voiceId.trim() || "zh-CN-XiaoxiaoNeural";
+  const voice = settings.voiceId.trim() || "zh-CN-XiaoxiaoNeural";
   return {
     text,
     voice,

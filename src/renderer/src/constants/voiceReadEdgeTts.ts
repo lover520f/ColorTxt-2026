@@ -1,5 +1,5 @@
 /**
- * Edge TTS 音色列表（与 ReadAny packages/core/src/tts/edge-tts.ts 对齐）
+ * Edge TTS 音色列表
  */
 
 export type EdgeTtsVoice = {
@@ -112,8 +112,16 @@ const EDGE_TTS_VOICE_MAP: Record<string, string[]> = {
     "zh-CN-liaoning-XiaobeiNeural",
     "zh-CN-shaanxi-XiaoniNeural",
   ],
-  "zh-HK": ["zh-HK-HiuGaaiNeural", "zh-HK-HiuMaanNeural", "zh-HK-WanLungNeural"],
-  "zh-TW": ["zh-TW-HsiaoChenNeural", "zh-TW-HsiaoYuNeural", "zh-TW-YunJheNeural"],
+  "zh-HK": [
+    "zh-HK-HiuGaaiNeural",
+    "zh-HK-HiuMaanNeural",
+    "zh-HK-WanLungNeural",
+  ],
+  "zh-TW": [
+    "zh-TW-HsiaoChenNeural",
+    "zh-TW-HsiaoYuNeural",
+    "zh-TW-YunJheNeural",
+  ],
 };
 
 function buildEdgeTtsVoiceList(): EdgeTtsVoice[] {

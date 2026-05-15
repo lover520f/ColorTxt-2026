@@ -53,7 +53,7 @@ function resolveDisplayLocale(): string {
   return "zh-CN";
 }
 
-/** 语种分组标题（与 ReadAny getLocaleDisplayLabel 一致，固定中文 UI） */
+/** 语种分组标题（固定中文 UI） */
 export function getLocaleDisplayLabel(locale: string): string {
   const normalizedLocale = normalizeLocaleCode(locale || "und");
   const override = LOCALE_LABEL_OVERRIDES[normalizedLocale];
@@ -140,7 +140,10 @@ export type SystemVoiceOption = {
   isDefault?: boolean;
 };
 
-function compareSystemVoice(a: SystemVoiceOption, b: SystemVoiceOption): number {
+function compareSystemVoice(
+  a: SystemVoiceOption,
+  b: SystemVoiceOption,
+): number {
   if (!!a.isDefault !== !!b.isDefault) return a.isDefault ? -1 : 1;
   return a.label.localeCompare(b.label) || a.lang.localeCompare(b.lang);
 }
