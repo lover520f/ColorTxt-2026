@@ -156,7 +156,7 @@ src/
 │       ├── injectionKeys.ts  # `provide` / `inject` 的 `InjectionKey`
 │       ├── style.css         # 全局样式与主题变量
 │       ├── env.d.ts          # 全局与 `window.colorTxt` 类型声明
-│       ├── chapter.ts        # 章节检测与规则存取
+│       ├── chapter.ts        # 章节检测、行首缩进与物理/展示列映射
 │       ├── icons.ts          # 内联 SVG 图标汇总
 │       ├── assets/           # 字体与静态图标
 │       ├── components/       # Vue 组件（见下文组件表）
@@ -195,6 +195,9 @@ src/
 │       │   ├── txtrHighlightMonarch.ts   # 自定义高亮词 Monarch 规则
 │       │   └── txtrTextMonarch.ts        # `txtr-text` Monarch 语言
 │       ├── reader/
+│       │   ├── readerDisplayPipeline.ts # 物理行 → 展示正文（压缩/缩进/章节留白）
+│       │   ├── readerTextFormat.ts      # 编辑态格式化（压缩空行、行首缩进）封装
+│       │   ├── initialSidebarTab.ts     # 首屏侧栏 tab（是否将加载文件）
 │       │   ├── chapterIndex.ts         # 视口章节下标（二分）
 │       │   ├── lineMapping.ts          # 物理行与显示行映射
 │       │   ├── ebookAnchorLookup.ts    # 电子书内链行映射
@@ -324,14 +327,14 @@ src/
 
 - **`appShell.css`**：根组件专用样式（由 `App.vue` 以 scoped 方式引入）：全屏顶/底/侧栏布局、正文区等。
 - **`injectionKeys.ts`**：`provide` / `inject` 用的 `InjectionKey`（如书签备注输入框 `ref`，供 `useAppBookmarkPins` 与 `AppOverlays` 对齐）。
-- **`chapter.ts`**：章节标题检测、章节匹配规则（正则）的存取与校验；内置三条 pattern 与 `@shared/chapterMatchBuiltinPatterns` 同源（技能文案等引用共享模块）。
+- **`chapter.ts`**：章节标题检测、章节匹配规则（正则）的存取与校验；**`physicalOffsetToDisplayOffset` / `physicalRangeToDisplayColumns`**（行首全角缩进下的物理列→Monaco 展示列，供侧栏搜索跳转）；内置三条 pattern 与 `@shared/chapterMatchBuiltinPatterns` 同源。
 - **`icons.ts`**：各功能图标的 SVG 字符串汇总，供组件内联使用。
 
 ###### `composables/`
 
 - **`useAppBookmarkPins.ts`**：书钉与书签：列表项、视口内活动书签、添加/移除/跳转及书签弹窗交互；**`readerEditMode`** 下书签跳转与视口判定按物理行 = Monaco 行（不经滤空映射）。**章节名**（侧栏列表与添加/编辑弹窗预览）用当前 **`chapters`** 与 **`reader/chapterIndex`** 的 `pickActiveChapterIdx` 推断；**持久化行号**、**锚点行**、**弹窗预览**、**右键菜单 Teleport** 等见下文 **「书签（行号语义、侧栏与弹窗）」**。
 - **`useAppChapterListSync.ts`**：侧栏章节/文件列表「滚到当前」的一拍状态（与 VirtualList 配合）。
-- **`useAppChapterNavigation.ts`**：章节跳转、章节规则与最近文件、侧栏标签等联动；应用章节规则后重载当前文件时以视口末行恢复阅读位置（与 `useAppReaderUiPrefs` 切换排版一致）。
+- **`useAppChapterNavigation.ts`**：章节跳转、章节规则与最近文件、侧栏标签等联动；只读展示正文变更后由 **`buildChaptersFromReaderDisplayText`**（`reader/readerDisplayPipeline.ts`）重算章节；应用章节规则后重载当前文件时以视口末行恢复阅读位置（与 `useAppReaderUiPrefs` 切换排版一致）。
 - **`useAppFileSession.ts`**：打开文件/选目录、会话快照恢复、与流管道和持久化衔接；`resetSession` 置 `readingProgressSynced` 为 `false`；导入目录合并列表时若当前分类筛选为具体分类名，会把新项写上对应 `category`（「全部 / 未分类」筛选下不写）。
 - **`useAppFullscreenReaderLayout.ts`**：全屏时正文区域宽度样式；layout 上点击左右空白聚焦编辑器；两侧空白区 `wheel` 转交 `ReaderMain.delegateEditorWheelFromBrowserEvent`（见下文「全屏正文宽度与两侧空白滚轮」）；事件来自侧栏子树时不劫持（含 Shadow DOM 向上判定）。
 - **`useAppPersistence.ts`**：界面设置、会话快照、最近打开列表、文件元数据（书签等）的加载与保存；`persistFileMeta` 受 `readingProgressSynced` 门控；`persistWindowUnloadState` 在「清除缓存」后的刷新流程中可被 `skipUnloadPersistenceSessionKey` 跳过（见「清除缓存（设置面板）」）。
@@ -339,25 +342,26 @@ src/
     - `fullscreenSidebarPopoversSuppressCollapse`：文件列表 / AI 助手 Teleport 菜单打开时抑制侧栏误收起。
     - 内部用 `utils/fullscreenHeaderFloat` / `fullscreenSidebarFloat` 判断指针是否在全屏顶栏或侧栏浮层子树内。
 - **`useAppReaderUiPrefs.ts`**：字号/行高/字体、高级换行与内容着色等阅读偏好与 Monaco、持久化同步。
-    - 切换压缩空行/行首缩进时重载当前文件，并以视口末行映射物理行恢复（与流结束 `scrollLineToBottom` 一致）。
+    - **只读**下切换压缩空行/行首缩进：不再整文件 `openFilePath` 重载，而是 **`stream.applyReaderDisplayFromPhysicalLines`** 基于内存中的物理行重算展示正文并恢复视口（`syncChaptersAfterViewportSettled`）；失败则回滚开关。
     - 字号增大时按字号上限夹行高倍数。
-- **`useAppReadingProgress.ts`**：阅读进度展示模型：以视觉滚动进度为主（到底=100%），并输出 `(当前行/总行)` 文案；供底栏/侧栏/最近打开统一使用。
-- **`useAppSyncCurrentFileWatch.ts`**：「同步当前文件」开关：监听当前文件外部变更并触发自动重载。
+- **`useAppReadingProgress.ts`**：阅读进度展示模型：以视觉滚动进度为主（到底=100%），并输出 `(当前行/总行)` 文案；供底栏/侧栏/最近打开统一使用。底栏**总字数**来自 **`totalCharCount`**（展示正文 `text.length`；编辑态由 **`resyncMirrorFromReader`** 与 Monaco 同步）。
+- **`useAppSyncCurrentFileWatch.ts`**：「同步当前文件」开关：监听当前文件外部变更并触发自动重载。**`readerEditMode`** 为 true 时不注册监听；用户在编辑态保存也不会触发自动重载（避免覆盖未同步到只读管线的 Monaco 缓冲区）。
 - **`useAppShellThemeWatch.ts`**：主题切换：根节点 class、编辑器主题、原生主题 IPC。
 - **`useAppWindowBindings.ts`**：窗口挂载/卸载、可配置快捷键（`shortcutBindings`）、拖放与主进程 IPC 等绑定。
     - **拖放**：命中带 `data-drop-zone="file-list"` 的节点时向侧栏列表**追加**文件；落在其它区域时对拖入路径取「最外层首个」支持的文件并**打开**（与 `utils/dragDropFsPaths.ts` 配合）。
     - **全屏边缘**：`document` 上 `mousemove` 驱动全屏边缘唤起（具体逻辑在 `useAppReaderChrome`）。
     - **流与进度**：订阅 `file:stream-*`，在流结束并完成滚动/恢复阅读位置后置 `readingProgressSynced`。
     - **卸载落盘**：`pagehide` / `beforeunload` 时落盘会话与设置（与「清除缓存」防回写配合）。
-- **`useReaderSidebarLists.ts`**：侧栏文件/章节/书签虚拟列表、过滤与滚动同步；文件列表按 **`fileCategory`** 筛选、按 **`fileSort`** 排序，与项上 `category` / `addedAt` 等字段合并展示。
+- **`useReaderSidebarLists.ts`**：侧栏文件/章节/书签虚拟列表、过滤与滚动同步；文件列表按 **`fileCategory`** 筛选、按 **`fileSort`** 排序，与项上 `category` / `addedAt` 等字段合并展示。章节列表视口联动滚动受 **`suppressChapterListAutoScroll`** 抑制（进/出编辑、切换压缩空行等）；须在 **`syncChaptersAfterViewportSettled`** 的 `finally` 或流错误路径中恢复，否则换章不再居中当前章。
 - **`useReaderInlineSearch.ts`**：阅读区内联搜索：关键词匹配、结果列表、当前命中定位与导航。
 - **`useFileListCategorySort.ts`**：文件列表：分类下拉（`AppCustomSelect`）的固定项/滚动项/计数与触发器文案；`FileSortMode` 与 `constants/fileCategories` 对齐。
 - **`useFileListSelection.ts`**：文件列表「编辑模式」：多选路径、`Ctrl+A` / 反选、与列表焦点区配合；选中集随列表变化裁剪。
 - **`useFileListMenus.ts`**：文件列表右键菜单、编辑模式菜单、**分类浮层**（`CategoryPickerMenu`）坐标与 `setFilesCategory` 派发。
-- **`useTxtStreamPipeline.ts`**：大文件流式解析。
-    - 物理行/显示行映射、章节累加、空行压缩与章节留白标准化；同一物理行对应多显示行时优先匹配正文行（避免跳到章节留白）。
+- **`useTxtStreamPipeline.ts`**：大文件流式解析与只读展示。
+    - 流式阶段**仅累积物理行**；字数/总行在格式化完成后写入 ref；展示格式化集中在 **`reader/readerDisplayPipeline.ts`** 的 **`formatPhysicalLinesForReader`** / **`applyReaderDisplayFromPhysicalLines`**。
+    - 物理行/显示行映射、**`physicalSearchRangeToDisplayColumns`**（侧栏搜索命中 → Monaco 列，只读且开行首缩进时计入全角缩进）；**`readerEditMode`** 为 true 时不做缩进列偏移。
     - 插图锚点删行后同步收缩映射表。
-    - 正文在缓冲区累积，流结束再一次性 `setFullText` / `setChapters`（见 `ipcHandlers` 小节「渲染进程与 Monaco 写入」）。
+    - 编辑态 **`resyncMirrorFromReader`** 将 Monaco 全文同步为 `physicalLineContents`（供搜索与底栏统计）。
 - **`useAiFoldContentSelectAll.ts`**：AI 阅读助手：工具调用 / 思考等折叠区正文的「全选」与键盘选择（与 `AiAssistantDetailsFold` 等配合）。
 
 ###### `constants/`
@@ -514,9 +518,9 @@ src/
 - **流式读文件（主进程）**：`file:stream` 使用 `createReadStream` + `iconv-lite` 解码，经 `file:stream-*` 向渲染进程推送数据块；编码由文件头采样 + `jschardet` 探测。
 - **整文件读写（阅读器编辑）**：**`file:readWholeTextFile`**（一次性读入、编码探测后解码为字符串）、**`file:writeTextFile`**（按指定编码整文件写出），与流式读盘并存；见 **「阅读器编辑模式」**。
 - **流式读文件（并发与序号）**：每次新流递增 `requestId` 并 `destroy` 上一轮同窗口读流；发送 chunk 前校验序号，避免旧流残留。渲染进程在 `resetSession` 时清空 `activeStreamRequestId` / `activeStreamFilePath`，并在 `onStreamChunk` / `onStreamEnd` / `onStreamError` 中比对 `requestId`，避免快速重复打开同一文件时旧 chunk 混入已重置的解析管道。
-- **渲染进程与 Monaco 写入**：主进程仍分块推送；渲染侧 `useTxtStreamPipeline` 对每个 chunk 解析并在**字符串缓冲区**中累积正文；`onStreamEnd` 后 `flushCarry` 处理 EOF 与尾行，再经 `ReaderMain` 的 **`setFullText`** 一次性写入 Monaco，随后 **`setChapters`**（开启行首全角缩进时再 **`normalizeLastLineLeadIndent`**）。加载中阅读区可保持空白，底栏进度由各 chunk 的 `readBytes` / `totalBytes` 驱动。
+- **渲染进程与 Monaco 写入**：主进程仍分块推送；渲染侧 `useTxtStreamPipeline` 对每个 chunk 只累积**物理行**；`onStreamEnd` 后 `flushCarry`，再 **`formatPhysicalLinesForReader`** → **`setFullText`**、更新 **`totalCharCount`**、**`setChapters`**（见 **「只读展示管线」**）。加载中不累加总字数、不匹配章节；底栏进度由各 chunk 的 `readBytes` / `totalBytes` 驱动。
 - 目录递归收集 `.txt`：迭代遍历 + `realpath` 去重，避免符号链接成环导致栈溢出。
-- 窗口相关：`window:new`、`window:setTitle`、`window:setFullscreen`、`theme:set`（同步原生主题并广播 `theme:sync`）、以及会话恢复 / 待打开 txt 的一次性消费等。
+- 窗口相关：`window:new`、`window:setTitle`、`window:setFullscreen`、`theme:set`（同步原生主题并广播 `theme:sync`）、**`window:getInitialLoadIntent`**（同步，供首屏侧栏 tab）、**`window:shouldRestoreSession`**、**`window:consumePendingOpenTxtPath`** 等。
 
 **`launchTxtHandlers.ts`**
 
@@ -527,7 +531,7 @@ src/
 
 - 创建 `BrowserWindow`：加载开发环境 `ELECTRON_RENDERER_URL` 或打包后的 `renderer/index.html`。
 - 处理 `ready-to-show`、全屏切换事件广播、开发环境 DevTools 快捷键拦截等。
-- 维护“首个窗口是否应恢复会话 / 是否有待打开 txt”等窗口级状态，并在窗口关闭时清理。
+- 维护每窗口 **`shouldRestoreSession`**、**`pendingOpenTxt`** 等状态（`getInitialWindowLoadIntent` / 首屏侧栏 tab，见 **「启动与会话：侧栏初始标签」**），并在窗口关闭时清理。
 - 窗口 `resize` / `move` / `close` 时触发边界保存（debounce + close 兜底），具体读写逻辑见 `windowBounds.ts`。
 
 **`windowBounds.ts`**
@@ -549,10 +553,10 @@ src/
 - **文件与流**：文件对话框与目录扫描（含扫描进度订阅）、`file:stat`、流式读文件事件（`file:stream-*`；载荷可含 **`sessionFilePath`** 表示逻辑书路径如电子书原路径）、**`readWholeTextFile` / `writeTextFile`**（阅读器编辑模式整盘读存，见 **「阅读器编辑模式」**）、`watchCurrentFile` / `onCurrentFileDiskChanged`（当前阅读文件磁盘变更）、外链与系统字体列表等。
 - **`getUserDataPath`**（`sendSync`）、**`getDefaultEbookConvertOutputDir`**、**`getDefaultCharacterPortraitCacheDir`**（与 `@shared/ebookConvertPaths`、`@shared/characterPortraitPaths` 子目录名一致）。
 - **`pathToReadableLocalUrl`**：调用 `colortxtLocal:registerPath`，返回 **`colortxt-local://resource/{uuid}`** 短 URL，供 `<img>` / 灯箱避免整段 `file://` 过长。
-- 破坏性操作确认：部分使用应用内 **`appConfirm` / `appAlert`**（`services/appDialog.ts` → **`AppDialogHost`**）；**清除缓存**、**保存时向量维度变更警告**等使用原生 **`window.colorTxt.showMessageBox`**。不再通过 preload 暴露已废弃的 `confirmClear*` / `confirmResetUiSettings` 封装。
+- 破坏性操作确认：部分使用应用内 **`appConfirm` / `appAlert`**（`services/appDialog.ts` → **`AppDialogHost`**）；**清除缓存**、**保存时向量维度变更警告**等使用原生 **`window.colorTxt.showMessageBox`**。
 - 文件系统操作：`renamePath`（文件重命名）、`removePath` / `emptyDir` / `mkdir` 等。
 - 窗口与系统集成：`openNewWindow`、`toggleDevTools`、`quitApp`、`setWindowTitle`、`setFullscreen`，以及全屏/主题相关事件（如 `onFullscreenChanged`、`onThemeSync`）。
-- 会话与启动打开：`shouldRestoreSession`、`consumePendingOpenTxtPath`，以及 `onOpenTxtFromShell`（命令行/系统关联打开 txt 的路径回调）。
+- 会话与启动打开：`shouldRestoreSession`、`consumePendingOpenTxtPath`，**`getInitialWindowLoadIntent`**（同步 `window:getInitialLoadIntent`，首屏侧栏 tab，见 **「启动与会话：侧栏初始标签」**），以及 `onOpenTxtFromShell`（命令行/系统关联打开 txt 的路径回调）。
 - **应用更新**：`checkForUpdates` / `downloadUpdate` / `quitAndInstall` 及 `onUpdater*` 事件订阅（含 `onUpdaterDownloadProgress`；打包环境下生效）。
 - 拖放文件真实路径（`getPathForFile`）。
 - **全局快捷键（显隐）**：`getGlobalShortcut`、`validateGlobalShortcut`、`setGlobalShortcut`、`suspendGlobalShortcutsForRecording`、`resumeGlobalShortcutsAfterRecording`（对应主进程 `shortcut:*` IPC）。
@@ -563,17 +567,17 @@ src/
 
 | 文件                                                 | 主要功能                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AppHeader.vue`                                      | 顶栏：打开文件、书钉/书签、字体与字号行高、压缩空行/行首缩进、**高级换行策略**（Monaco `wrappingStrategy: advanced`）、内容上色、**高亮笔**（下拉列出当前文件自定义词及移除；背景/正文色来自阅读器变量供预览）、章节规则、主题、侧栏与全屏、查找与更多菜单等；**阅读器编辑**开关与编辑态**保存**。<br>从 `App.vue` 接收当前 **`shortcutBindings`** 并传给 `MoreMenu`；**`@open-color-scheme`** 可从高亮菜单进入配色弹窗                                                                                                                                                                                                                                                 |
+| `AppHeader.vue`                                      | 顶栏：打开文件、书钉/书签、字体与字号行高、压缩空行/行首缩进（只读）、**高级换行策略**、内容上色、**高亮笔**、章节规则、主题、侧栏与全屏、查找与更多菜单等；**阅读器编辑**开关、编辑态**保存**与**格式化**（压缩空行/行首缩进）。<br>从 `App.vue` 接收当前 **`shortcutBindings`** 并传给 `MoreMenu`；**`@open-color-scheme`** 可从高亮菜单进入配色弹窗                                                                                                                                                                                                                                                 |
 | `AppOverlays.vue`                                    | 蒙层弹窗：关于、快捷键、设置、配色、章节规则、**添加/编辑书签**（备注框上方章节名 + 正文预览；编辑时 footer 左 **「更新为当前行」**）与更新流等                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `AppContextMenu.vue`                                 | 上下文菜单：**`placement`** **`point`**（书签等，`x`/`y` 为视口内左上角，经夹取）或 **`aboveFooterMouseX`**（底栏路径/编码菜单：整块在底栏上方、横向以打开时指针 `clientX` 居中后再夹到窗口内，见 **「底栏」**）；支持 **`disabled`** 项、`excludeCloseWithin`（避免重复点触发控件时误判为外侧关闭）                                                                                                                                                                                                                                                                                                                                                                                    |
 | `AppFooter.vue`                                      | 底栏：路径、加载/阅读进度、字数、大小、编码；**路径与编码**为链式按钮 + 向上弹出菜单，详见 **「底栏」**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `ReaderMain.vue`                                     | 阅读区：挂载编辑器与业务逻辑。<br>引入 **`readerMainMonaco.css`** 覆盖 Monaco 阅读区样式；编辑器静态选项集中在 `monaco/readerEditorOptions.ts`。<br>章节行内装饰与 **`highlightColors` / `highlightWordsByIndex`** 驱动的 Monarch 与装饰同步；选区添加自定义高亮词、色块选择器（按当前主题高亮色列表）；`monacoCustomHighlight` 开关。<br>**`ReaderHighlightFloat`** / **`ReaderImageLightbox`**；查找展开时可联动书钉；高亮词列表点击可进入查找；滚动与 probe。<br>全屏两侧空白滚轮经父组件调用 **`delegateEditorWheelFromBrowserEvent`**。<br>流式打开文件时在 `flushCarry` 末尾 **`setFullText`** 一次性灌入正文（保留 `appendText` 供其它场景）。**阅读器编辑模式**：`readerEditMode` + **`physicalReaderPath`** 时整盘 **`readWholeTextFile` / `setValue`**、Ctrl+S 保存、与压缩空行相关的进/出编辑滚动恢复，见 **「阅读器编辑模式」**。<br>**书签**：**`getBookmarkSaveAnchorDisplayLine`**（与保存锚点、列表跳转一致的「视口上沿 + 一行字高」逻辑行）、**`jumpToBookmarkLine`**（`revealLineNearTop` 后再 `scrollTop -= lineHeight` 为黏性章节条留白）、**`getViewportTopLine`** 等 |
+| `ReaderMain.vue`                                     | 阅读区：挂载编辑器与业务逻辑。<br>引入 **`readerMainMonaco.css`** 覆盖 Monaco 阅读区样式；编辑器静态选项集中在 `monaco/readerEditorOptions.ts`。<br>章节行内装饰与 **`highlightColors` / `highlightWordsByIndex`** 驱动的 Monarch 与装饰同步；选区添加自定义高亮词、色块选择器（按当前主题高亮色列表）；`monacoCustomHighlight` 开关。<br>**`ReaderHighlightFloat`** / **`ReaderImageLightbox`**；查找展开时可联动书钉；高亮词列表点击可进入查找；滚动与 probe。<br>全屏两侧空白滚轮经父组件调用 **`delegateEditorWheelFromBrowserEvent`**。<br>流式结束经 **`formatPhysicalLinesForReader`** 后 **`setFullText`**（见 **「只读展示管线」**）。**阅读器编辑**：整盘读写、**`applyEditFormat*`**、**`readerEditShowLineNumbers`**、**`readerEditContentChange`**，见 **「阅读器编辑模式」**。<br>**书签**：**`getBookmarkSaveAnchorDisplayLine`**（与保存锚点、列表跳转一致的「视口上沿 + 一行字高」逻辑行）、**`jumpToBookmarkLine`**（`revealLineNearTop` 后再 `scrollTop -= lineHeight` 为黏性章节条留白）、**`getViewportTopLine`** 等 |
 | `ReaderSidebar.vue`                                  | 侧栏容器：活动栏含文件 / 章节 / 书签 / 高亮词 / **AI 助手** / **角色** / 搜索（`constants/readerSidebarTab.ts`）。<br>挂载 `FileListPanel`、`ChapterListPanel`、`BookmarkListPanel`、`HighlightListPanel`、**`AiAssistantPanel`**、**`CharacterSidebarPanel`**、`SearchPanel`。<br>向文件列表下发 **`fileCategory` / `fileSort` / `fileCategoryCatalog`** 并上抛分类相关事件；与 `useReaderSidebarLists`、`useReaderInlineSearch` 等配合；**阅读器编辑**时章节区可提供刷新章节等入口                                                                                                                                                                                                |
 | `FileListPanel.vue`                                  | 侧栏「文件」：txt/电子书路径列表、**分类筛选**与 **排序**、编辑模式多选、右键与批量改分类。<br>单项右键支持分类/移除/重命名/在新窗口打开/在文件管理器显示（Ctrl+右键附加「清除该文件数据」）；筛选在具体分类时 footer 动作为「清空分类」。<br>`data-drop-zone="file-list"` 标记列表拖放接收区                                                                                                                                                                                                                                                                                                                                           |
 | `ChapterListPanel.vue`                               | 侧栏「章节」：章节列表、字数开关、跳转当前章                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `BookmarkListPanel.vue`                              | 侧栏「书签」：列表、跳转、编辑与清除；项内 **备注 / 章节名 / 正文预览**（章节由 `pickActiveChapterIdx` 推断；无备注但有章节名时不显示「无备注」占位；正文预览与弹窗同源逻辑）；**右键菜单** `Teleport` 到 **`document.body`** 并带 **`data-fullscreen-sidebar-float`**，避免被侧栏 `overflow` 裁切                                                                                                                                                                                                                                                                                                                                                                       |
 | `HighlightListPanel.vue`                             | 侧栏「高亮词」：展示当前文件高亮词，支持删除与点击定位（通过内联搜索流转）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `SearchPanel.vue`                                    | 侧栏「搜索」：当前文件内搜索、结果列表与命中跳转。<br>点击项按物理行映射到当前显示行并居中定位（压缩空行时对齐正文行）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `SearchPanel.vue`                                    | 侧栏「搜索」：当前文件内搜索、结果列表与命中跳转。<br>**一行内多次匹配各占一条结果**（与 VS Code 一致）；预览仅高亮该条对应的区间。<br>跳转列号经 **`physicalSearchRangeToDisplayColumns`**（只读+行首缩进）或编辑态 1:1 物理列；详见 **「侧栏全文搜索」**                                                                                                                                                                                                                                                                                                                                                           |
 | `FileCategoryFlyoutList.vue`                         | 文件列表分类子菜单：统一渲染右键分类 flyout 与批量分类入口的选项（含计数）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `FontPicker.vue`                                     | 预设字体（跨平台映射，逻辑见 `presetFontDefinitions.ts`）与系统字体列表                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `ChapterRulePanel.vue` / `ChapterRuleEditDialog.vue` | 章节匹配规则列表与编辑                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -586,7 +590,7 @@ src/
 | `SettingsPanel.vue`                                  | 设置弹窗壳层：**`SettingsTabBar`** + 条件渲染子面板。<br>footer **「重置当前页」** 按当前 tab 将草稿恢复为应用内默认值（常规/阅读/各 AI 子块/技能等逻辑见 `onResetCurrentTab`）。<br>**「确定」** 时校验向量维度变更提示、调用 `window.colorTxt.ai.configSet` 持久化 AI 配置，并 **`emit('apply', SettingsApplyPayload)`** 写回 `App.vue`。<br>**「清除缓存」** 在 **`SettingsGeneralPanel`** 内触发，经 **`window.colorTxt.showMessageBox`** 确认后设置 `skipUnloadPersistenceSessionKey`、`localStorage.clear()` 再写回 `colorTxt.ui.settings` 并刷新（见下文「清除缓存」）                                                               |
 | `SettingsTabBar.vue`                                 | 设置顶栏页签切换；导出 **`SettingsTabId`**（`general` / `reading` / `ai` / `vectorModel` / `txt2img` / `skills`）。<br>`showAiExtensionTabs` 为 false 时隐藏向量模型 / 角色卡 / 技能三个扩展页签                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `SettingsGeneralPanel.vue`                           | 「常规」：启动恢复上次文件、同步当前文件、历史条数、电子书转换缓存目录、章节最少字数、**清除缓存**按钮（向父组件 `clearCache`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `SettingsReadingPanel.vue`                           | 「阅读」：字号/行高滑块、压缩空行保留一行、引号/括号跨行匹配、Monaco 平滑滚动、全屏正文区宽度。<br>（`monacoCustomHighlight` 来自 props，用于禁用跨行开关提示）                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `SettingsReadingPanel.vue`                           | 「阅读」：字号/行高滑块、压缩空行保留一行、引号/括号跨行匹配、Monaco 平滑滚动、**编辑模式下显示行号**（`readerEditShowLineNumbers`）、全屏正文区宽度。<br>（`monacoCustomHighlight` 来自 props，用于禁用跨行开关提示）                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `SettingsAIPanel.vue`                                | 「AI 阅读助手」：总开关、对话 Base URL / Key / 模型、温度等；**`AppPullFlashButton`** 拉取聊天模型列表；快捷提问列表等                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `SettingsVectorModelPanel.vue`                       | 「向量模型」：嵌入开关与端点、切块与检索参数；**`AppPullFlashButton`** 拉取嵌入模型列表                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `SettingsTxt2ImgPanel.vue`                           | 「角色卡」：文生图（A1111 / ComfyUI 等）端点与采样参数；**`AppPullFlashButton`** 拉取采样器 / SD 模型列表。<br>**角色立绘缓存根目录**（`PathPickerInput`，默认 `userData/CharacterPortrait`）                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -793,43 +797,59 @@ src/
 - **`AppContextMenu`** **`placement="aboveFooterMouseX"`**：以底栏 **`<footer>`** 的 **`getBoundingClientRect().top`** 为界，菜单**底边**始终在底栏之上（留缝）；**横向**以打开瞬间的 **`clientX`** 与菜单宽度居中对齐后再做视口夹取。
 - **路径菜单与编码菜单互斥**：打开其一会先关闭另一；共享同一组指针/底栏顶边坐标（`footerPopoverFooterTopPx` / `footerPopoverPointerXPx`）。
 
+## 只读展示管线（`reader/readerDisplayPipeline.ts`）
+
+流式读盘阶段 **`useTxtStreamPipeline`** 只向 **`physicalLineContents`** 追加**物理行**（插图锚点删行会收缩映射表）。加载过程中**不**累加总字数、**不**跑章节匹配；流结束或切换「压缩空行 / 行首缩进」时调用 **`formatPhysicalLinesForReader`** 得到展示正文与 **`displayLineToPhysicalLine`**，再 **`setFullText`**、更新 **`totalCharCount`**（`formatted.text.length`）并触发章节重建。
+
+- **`applyReaderDisplayFromPhysicalLines(physicalAnchorLine)`**：基于内存物理行重算展示层并恢复视口（`useAppReaderUiPrefs` 切换开关、`syncChaptersAfterViewportSettled`）；失败回滚 UI 开关。
+- **`physicalSearchRangeToDisplayColumns`**：侧栏搜索命中列 → Monaco 列；只读且 **`leadIndentFullWidth`** 时经 **`chapter.ts`** 的 **`physicalRangeToDisplayColumns`** 计入行首全角缩进；**`readerEditMode`** 为 true 时列 1:1。
+- **`syncMirrorFromReaderModel`**：编辑态将 Monaco 全文写回物理行镜像，供 **`runSidebarSearch`** 与底栏 **`totalCharCount`**（`getAllText().length`）使用。
+
 ## 阅读器编辑模式（正文磁盘编辑）
 
-只读模式下正文由 **`file:stream`** 经 **`useTxtStreamPipeline`** 解析后写入 Monaco（可含压缩空行、行首全角缩进等**显示层**处理）。**编辑模式**下同一 `ReaderMain` 实例改为展示 **`physicalReaderPath` 指向的磁盘 txt 全文**：与源文件**一行对一行**，不经上述阅读管线后处理；保存时把 Monaco 全文按当前编码写回该路径。
+只读模式下正文由上述**只读展示管线**写入 Monaco。**编辑模式**下 `ReaderMain` 展示 **`physicalReaderPath` 磁盘全文**：Monaco 行与源文件物理行**一一对应**（不经压缩/缩进展示层）；保存时将 Monaco 全文按编码写回该路径。顶栏编辑菜单可对全文做**格式化**（`reader/readerTextFormat.ts`）：**压缩空行**、**行首全角缩进**，经 `ReaderMain.applyEditFormat*` 写回模型并 **`runEditFormatWithChapterSync`** 刷新章节。
 
 ### 状态与入口（`App.vue`）
 
-- **`readerEditMode` / `readerEditorDirty`**：是否处于编辑态、当前缓冲区是否与上次成功载入或保存的磁盘快照不一致。`useAppShellThemeWatch` 在窗口标题上为 dirty 状态追加 `*`。
-- **`canEnterReaderEditMode`**：需已打开文件、非 `loading`、**`readingProgressSynced`**（流结束且滚动恢复完成）、且非电子书转换中（`!ebookParsing`）。不满足时顶栏点「编辑」仅 **`appToast`** 弱提示（不阻塞）。
-- **顶栏 `AppHeader`**：编辑开关、编辑态下的**保存**（走 **`onSaveReaderFile`** → **`saveReaderBufferWithIpcEncoding`** / **`writeTextFile`**）；部分阅读类开关在编辑态禁用以免与磁盘全文语义冲突。
-- **底栏**：**「编码」** 菜单可在**只读或编辑态**下将当前 **`getAllText()`** 按所选编码写回 **`physicalReaderPath`**（见 **「底栏」**）。
-- **切回只读**：若有未保存改动，先经 **`window.colorTxt.showMessageBox`** 确认（选项对象 **`readerEditDiscardUnsavedMessageBox`**：`type: "warning"`，`buttons: ["取消", "确定"]`，**`defaultId: 0`** 使默认焦点在「取消」）；确认后 `openFilePath` 重载当前书以恢复流式只读正文。`openFilePath` 支持 **`skipReaderEditGuard`**，避免与同一套确认逻辑套娃。
-- **其它需放弃未保存编辑的路径**：切书、关文件等由 **`useAppFileSession`** 注入的 **`confirmIfReaderEditDiscard`** 调用同一 **`confirmReaderEditDiscardUnsaved()`**；关窗 **`handleWindowCloseRequest`**、**`quitApp`** 在 dirty 时同样走原生 MessageBox。
+- **`readerEditMode` / `readerEditorDirty`**：是否处于编辑态、缓冲区是否与上次载入/保存快照不一致；`useAppShellThemeWatch` 在标题上对 dirty 追加 `*`。
+- **`canEnterReaderEditMode`**：已打开文件、非 `loading`、**`readingProgressSynced`**、非 `ebookParsing`；否则顶栏「编辑」仅 **`appToast`**。
+- **顶栏 `AppHeader`**：编辑开关、编辑态**保存**、编辑态**格式化**（压缩空行 / 行首缩进）；只读专用的压缩/缩进开关在编辑态由格式化菜单承担。
+- **设置 → 阅读**：**`readerEditShowLineNumbers`**（默认关）经 **`buildReaderMonacoModeEditorOptions`** 控制 Monaco 行号栏。
+- **底栏「编码」**：只读或编辑态均可将 **`getAllText()`** 按所选编码写回 **`physicalReaderPath`**。
+- **切回只读**：未保存时 **`readerEditDiscardUnsavedMessageBox`** 确认后 `openFilePath` 重载；**`restorePhysicalLine`** 使用编辑态 Monaco 行号（即物理行），**不可**对编辑行号再调 `viewportDisplayLineToPhysicalLine`。
+- **快捷键**：编辑态下滚动/翻页/查找等阅读快捷键仍由外层处理；Monaco 内仅保留编辑相关命令（如 **`colortxt.readerEdit.save`** → **`onSaveReaderFile`**）。
 
-### `ReaderMain.vue` 与压缩空行下的滚动
+### `ReaderMain.vue` 载入与滚动
 
-- **Props**：**`readerEditMode`**、**`physicalReaderPath`**（与底栏/会话一致的磁盘 txt 路径；电子书打开时为转换后的 `.txt`）。
-- **载入**：`watch([readerEditMode, physicalReaderPath])` 在路径变化或首次进入编辑时 **`loadReaderEditFromDisk`**：`readWholeTextFile` → `model.setValue` → **`applyReaderMonacoModeOptions(true)`**（`monaco/readerEditorOptions.ts` 中阅读/编辑两套 chrome）。成功则 **`readerEditLoaded`**（携带 `encoding` 供保存编码）、**`readerEditDirtyChange(false)`**；失败 **`readerEditLoadFailed`**。
-- **脏检测**：`onDidChangeContent` 与载入/保存快照比较，**`readerEditDirtyChange`**。
-- **保存快捷键**：Monaco 命令 **`colortxt.readerEdit.save`**（如 Ctrl+S）在编辑态 **`readerEditSaveRequest`**，由 `App.vue` **`onSaveReaderFile`** 处理；成功后 **`markReaderEditSaved`**。
-- **压缩空行开启时进入编辑**：载入前用视口末行 **`getViewportEndLine`** + **`ebookDisplayLineToPhysical`**（即 `stream.viewportDisplayLineToPhysicalLine`）得到**物理行**；`setValue` 后 Monaco 行号与物理行一致，用 **`scrollLineToBottom` / `jumpToLine` / `scrollToBottom`** 与流结束恢复同类语义对齐视口。未开启压缩空行时不做额外滚动处理。
-- **切回只读且压缩空行开启**：`restorePhysicalLine` 须用编辑态下的 **Monaco 行号（即物理行）**，**不可**再对编辑态行号调用 `viewportDisplayLineToPhysicalLine`（该函数假定参数为滤空后的**显示行**下标）。未压缩时仍可用该映射（与恒等一致）。
+- **载入**：`readWholeTextFile` → `setValue` → **`applyReaderMonacoModeOptions(true)`**；成功 **`readerEditLoaded`**（`encoding`）、**`readerEditDirtyChange(false)`**；`App.vue` **`onReaderEditLoaded`** 内 **`resyncMirrorFromReader`**、有搜索词则 **`scheduleSidebarSearch`**、**`refreshChapterListFromReader`**，并在 `finally` 解除 **`suppressChapterListAutoScroll`**。
+- **进入编辑前**：**`captureViewportAnchorPhysicalLine`** 写入 **`readerEditRestorePhysicalLine`**（须在 `readerEditMode` 置 true 前捕获，避免 `getViewportEndLine` 失真）。
+- **脏检测**：`onDidChangeContent` → **`readerEditContentChange`**；`App.vue` **`onReaderEditContentChange`** 同步镜像，编辑态且有关键词时 **`scheduleSidebarSearch`**（行内改动即时重搜，不依赖 `totalLineCount` watch）。
+- **压缩空行开启时进入编辑**：用捕获的物理行在 `setValue` 后 **`scrollLineToBottom` / `jumpToLine`** 对齐视口。
 
-### 章节与侧栏
+### 章节、书签与搜索联动
 
-- 进入编辑并成功载入后 **`applyChaptersFromReaderPlainText`**（`chapter.ts` **`buildChaptersFromPlainText`**）从全文重算 **`chapters`**；编辑态下 **`setChapters`** 一般不挂章节标题行内装饰（避免与编辑行混淆）。侧栏章节列表头部可提供**刷新章节**以在编辑中手动重算。
-- **书签与侧栏搜索**：`meta` 中书签字段与搜索结果均以**源物理行**为键（书签行号语义、列表与弹窗 UI 见 **「书签（行号语义、侧栏与弹窗）」**）。只读且开启压缩空行时，跳转需 `physicalLineToDisplayForReader` 等映射；**编辑态**下 Monaco 与磁盘一一对应，**`useAppBookmarkPins`**（视口内活动书签判定、`jumpToBookmark`）与 **`App.vue`** 的侧栏搜索（`runSidebarSearch` / **`onJumpToSearchResult`**）在 **`readerEditMode`** 为 true 时按**未压缩**语义使用行号（物理行即 Monaco 行）；切换编辑/只读且侧栏有搜索词时会 **`watch(readerEditMode)`** 触发一次 **`scheduleSidebarSearch`** 以刷新结果中的展示行号。
+- 编辑载入/格式化后从全文 **`buildChaptersFromPlainText`** 重算章节；编辑态一般不挂章节标题行内装饰；侧栏可**刷新章节**。
+- **书签**：编辑态存 **Monaco 行**；只读滤空时存**物理行**（见 **「书签」**）。
+- **侧栏搜索**：详见 **「侧栏全文搜索」**；退出编辑时 **`watch(readerEditMode)`**（`false`）重搜；进入编辑不在此 watch 中搜，等 **`readerEditLoaded`**。
 
 ### 同步当前文件与主进程 IPC
 
-- **`useAppSyncCurrentFileWatch`**：`readerEditMode` 为 true 时不注册磁盘监控、也不自动重载，避免与未保存缓冲区冲突。
-- **主进程 `ipcHandlers.ts`**：**`file:readWholeTextFile`**（`stat` 校验、`detectEncoding` + `iconv-lite` 解码，返回 `{ ok, text?, encoding? }`）；**`file:writeTextFile`**（`iconv.encode` 按传入编码名写出，返回 `{ ok }`）。
-- **预加载 `window.colorTxt`**：暴露 **`readWholeTextFile`**、**`writeTextFile`**，类型见 `src/renderer/src/env.d.ts` 与 preload 实现。
+- **`useAppSyncCurrentFileWatch`**：编辑态不监听磁盘；编辑态保存不触发自动重载。
+- **`file:readWholeTextFile` / `file:writeTextFile`**：见 `ipcHandlers.ts`；preload 暴露 **`readWholeTextFile`**、**`writeTextFile`**。
 
-### 组件表补充
+## 侧栏全文搜索（`App.vue` + `SearchPanel.vue`）
 
-- **`AppHeader.vue`**：除原有阅读控件外，含**阅读器编辑**开关与编辑态**保存**等。
-- **`ReaderMain.vue`**：编辑态下整盘读写、模式选项切换、保存命令与上述滚动恢复逻辑；只读态仍以流式 **`setFullText`** 为准。
+- **`runSidebarSearch`**：在 **`physicalLineContents`**（只读流式镜像；编辑态由 **`resyncMirrorFromReader`** 同步）上匹配；**同一物理行内每个 `range` 一条结果**（对齐 VS Code），`SidebarSearchResult` 仅含单段 **`range`** 与对应 **`displayLine`** / 列。
+- **跳转**：**`onJumpToSearchResult`** → **`physicalSearchRangeToDisplayColumns`**（只读+行首缩进）或编辑态物理列 → **`revealRangeInCenter`** / 查找高亮。
+- **重搜时机**：
+  - **`watch(searchQuery)`**、匹配选项变化：始终防抖重搜。
+  - **`watch(totalLineCount)`**：仅只读（加载完成、切换展示层导致行数变）；编辑态由 **`onReaderEditContentChange`** 负责。
+  - **`watch(readerEditMode)`**：仅**退出**编辑（`false`）时重搜；**进入**编辑在 **`onReaderEditLoaded`** 之后重搜。
+
+## 启动与会话：侧栏初始标签
+
+- **主进程**（`windowFactory.ts`）：按窗口记录 **`shouldRestoreSession`**、**`pendingOpenTxtByWindowId`**；preload 同步 **`getInitialWindowLoadIntent`** → `window:getInitialLoadIntent`。
+- **`reader/initialSidebarTab.ts`**：**`resolveInitialReaderSidebarTab`**：有待打开路径 → **章节**；否则若首窗口将恢复会话且 `session` 含 `currentFile` → **章节**；纯新窗口 → **文件**。`App.vue` 用其初始化 **`readerSidebarTab`**，避免首屏先闪「文件」再切「章节」。
 
 ## 书签（行号语义、侧栏与弹窗）
 
@@ -869,7 +889,7 @@ src/
 
 首次运行或 `localStorage` 中尚无 `colorTxt.ui.settings`、或某字段未写入时，渲染进程使用 `src/renderer/src/constants/appUi.ts` 里以 `default` 前缀命名的常量作为初始值，包括：
 
-- 主题、侧栏展开、语法着色；**压缩空行** / **保留一个空行** / **行首缩进**；章节字数；字号与行高倍数；启动恢复会话；Monaco 高级换行等。
+- 主题、侧栏展开、语法着色；**压缩空行** / **保留一个空行** / **行首缩进**；**`readerEditShowLineNumbers`**；章节字数；字号与行高倍数；启动恢复会话；Monaco 高级换行等。
 - **侧栏文件列表**筛选与排序默认值见 **`constants/fileCategories.ts`**（如 `FILE_CATEGORY_FILTER_ALL`、`DEFAULT_FILE_SORT`；分类目录首次用 `cloneDefaultFileCategoryCatalog()`）。
 - `App.vue` 中对应 `ref` 引用上述常量；`ReaderMain.vue` 的 `withDefaults` 在未由父组件传入时与压缩空行、语法着色、高级换行、内部行高初值保持一致。已存在本地设置时仍以持久化数据为准。
 
@@ -964,7 +984,7 @@ src/
 
 | 键名                    | 大致内容                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `colorTxt.ui.settings`  | 界面与阅读偏好：字体、字号与行高倍数，空行压缩/行首缩进、高级换行、内容着色，**`monacoCustomHighlight`**，**Monaco 平滑滚动 `monacoSmoothScrolling`**，**`highlightColorsLight` / `highlightColorsDark`**（长度不足 `MIN_HIGHLIGHT_COLORS` 时解析失败则回退默认；与默认逐项相同可不写入），章节匹配规则、主题、侧栏是否展开，侧栏宽度、章节字数显示，启动是否恢复会话、最近文件条数上限、全屏正文区宽度，**`ebookConvertOutputDir`**（空串表示与源书同目录；首次无该键时默认 **`userData/ConvertedTxt`**），**`fileCategory`**、**`fileSort`**、**`fileCategoryCatalog`**，**可选 `shortcutBindings`**，**`readerPaletteOverridesLight` / `readerPaletteOverridesDark`** 等。**AI 与立绘缓存相关字段**（`aiSkillsEnabled`、`aiSkillOverrides`、`aiCustomSkills`、`aiAssistantDeepThinking`、`aiAssistantSpoilerSafe`、`characterPortraitCacheDir` 等）见 **「AI 阅读助手与相关能力」** →「`localStorage` 与 `file.meta` 中的 AI 相关键」。完整字段见 `PersistedSettingsData` / `cacheStore.ts`。 |
+| `colorTxt.ui.settings`  | 界面与阅读偏好：字体、字号与行高倍数，空行压缩/行首缩进、**`readerEditShowLineNumbers`**、高级换行、内容着色，**`monacoCustomHighlight`**，**Monaco 平滑滚动 `monacoSmoothScrolling`**，**`highlightColorsLight` / `highlightColorsDark`**（长度不足 `MIN_HIGHLIGHT_COLORS` 时解析失败则回退默认；与默认逐项相同可不写入），章节匹配规则、主题、侧栏是否展开，侧栏宽度、章节字数显示，启动是否恢复会话、最近文件条数上限、全屏正文区宽度，**`ebookConvertOutputDir`**（空串表示与源书同目录；首次无该键时默认 **`userData/ConvertedTxt`**），**`fileCategory`**、**`fileSort`**、**`fileCategoryCatalog`**，**可选 `shortcutBindings`**，**`readerPaletteOverridesLight` / `readerPaletteOverridesDark`** 等。**AI 与立绘缓存相关字段**（`aiSkillsEnabled`、`aiSkillOverrides`、`aiCustomSkills`、`aiAssistantDeepThinking`、`aiAssistantSpoilerSafe`、`characterPortraitCacheDir` 等）见 **「AI 阅读助手与相关能力」** →「`localStorage` 与 `file.meta` 中的 AI 相关键」。完整字段见 `PersistedSettingsData` / `cacheStore.ts`。 |
 | `colorTxt.session`      | 会话快照：当前文件路径、视口底部物理行号（`viewportBottomLine`，用于下次启动恢复阅读位置；是否恢复受设置项控制；章节列表在重新打开文件后由流式解析生成）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `colorTxt.file.list`    | 导入目录后的文件列表缓存：每项为 `TxtFileItem`（`path`、`name`、`size`，可选 **`category`**、**`addedAt`**）；与侧栏分类筛选、排序及 `fileListService` 规范化一致                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `colorTxt.file.meta`    | 按文件路径聚合的元数据：书签、阅读进度百分比、**Monaco `saveViewState()`**（`editorViewState`）、**`viewportTopPhysicalLine`**、**`highlightWordsByIndex`**；**电子书**：**`convertedTxtPath`**、**`sourceMtimeMsAtConvert`**。**角色侧栏相关字段**（`characterRoster`、`characterBookStyle` 等）见 **「AI 阅读助手与相关能力」** →「`localStorage` 与 `file.meta` 中的 AI 相关键」。其它字段见 `FileMetaRecord` / `fileMetaStore.ts`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -977,7 +997,7 @@ src/
 - **压缩空行与锚点兜底**：与 `editorViewState` 同时持久化 **`viewportTopPhysicalLine`**（保存时刻视口首行对应的源文件物理行号）。`restoreViewState` 后的 `nextTick` 内用 `getViewportTopLine` + `viewportDisplayLineToPhysicalLine` 校验当前首行物理行是否一致；不一致则按该物理行映射为显示行并 **`jumpToLine`**（使该行靠近视口顶部），避免仅依赖 Monaco 视图状态在滤空映射变化时出现错位。
 - **恢复口径（重载当前正文 / 显式物理行）**：切换压缩空行、行首缩进、改动「保留一个空行」、应用章节匹配规则等触发**同路径重开**时，使用 `openFilePath(..., { restorePhysicalLine })`：取**视口末行**经 `viewportDisplayLineToPhysicalLine` 得到物理行，流结束后仍走 `scrollLineToBottom` 显示行对齐（与视图状态恢复互斥）。
 - **启动会话（`colorTxt.session`）**：若该路径在 `file.meta` 中已有 `editorViewState`，启动恢复时优先用它；否则仍可用会话快照中的视口物理行作为后备（与 meta 独立）。
-- **历史记录字段**：`progress` 与 `editorViewState` 均在 `file.meta` 持久化；`colorTxt.recent.files` 不再存进度。当前打开文件的展示进度仍以运行时实时值为准。
+- **历史记录字段**：`progress` 与 `editorViewState` 均在 `file.meta` 持久化；`colorTxt.recent.files` 不存进度。当前打开文件的展示进度以运行时实时值为准。
 - **阅读位置就绪标志（`readingProgressSynced`，`App.vue` ref）**：
     - 无打开文件时为 `true`；每次 `resetSession`（打开/重开某路径）后为 `false`。
     - `file:stream-end` 处理中，在「完成滚动到恢复行 / 滚到底 / 或无需恢复仅 `emitProbeLine`」对应的 `requestAnimationFrame` + `nextTick` 之后再置为 `true`；`file:stream-error` 与「关闭当前文件」流程中也会恢复为 `true`（避免永久卡死写盘路径）。
@@ -1009,7 +1029,7 @@ src/
 - **为何需要 `sessionStorage` 标记**：
     - 窗口在 `pagehide` / `beforeunload` 时会调用 `persistWindowUnloadState()`，把内存中的会话、文件列表、最近打开和 meta 写回磁盘。
     - 若在 `localStorage.clear()` 之后直接刷新，卸载事件仍会执行，**会把清缓存前的内存状态再次写入**，导致「清不干净」。
-    - 实现：清存储前设置 **`sessionStorage`** 键 **`colorTxt.skipUnloadPersistence`**（`skipUnloadPersistenceSessionKey`，定义于 `constants/appUi.ts`），使 **`persistWindowUnloadState()`** 在卸载时**直接返回**，不再写会话/列表/meta；卸载流程里仍会 **`persistSettings()`**，只更新 `colorTxt.ui.settings`，与「仅保留界面设置」一致。
+    - 实现：清存储前设置 **`sessionStorage`** 键 **`colorTxt.skipUnloadPersistence`**（`skipUnloadPersistenceSessionKey`，定义于 `constants/appUi.ts`），使 **`persistWindowUnloadState()`** 在卸载时**直接返回**，不写会话/列表/meta；卸载流程里仍会 **`persistSettings()`**，只更新 `colorTxt.ui.settings`，与「仅保留界面设置」一致。
 - **新页加载**：`useAppPersistence` 的 **`initPersistenceBootstrap()`** 开头会 **`removeItem`** 清除上述标记，避免后续正常关窗时误跳过落盘。
 
 ### 「重置当前页」与历史上的全量恢复默认
