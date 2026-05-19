@@ -6,7 +6,7 @@
 
 <p align="center">
   <img alt="PC" src="https://img.shields.io/badge/PC-Windows%EF%BD%9CmacOS%EF%BD%9CLinux-orange">
-  <img alt="电子书" src="https://img.shields.io/badge/%E7%94%B5%E5%AD%90%E4%B9%A6-txt%EF%BD%9Cepub%EF%BD%9Cmobi%EF%BD%9Cazw3%EF%BD%9Cfb2%EF%BD%9Cfbz%EF%BD%9Cpdf%EF%BD%9Cchm-blue">
+  <img alt="电子书" src="https://img.shields.io/badge/%E7%94%B5%E5%AD%90%E4%B9%A6-txt%EF%BD%9Cmd%EF%BD%9Cepub%EF%BD%9Cmobi%EF%BD%9Cazw3%EF%BD%9Cfb2%EF%BD%9Cfbz%EF%BD%9Cpdf%EF%BD%9Cchm-blue">
   <img alt="框架" src="https://img.shields.io/badge/%E6%A1%86%E6%9E%B6-Electron_%2B_Vue_%2B_Monaco-purple">
 </p>
 
@@ -54,6 +54,8 @@
 
 支持打开常见的电子书格式（`.epub`/`.mobi`/`.azw3`/`.fb2`/`.fbz`/`.pdf`/`.chm`），打开时会转换为 `.txt` 进行加载。
 
+支持直接打开 `.md` 文件，章节按 ATX `#` 标题识别，侧栏按标题层级缩进。
+
 **说明**：会舍弃掉电子书自带的样式，只提取里面的文本进行展示，这是「内容上色」的前提，想要在带有各种样式的条件下精准匹配到目标文本进行上色，基本不可能。
 
 ### 关于「摸鱼快捷键」
@@ -74,7 +76,7 @@
 
 所以在做一些会影响布局的操作时（比如修改文字格式、调整窗口大小等），建议先关掉「高级换行策略」，等操作完后再重新开启。
 
-**已知问题**：启用「高级换行策略」会造成很大的内存开销，且这个占用难以被释放，见 [#5311](https://github.com/microsoft/monaco-editor/issues/5311)。
+**已知问题**：启用「高级换行策略」会有很大的内存开销，且这个占用难以被释放，见 [#5311](https://github.com/microsoft/monaco-editor/issues/5311)。
 
 ### 关于「AI」功能
 
