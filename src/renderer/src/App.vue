@@ -366,13 +366,13 @@ const showReaderBusyHint = computed(
 );
 const readerBusyHintText = computed(() => readerTxtLoadingHintText);
 /** 已打开文件且流式加载完成、正文行数与字数均为 0 时居中提示（仅只读；编辑模式不遮挡空白编辑区） */
+/** 字数 0 即视为无内容（Monaco 空模型仍可能计 1 行，勿与行数强绑定） */
 const showReaderEmptyHint = computed(
   () =>
     Boolean(currentFile.value) &&
     !loading.value &&
     !readerEditMode.value &&
-    totalCharCount.value === 0 &&
-    totalLineCount.value === 0,
+    totalCharCount.value === 0,
 );
 /** 非全屏：侧栏壳（含活动栏）始终占位；全屏：仅浮动展开时显示整块 */
 const sidebarShellVisible = computed(
@@ -2375,6 +2375,7 @@ useAppShellThemeWatch({
             stream.viewportDisplayLineToPhysicalLine
           "
           :before-reveal-find-widget="ensurePinBeforeRevealFindWidget"
+          :reader-fullscreen="isFullscreenView"
           :reader-edit-mode="readerEditMode"
           :reader-edit-restore-anchor="pendingReaderEditRestoreAnchor"
           :physical-reader-path="physicalReaderPath"

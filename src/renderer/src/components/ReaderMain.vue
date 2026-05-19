@@ -36,6 +36,7 @@ import {
   buildReaderEditorFontSizeUpdate,
   buildReaderEditorLineHeightUpdate,
   buildReaderMonacoModeEditorOptions,
+  buildReaderOverviewRulerBorder,
 } from "../monaco/readerEditorOptions";
 import {
   createTxtrTextMonarchLanguage,
@@ -232,6 +233,8 @@ const props = withDefaults(
     chapterMinCharCount?: number;
     /** Markdown 只读模式：标题行展示时剥离 ATX `#`（不影响章节检测用的内存标题） */
     fileIsMarkdown?: boolean;
+    /** 全屏阅读：只读时滚动条 `auto` 淡出；窗口模式仍常显 */
+    readerFullscreen?: boolean;
   }>(),
   {
     monacoCustomHighlight: defaultMonacoCustomHighlight,
@@ -257,6 +260,7 @@ const props = withDefaults(
     readerEditRestoreAnchor: null,
     physicalReaderPath: null,
     chapterMinCharCount: defaultChapterMinCharCount,
+    readerFullscreen: false,
   },
 );
 
@@ -317,6 +321,7 @@ function applyReaderMonacoModeOptions(editMode: boolean) {
       editMode,
       props.readerEditShowLineNumbers,
       props.readerEditMinimap,
+      props.readerFullscreen,
     ),
   );
 }
@@ -800,10 +805,14 @@ watch(
       props.readerEditShowLineNumbers,
       props.readerEditMinimap,
       props.readerEditMode,
+      props.readerFullscreen,
     ] as const,
   () => {
     if (!editor.value) return;
     applyReaderMonacoModeOptions(Boolean(props.readerEditMode));
+    void nextTick(() => {
+      editor.value?.layout();
+    });
     syncMinimapCursorLineDecoration();
     syncChapterMinimapSectionHeaderDecorations();
   },
@@ -1278,6 +1287,30 @@ function setTheme(themeName: string) {
   } else {
     monaco.editor.setTheme("vs-dark");
   }
+  forceOverviewRulerCanvasRepaint();
+}
+
+/**
+ * setTheme 后概览尺常走 Maybe 并跳过 Canvas border；通过 overviewRulerBorder 关→开
+ * 触发 onConfigurationChanged → Needed，完整重绘左边线。
+ */
+function forceOverviewRulerCanvasRepaint() {
+  const ed = editor.value;
+  if (!ed) return;
+  const wantBorder = buildReaderOverviewRulerBorder(
+    Boolean(props.readerEditMode),
+    props.readerFullscreen,
+  );
+  void nextTick(() => {
+    ed.updateOptions({ overviewRulerBorder: false });
+    if (!wantBorder) return;
+    requestAnimationFrame(() => {
+      ed.updateOptions({
+        overviewRulerBorder: true,
+      });
+      ed.layout();
+    });
+  });
 }
 
 function setFontSize(fontSize: number) {
@@ -2238,6 +2271,7 @@ onMounted(() => {
       );
     });
 
+    applyReaderMonacoModeOptions(Boolean(props.readerEditMode));
     syncStickyScrollToStreamState();
     syncMinimapCursorLineDecoration();
     syncChapterMinimapSectionHeaderDecorations();
@@ -2338,7 +2372,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="content" :class="{ 'content--readerEdit': readerEditMode }">
+  <main
+    class="content"
+    :class="{
+      'content--readerEdit': readerEditMode,
+      'content--readerEditMinimap': readerEditMode && readerEditMinimap,
+    }"
+  >
     <div class="editorShell">
       <div ref="editorEl" class="editorHost"></div>
       <div

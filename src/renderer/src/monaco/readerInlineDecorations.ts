@@ -7,6 +7,9 @@ import {
 
 const EDITOR_BACKGROUND_TRANSPARENT = "#00000000";
 
+/** 与 VS Code editorOverviewRuler.border 默认一致 */
+const READER_OVERVIEW_RULER_BORDER = "#7f7f7f4d";
+
 function hexForThemeRule(hexWithHash: string): string {
   return hexWithHash.replace(/^#/, "");
 }
@@ -76,8 +79,7 @@ function readerChromeThemeColors(
     "scrollbar.background": surfaceBg,
     /** 概览尺 Canvas 透明底，仅绘制光标/装饰标记 */
     "editorOverviewRuler.background": EDITOR_BACKGROUND_TRANSPARENT,
-    /** 与 VS Code 默认一致：半透明灰，避免用 app --border 显得过粗 */
-    "editorOverviewRuler.border": "#7f7f7f4d",
+    "editorOverviewRuler.border": READER_OVERVIEW_RULER_BORDER,
     ...readerEditorHighlightColors(variant),
   };
   if (variant === "dark") {
@@ -95,7 +97,7 @@ function readerChromeThemeColors(
   }
   return {
     ...base,
-      "scrollbar.shadow": "#DDDDDD",
+    "scrollbar.shadow": "#DDDDDD",
     "scrollbarSlider.background": hex8("#646464", 0.4),
     "scrollbarSlider.hoverBackground": hex8("#4a4a4a", 0.55),
     "scrollbarSlider.activeBackground": hex8("#383838", 0.7),

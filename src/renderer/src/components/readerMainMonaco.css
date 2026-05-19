@@ -108,11 +108,18 @@
 }
 
 /*
- * 小地图左侧内阴影：沿用 Monaco 的 .minimap-shadow-visible 子元素（与 VS Code 相同公式）。
+ * Monaco 在 minimap.enabled:false 时仍保留 .minimap 节点；只读或未开编辑小地图时整节点隐藏。
+ */
+.content:not(.content--readerEditMinimap) .monaco-editor .minimap {
+  display: none !important;
+}
+
+/*
+ * 编辑且开启小地图：左侧内阴影（与 VS Code 相同公式）。
  * wordWrap 下常把 shadow 标为 hidden，此处强制保留可见。
  */
-.monaco-editor .minimap .minimap-shadow-visible,
-.monaco-editor .minimap .minimap-shadow-hidden {
+.content--readerEditMinimap .monaco-editor .minimap .minimap-shadow-visible,
+.content--readerEditMinimap .monaco-editor .minimap .minimap-shadow-hidden {
   position: absolute;
   left: -6px;
   width: 6px;

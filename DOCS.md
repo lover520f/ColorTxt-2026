@@ -380,7 +380,7 @@ src/
 ###### `monaco/`
 
 - **`chapterStickyScroll.ts`**：注册折叠区与文档符号以驱动黏性章节大纲；禁用黏性条点击跳转。
-- **`readerEditorOptions.ts`**：阅读器 `create` / `updateOptions` 的选项构建（换行、只读/编辑 chrome、小地图、垂直滚动条常显、行号、stickyScroll 等）。
+- **`readerEditorOptions.ts`**：阅读器 `create` / `updateOptions` 的选项构建（换行、只读/编辑 chrome、小地图、行号、stickyScroll 等）；垂直滚动条：**窗口只读 / 任意编辑** 为 `visible`（常显），**全屏只读** 为 `auto`（失焦淡出）。
 - **`readerInlineDecorations.ts`**：章节标题行内装饰；Monaco 主题 chrome（小地图/滚动条/选区/当前行）；**`buildChapterMinimapSectionHeaderDecorations`**（编辑态小地图节标题）；合并 `readerPalette` 与 **`highlightColors`** 生成 Monarch token 规则；自定义高亮词开启时并入 `txtrHighlightMonarch` 生成的规则。
 - **`readerMainMonaco.css`**（由 `ReaderMain` 引入）：小地图左侧阴影、滚动条轨道与滑块、概览尺层级（光标标记不被轨道遮挡）；全屏时小地图/滚动条/概览尺 `position: fixed` 贴视口右缘（见 **`appShell.css`**）。
 - **`readerImageViewZones.ts`**：插图行 `<<IMG:…>>` 的 ViewZone 与内嵌展示；返回删行前行号供流管道同步映射；与 `colortxt://` 本地资源协议衔接。

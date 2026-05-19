@@ -136,11 +136,18 @@ export function useTxtStreamPipeline(deps: {
     deps.totalCharCount.value = text.length;
 
     if (!deps.readerEditMode.value) {
+      if (text.length === 0) {
+        lineCount = 0;
+        deps.totalLineCount.value = 0;
+        return;
+      }
       if (deps.compressBlankLines.value) {
         lineCount = filteredDisplayToPhysicalLine.length;
       } else {
         lineCount =
-          reader?.getModelLineCount?.() ?? physicalLineContents.length;
+          filteredDisplayToPhysicalLine.length > 0
+            ? filteredDisplayToPhysicalLine.length
+            : physicalLineContents.length;
       }
       deps.totalLineCount.value = lineCount;
       return;

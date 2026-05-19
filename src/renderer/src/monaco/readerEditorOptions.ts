@@ -26,10 +26,41 @@ export const READER_EDITOR_DEFAULT_FONT_FAMILY = getPresetCssStack("kinghwa");
 
 export const READER_EDITOR_PADDING = { top: 10, bottom: 10 } as const;
 
-/** 垂直滚动条始终显示滑块（Monaco 默认 `auto` 会在失焦后淡出） */
-const READER_SCROLLBAR_VERTICAL_ALWAYS_VISIBLE = {
+/** 垂直滚动条常显（Monaco 默认 `auto` 会在失焦后淡出） */
+const READER_SCROLLBAR_VERTICAL_VISIBLE = {
   vertical: "visible" as const,
 };
+
+/**
+ * 全屏只读：`auto` 失焦淡出；窗口只读与任意编辑：`visible` 常显。
+ */
+export function buildReaderVerticalScrollbarVisibility(
+  editMode: boolean,
+  fullscreen: boolean,
+): "auto" | "visible" {
+  if (!editMode && fullscreen) return "auto";
+  return "visible";
+}
+
+/** 全屏只读不绘概览尺左边线；其余由 Monaco Canvas 绘制（细线） */
+export function buildReaderOverviewRulerBorder(
+  editMode: boolean,
+  fullscreen: boolean,
+): boolean {
+  if (!editMode && fullscreen) return false;
+  return true;
+}
+
+function withReaderVerticalScrollbar(
+  scrollbar: ReaderMonacoConfigurableOptions["scrollbar"] | undefined,
+  editMode: boolean,
+  fullscreen: boolean,
+): NonNullable<ReaderMonacoConfigurableOptions["scrollbar"]> {
+  return {
+    ...scrollbar,
+    vertical: buildReaderVerticalScrollbarVisibility(editMode, fullscreen),
+  };
+}
 
 export function readerEditorLineHeight(
   fontSize: number,
@@ -115,7 +146,6 @@ export function buildReaderEditorReadOnlyModeChromeOptions(): ReaderMonacoConfig
     showFoldingControls: "never",
     scrollbar: {
       horizontal: "hidden",
-      ...READER_SCROLLBAR_VERTICAL_ALWAYS_VISIBLE,
     },
     guides: {
       indentation: false,
@@ -150,7 +180,7 @@ export function buildReaderEditorEditModeNativeChromeOptions(): ReaderMonacoConf
     scrollbar: {
       horizontal: "auto",
       useShadows: true,
-      ...READER_SCROLLBAR_VERTICAL_ALWAYS_VISIBLE,
+      ...READER_SCROLLBAR_VERTICAL_VISIBLE,
     },
     guides: {
       indentation: true,
@@ -250,6 +280,7 @@ export function buildReaderMonacoModeEditorOptions(
   editMode: boolean,
   editShowLineNumbers = false,
   editMinimap = false,
+  fullscreen = false,
 ): ReaderMonacoConfigurableOptions {
   const lineNumberOptions = buildReaderEditModeLineNumberOptions(
     editMode && editShowLineNumbers,
@@ -258,18 +289,24 @@ export function buildReaderMonacoModeEditorOptions(
     editMode && editMinimap,
   );
   if (editMode) {
+    const mode = buildReaderEditorEditModeNativeChromeOptions();
     return {
-      ...buildReaderEditorEditModeNativeChromeOptions(),
+      ...mode,
       ...buildReaderEditorEditableInteractionOptions(),
       ...lineNumberOptions,
       ...minimapOptions,
+      scrollbar: withReaderVerticalScrollbar(mode.scrollbar, true, fullscreen),
+      overviewRulerBorder: buildReaderOverviewRulerBorder(true, fullscreen),
     };
   }
+  const mode = buildReaderEditorReadOnlyModeChromeOptions();
   return {
-    ...buildReaderEditorReadOnlyModeChromeOptions(),
+    ...mode,
     ...buildReaderEditorReadOnlyInteractionOptions(),
     ...lineNumberOptions,
     ...minimapOptions,
+    scrollbar: withReaderVerticalScrollbar(mode.scrollbar, false, fullscreen),
+    overviewRulerBorder: buildReaderOverviewRulerBorder(false, fullscreen),
   };
 }
 

@@ -111,7 +111,8 @@
   --txtr-fullscreen-scrollbar-size: 14px;
 }
 
-.app.fullscreen :deep(.readerPane .monaco-editor .minimap) {
+/* readerPane 与 content--readerEditMinimap 同在 ReaderMain 根 <main>，须用复合选择器 */
+.app.fullscreen :deep(.readerPane.content--readerEditMinimap .monaco-editor .minimap) {
   position: fixed !important;
   /* Monaco 用 inline left（minimapLeft）定位；fixed 后须清掉，否则会落在居中正文中间 */
   left: auto !important;
