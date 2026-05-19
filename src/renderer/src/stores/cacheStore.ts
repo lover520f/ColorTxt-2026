@@ -61,6 +61,10 @@ export type PersistedSettingsData = {
   monacoSmoothScrolling?: boolean;
   /** 编辑模式下是否显示行号 */
   readerEditShowLineNumbers?: boolean;
+  /** 编辑模式下是否显示小地图 */
+  readerEditMinimap?: boolean;
+  /** 编辑模式下内容变更时是否自动刷新侧栏章节列表（超过行数上限时需手动刷新） */
+  editAutoRefreshChapterList?: boolean;
   /** 全屏时阅读区宽度（百分比） */
   fullscreenReaderWidthPercent?: number;
   /** 用户自定义快捷键（动作ID -> accelerator） */
@@ -230,6 +234,12 @@ export function loadPersistedSettingsData(
   }
   if (typeof obj.readerEditShowLineNumbers === "boolean") {
     data.readerEditShowLineNumbers = obj.readerEditShowLineNumbers;
+  }
+  if (typeof obj.readerEditMinimap === "boolean") {
+    data.readerEditMinimap = obj.readerEditMinimap;
+  }
+  if (typeof obj.editAutoRefreshChapterList === "boolean") {
+    data.editAutoRefreshChapterList = obj.editAutoRefreshChapterList;
   }
   if (
     typeof obj.fullscreenReaderWidthPercent === "number" &&

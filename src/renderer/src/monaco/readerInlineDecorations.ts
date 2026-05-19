@@ -11,11 +11,105 @@ function hexForThemeRule(hexWithHash: string): string {
   return hexWithHash.replace(/^#/, "");
 }
 
-function readerThemeEditorColors(palette: ReaderSurfacePalette) {
+function parseHex6(hex: string): [number, number, number] {
+  const s = hex.replace(/^#/, "");
+  if (s.length !== 6) return [0, 0, 0];
+  return [
+    parseInt(s.slice(0, 2), 16),
+    parseInt(s.slice(2, 4), 16),
+    parseInt(s.slice(4, 6), 16),
+  ];
+}
+
+/** Monaco 主题色 #RRGGBBAA，用于半透明滚动条滑块（可透出概览尺标记） */
+function hex8(rgb: string, alpha: number): string {
+  const [r, g, b] = parseHex6(rgb);
+  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}${a.toString(16).padStart(2, "0")}`;
+}
+
+/** 主编辑器 / 小地图高亮：当前行（灰）与选区（蓝）分离 */
+function readerEditorHighlightColors(
+  variant: "light" | "dark",
+): Pick<
+  Record<string, string>,
+  | "editor.lineHighlightBackground"
+  | "editor.selectionBackground"
+  | "minimap.selectionHighlight"
+  | "minimap.selectionOccurrenceHighlight"
+> {
+  if (variant === "dark") {
+    return {
+      "editor.lineHighlightBackground": hex8("#ffffff", 0.07),
+      "editor.selectionBackground": hex8("#264F78", 0.45),
+      /** 小地图选区：Monaco 行高亮会再叠 50% 透明，字符级选区为实色 */
+      "minimap.selectionHighlight": "#264F78",
+      "minimap.selectionOccurrenceHighlight": hex8("#676767", 0.55),
+    };
+  }
   return {
+    "editor.lineHighlightBackground": hex8("#000000", 0.05),
+    "editor.selectionBackground": hex8("#ADD6FF", 0.55),
+    "minimap.selectionHighlight": "#ADD6FF",
+    "minimap.selectionOccurrenceHighlight": hex8("#c9c9c9", 0.55),
+  };
+}
+
+/** 小地图当前行（仅光标、无选区）：灰底 inline 装饰，与选区蓝色区分 */
+export function getReaderMinimapCursorLineDecorColor(
+  themeName: string,
+): string {
+  return themeName === "vs" ? hex8("#000000", 0.12) : hex8("#ffffff", 0.14);
+}
+
+/** 滚动条滑块 / 小地图视口框：轨道透明；滑块半透明（同 VS Code） */
+function readerChromeThemeColors(
+  palette: ReaderSurfacePalette,
+  variant: "light" | "dark",
+): Record<string, string> {
+  const surfaceBg = palette.readerBg;
+  const base = {
     "editor.background": EDITOR_BACKGROUND_TRANSPARENT,
     "editor.foreground": palette.bodyText,
+    "minimap.background": surfaceBg,
+    /** 轨道透明，透出阅读区底色与概览尺上的光标/装饰标记（同 VS Code） */
+    "scrollbar.background": EDITOR_BACKGROUND_TRANSPARENT,
+    /** 概览尺 Canvas 不铺底，仅绘制标记；底色由下方阅读区透出 */
+    "editorOverviewRuler.background": EDITOR_BACKGROUND_TRANSPARENT,
+    /** 与 VS Code 默认一致：半透明灰，避免用 app --border 显得过粗 */
+    "editorOverviewRuler.border": "#7f7f7f4d",
+    ...readerEditorHighlightColors(variant),
   };
+  if (variant === "dark") {
+    return {
+      ...base,
+      /** Monaco 小地图左侧内阴影（同 VS Code scrollbar.shadow 默认） */
+      "scrollbar.shadow": "#000000",
+      "scrollbarSlider.background": hex8("#bfbfbf", 0.4),
+      "scrollbarSlider.hoverBackground": hex8("#d4d4d4", 0.55),
+      "scrollbarSlider.activeBackground": hex8("#ffffff", 0.65),
+      "minimapSlider.background": "#ffffff40",
+      "minimapSlider.hoverBackground": "#ffffff55",
+      "minimapSlider.activeBackground": "#ffffff66",
+    };
+  }
+  return {
+    ...base,
+      "scrollbar.shadow": "#DDDDDD",
+    "scrollbarSlider.background": hex8("#646464", 0.4),
+    "scrollbarSlider.hoverBackground": hex8("#4a4a4a", 0.55),
+    "scrollbarSlider.activeBackground": hex8("#383838", 0.7),
+    "minimapSlider.background": "#00000045",
+    "minimapSlider.hoverBackground": "#00000058",
+    "minimapSlider.activeBackground": "#0000006a",
+  };
+}
+
+function readerThemeEditorColors(
+  palette: ReaderSurfacePalette,
+  variant: "light" | "dark",
+) {
+  return readerChromeThemeColors(palette, variant);
 }
 
 /** 与 txtrTextMonarch 一致：quoteInner / bracketInner 为兜底；引号内先自定义高亮再括号开符，故高亮词优先于 quoteInner */
@@ -70,13 +164,13 @@ export function ensureReaderSyntaxThemes(
     base: "vs-dark",
     inherit: true,
     rules: buildTxtrTokenRules(darkPalette, highlightColors),
-    colors: readerThemeEditorColors(darkPalette),
+    colors: readerThemeEditorColors(darkPalette, "dark"),
   });
   monacoApi.editor.defineTheme("vs", {
     base: "vs",
     inherit: true,
     rules: buildTxtrTokenRules(lightPalette, highlightColors),
-    colors: readerThemeEditorColors(lightPalette),
+    colors: readerThemeEditorColors(lightPalette, "light"),
   });
 }
 
@@ -104,13 +198,13 @@ export function setReaderSyntaxHighlightEnabled(
     base: "vs-dark",
     inherit: true,
     rules: [],
-    colors: readerThemeEditorColors(darkPalette),
+    colors: readerThemeEditorColors(darkPalette, "dark"),
   });
   monacoApi.editor.defineTheme("vs", {
     base: "vs",
     inherit: true,
     rules: [],
-    colors: readerThemeEditorColors(lightPalette),
+    colors: readerThemeEditorColors(lightPalette, "light"),
   });
 }
 

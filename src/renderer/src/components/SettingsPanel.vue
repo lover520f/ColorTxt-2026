@@ -12,6 +12,7 @@ import AppModal from "./AppModal.vue";
 import SettingsTabBar, { type SettingsTabId } from "./SettingsTabBar.vue";
 import SettingsGeneralPanel from "./SettingsGeneralPanel.vue";
 import SettingsReadingPanel from "./SettingsReadingPanel.vue";
+import SettingsEditPanel from "./SettingsEditPanel.vue";
 import SettingsAIPanel from "./SettingsAIPanel.vue";
 import SettingsVectorModelPanel from "./SettingsVectorModelPanel.vue";
 import SettingsTxt2ImgPanel from "./SettingsTxt2ImgPanel.vue";
@@ -24,6 +25,8 @@ import {
   defaultFullscreenReaderWidthPercent,
   defaultMonacoSmoothScrolling,
   defaultReaderEditShowLineNumbers,
+  defaultReaderEditMinimap,
+  defaultEditAutoRefreshChapterList,
   defaultReaderFontSize,
   defaultReaderLineHeightMultiple,
   defaultRecentFilesHistoryLimit,
@@ -56,6 +59,8 @@ export type SettingsApplyPayload = {
   fullscreenReaderWidthPercent: number;
   monacoSmoothScrolling: boolean;
   readerEditShowLineNumbers: boolean;
+  readerEditMinimap: boolean;
+  editAutoRefreshChapterList: boolean;
   fontSize: number;
   lineHeightMultiple: number;
   compressBlankKeepOneBlank: boolean;
@@ -80,6 +85,8 @@ const props = defineProps<{
   readerLineHeightMultiple: number;
   monacoSmoothScrolling: boolean;
   readerEditShowLineNumbers: boolean;
+  readerEditMinimap: boolean;
+  editAutoRefreshChapterList: boolean;
   compressBlankKeepOneBlank: boolean;
   monacoCustomHighlight: boolean;
   txtrDelimitedMatchCrossLine: boolean;
@@ -117,6 +124,8 @@ const draftFontSize = ref(14);
 const draftLineHeightMultiple = ref(1.5);
 const draftMonacoSmoothScrolling = ref(true);
 const draftReaderEditShowLineNumbers = ref(defaultReaderEditShowLineNumbers);
+const draftReaderEditMinimap = ref(defaultReaderEditMinimap);
+const draftEditAutoRefreshChapterList = ref(defaultEditAutoRefreshChapterList);
 const draftCompressBlankKeepOneBlank = ref(false);
 const draftTxtrDelimitedMatchCrossLine = ref(
   defaultTxtrDelimitedMatchCrossLine,
@@ -152,6 +161,8 @@ function syncDraftFromProps() {
   );
   draftMonacoSmoothScrolling.value = props.monacoSmoothScrolling;
   draftReaderEditShowLineNumbers.value = props.readerEditShowLineNumbers;
+  draftReaderEditMinimap.value = props.readerEditMinimap;
+  draftEditAutoRefreshChapterList.value = props.editAutoRefreshChapterList;
   draftCompressBlankKeepOneBlank.value = props.compressBlankKeepOneBlank;
   draftTxtrDelimitedMatchCrossLine.value = props.txtrDelimitedMatchCrossLine;
   draftEbookConvertOutputDir.value = props.ebookConvertOutputDir;
@@ -228,10 +239,15 @@ function resetReadingDraft() {
     defaultReaderLineHeightMultiple,
   );
   draftMonacoSmoothScrolling.value = defaultMonacoSmoothScrolling;
-  draftReaderEditShowLineNumbers.value = defaultReaderEditShowLineNumbers;
   draftCompressBlankKeepOneBlank.value = defaultCompressBlankKeepOneBlank;
   draftTxtrDelimitedMatchCrossLine.value = defaultTxtrDelimitedMatchCrossLine;
   draftFullscreenReaderWidthPercent.value = defaultFullscreenReaderWidthPercent;
+}
+
+function resetEditDraft() {
+  draftReaderEditShowLineNumbers.value = defaultReaderEditShowLineNumbers;
+  draftReaderEditMinimap.value = defaultReaderEditMinimap;
+  draftEditAutoRefreshChapterList.value = defaultEditAutoRefreshChapterList;
 }
 
 function resetAiDraft() {
@@ -278,6 +294,7 @@ function resetVoiceReadDraft() {
 function onResetCurrentTab() {
   if (activeTab.value === "general") resetGeneralDraft();
   else if (activeTab.value === "reading") resetReadingDraft();
+  else if (activeTab.value === "edit") resetEditDraft();
   else if (activeTab.value === "ai") resetAiDraft();
   else if (activeTab.value === "vectorModel") resetVectorModelDraft();
   else if (activeTab.value === "txt2img") resetTxt2ImgDraft();
@@ -328,6 +345,8 @@ async function onConfirm() {
     fullscreenReaderWidthPercent: draftFullscreenReaderWidthPercent.value,
     monacoSmoothScrolling: draftMonacoSmoothScrolling.value,
     readerEditShowLineNumbers: draftReaderEditShowLineNumbers.value,
+    readerEditMinimap: draftReaderEditMinimap.value,
+    editAutoRefreshChapterList: draftEditAutoRefreshChapterList.value,
     fontSize: draftFontSize.value,
     lineHeightMultiple: draftLineHeightMultiple.value,
     compressBlankKeepOneBlank: draftCompressBlankKeepOneBlank.value,
@@ -409,9 +428,6 @@ async function onClearCache() {
               v-model:draft-font-size="draftFontSize"
               v-model:draft-line-height-multiple="draftLineHeightMultiple"
               v-model:draft-monaco-smooth-scrolling="draftMonacoSmoothScrolling"
-              v-model:draft-reader-edit-show-line-numbers="
-                draftReaderEditShowLineNumbers
-              "
               v-model:draft-compress-blank-keep-one-blank="
                 draftCompressBlankKeepOneBlank
               "
@@ -422,6 +438,17 @@ async function onClearCache() {
                 draftFullscreenReaderWidthPercent
               "
               :monaco-custom-highlight="monacoCustomHighlight"
+            />
+
+            <SettingsEditPanel
+              v-show="activeTab === 'edit'"
+              v-model:draft-reader-edit-show-line-numbers="
+                draftReaderEditShowLineNumbers
+              "
+              v-model:draft-reader-edit-minimap="draftReaderEditMinimap"
+              v-model:draft-edit-auto-refresh-chapter-list="
+                draftEditAutoRefreshChapterList
+              "
             />
 
             <SettingsVoiceReadPanel

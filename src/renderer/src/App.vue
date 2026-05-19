@@ -71,6 +71,9 @@ import {
   defaultMonacoCustomHighlight,
   defaultMonacoSmoothScrolling,
   defaultReaderEditShowLineNumbers,
+  defaultReaderEditMinimap,
+  defaultEditAutoRefreshChapterList,
+  editAutoRefreshChapterListMaxLines,
   defaultReaderIdleHint,
   defaultReaderOpenHint,
   defaultReaderFontSize,
@@ -332,6 +335,7 @@ const searchWholeWord = ref(false);
 const searchUseRegex = ref(false);
 const SEARCH_RESULT_LIMIT = 20000;
 const SEARCH_DEBOUNCE_MS = 180;
+const CHAPTER_REFRESH_DEBOUNCE_MS = 400;
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let searchRunToken = 0;
 const txtFiles = ref<TxtFileItem[]>([]);
@@ -414,6 +418,8 @@ const monacoAdvancedWrapping = ref(defaultMonacoAdvancedWrapping);
 /** Monaco 阅读区平滑滚动（设置可关） */
 const monacoSmoothScrolling = ref(defaultMonacoSmoothScrolling);
 const readerEditShowLineNumbers = ref(defaultReaderEditShowLineNumbers);
+const readerEditMinimap = ref(defaultReaderEditMinimap);
+const editAutoRefreshChapterList = ref(defaultEditAutoRefreshChapterList);
 /** 全屏时阅读区域宽度（百分比） */
 const fullscreenReaderWidthPercent = ref(defaultFullscreenReaderWidthPercent);
 /** 电子书转换缓存目录；默认 userData/ConvertedTxt；设置里清空则为与源文件同目录 */
@@ -756,6 +762,8 @@ const persistence = useAppPersistence({
   monacoAdvancedWrapping,
   monacoSmoothScrolling,
   readerEditShowLineNumbers,
+  readerEditMinimap,
+  editAutoRefreshChapterList,
   fullscreenReaderWidthPercent,
   fileMetaRecords,
   shortcutBindings,
@@ -1293,6 +1301,14 @@ const canEnterReaderEditMode = computed(
     !ebookParsing.value,
 );
 
+/** 编辑态侧栏是否显示「刷新章节」（自动刷新不可用或已关闭时需手动刷新） */
+const showEditChapterRefreshButton = computed(
+  () =>
+    readerEditMode.value &&
+    (!editAutoRefreshChapterList.value ||
+      totalLineCount.value > editAutoRefreshChapterListMaxLines),
+);
+
 function applyChaptersFromReaderPlainText() {
   if (!readerEditMode.value) return;
   chapterNav.refreshChapterListFromReader();
@@ -1393,11 +1409,35 @@ function onReaderEditLoaded(payload: { encoding: string }) {
   }
 }
 
+let chapterRefreshDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearChapterRefreshDebounce() {
+  if (chapterRefreshDebounceTimer) {
+    clearTimeout(chapterRefreshDebounceTimer);
+    chapterRefreshDebounceTimer = null;
+  }
+}
+
+function scheduleChapterListRefreshFromEdit() {
+  clearChapterRefreshDebounce();
+  if (!readerEditMode.value) return;
+  if (!editAutoRefreshChapterList.value) return;
+  if (totalLineCount.value > editAutoRefreshChapterListMaxLines) return;
+
+  chapterRefreshDebounceTimer = setTimeout(() => {
+    chapterRefreshDebounceTimer = null;
+    if (!readerEditMode.value) return;
+    if (!editAutoRefreshChapterList.value) return;
+    if (totalLineCount.value > editAutoRefreshChapterListMaxLines) return;
+    void withChapterListScrollSuppressed(async () => {
+      chapterNav.refreshChapterListFromReader();
+    });
+  }, CHAPTER_REFRESH_DEBOUNCE_MS);
+}
+
 function onReaderEditContentChange() {
   stream.resyncMirrorFromReader();
-  if (readerEditMode.value && currentFileIsMarkdown.value) {
-    chapterNav.refreshChapterListFromReader();
-  }
+  scheduleChapterListRefreshFromEdit();
   if (readerEditMode.value && searchQuery.value.trim()) {
     scheduleSidebarSearch();
   }
@@ -1793,6 +1833,7 @@ watch(totalLineCount, () => {
 });
 
 watch(readerEditMode, (edit) => {
+  if (!edit) clearChapterRefreshDebounce();
   if (!searchQuery.value.trim()) return;
   // 进入编辑：等磁盘原文写入 Monaco（readerEditLoaded）后再搜，避免只读展示文与列映射不一致
   if (edit) return;
@@ -1844,6 +1885,7 @@ onBeforeUnmount(() => {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
   }
+  clearChapterRefreshDebounce();
   activeSearchResult.value = null;
   readerRef.value?.clearInlineSearchState?.();
   hasInlineSearchHighlight.value = false;
@@ -1854,6 +1896,8 @@ async function applySettings(payload: SettingsApplyPayload) {
   const prevChapterMinCharCount = chapterMinCharCount.value;
   monacoSmoothScrolling.value = payload.monacoSmoothScrolling;
   readerEditShowLineNumbers.value = payload.readerEditShowLineNumbers;
+  readerEditMinimap.value = payload.readerEditMinimap;
+  editAutoRefreshChapterList.value = payload.editAutoRefreshChapterList;
   compressBlankKeepOneBlank.value = payload.compressBlankKeepOneBlank;
   txtrDelimitedMatchCrossLine.value = payload.txtrDelimitedMatchCrossLine;
   restoreSessionOnStartup.value = payload.restoreSessionOnStartup;
@@ -2226,7 +2270,7 @@ useAppShellThemeWatch({
           :chapters="chapters"
           :active-chapter-idx="activeChapterIdx"
           :format-char-count="formatCharCount"
-          :reader-edit-mode="readerEditMode"
+          :show-edit-chapter-refresh-button="showEditChapterRefreshButton"
           @pick-directory="pickTxtDirectory"
           @import-dropped-paths="onImportDroppedPathsFromList"
           @open-file="openFileFromSidebar"
@@ -2317,6 +2361,7 @@ useAppShellThemeWatch({
           :monaco-advanced-wrapping="monacoAdvancedWrapping"
           :monaco-smooth-scrolling="monacoSmoothScrolling"
           :reader-edit-show-line-numbers="readerEditShowLineNumbers"
+          :reader-edit-minimap="readerEditMinimap"
           :stream-loading="loading"
           :reader-surface-light="readerSurfaceLight"
           :reader-surface-dark="readerSurfaceDark"
@@ -2448,6 +2493,8 @@ useAppShellThemeWatch({
       :compress-blank-keep-one-blank="compressBlankKeepOneBlank"
       :monaco-smooth-scrolling="monacoSmoothScrolling"
       :reader-edit-show-line-numbers="readerEditShowLineNumbers"
+      :reader-edit-minimap="readerEditMinimap"
+      :edit-auto-refresh-chapter-list="editAutoRefreshChapterList"
       :monaco-custom-highlight="monacoCustomHighlight"
       :txtr-delimited-match-cross-line="txtrDelimitedMatchCrossLine"
       :chapter-rules="chapterRuleState.rules"

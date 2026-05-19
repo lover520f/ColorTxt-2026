@@ -150,6 +150,8 @@ export function useAppPersistence(deps: {
   monacoAdvancedWrapping: Ref<boolean>;
   monacoSmoothScrolling: Ref<boolean>;
   readerEditShowLineNumbers: Ref<boolean>;
+  readerEditMinimap: Ref<boolean>;
+  editAutoRefreshChapterList: Ref<boolean>;
   fullscreenReaderWidthPercent: Ref<number>;
   fileMetaRecords: Ref<FileMetaRecord[]>;
   shortcutBindings: Ref<ShortcutBindingMap>;
@@ -697,6 +699,12 @@ export function useAppPersistence(deps: {
     if (typeof data.readerEditShowLineNumbers === "boolean") {
       deps.readerEditShowLineNumbers.value = data.readerEditShowLineNumbers;
     }
+    if (typeof data.readerEditMinimap === "boolean") {
+      deps.readerEditMinimap.value = data.readerEditMinimap;
+    }
+    if (typeof data.editAutoRefreshChapterList === "boolean") {
+      deps.editAutoRefreshChapterList.value = data.editAutoRefreshChapterList;
+    }
     if (
       typeof data.fullscreenReaderWidthPercent === "number" &&
       Number.isFinite(data.fullscreenReaderWidthPercent)
@@ -825,6 +833,8 @@ export function useAppPersistence(deps: {
       monacoAdvancedWrapping: deps.monacoAdvancedWrapping.value,
       monacoSmoothScrolling: deps.monacoSmoothScrolling.value,
       readerEditShowLineNumbers: deps.readerEditShowLineNumbers.value,
+      readerEditMinimap: deps.readerEditMinimap.value,
+      editAutoRefreshChapterList: deps.editAutoRefreshChapterList.value,
       fullscreenReaderWidthPercent: deps.fullscreenReaderWidthPercent.value,
       shortcutBindings: deps.shortcutBindings.value,
       readerPaletteOverridesLight:

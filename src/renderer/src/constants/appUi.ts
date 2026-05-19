@@ -108,6 +108,12 @@ export const defaultMonacoAdvancedWrapping = false;
 export const defaultMonacoSmoothScrolling = true;
 /** 编辑模式下 Monaco 是否显示行号（只读模式始终关闭） */
 export const defaultReaderEditShowLineNumbers = false;
+/** 编辑模式下 Monaco 是否显示小地图（只读模式始终关闭） */
+export const defaultReaderEditMinimap = false;
+/** 编辑模式下内容变更时自动刷新侧栏章节列表（超过行数上限时需手动刷新） */
+export const defaultEditAutoRefreshChapterList = true;
+/** 自动刷新章节列表的最大行数（含） */
+export const editAutoRefreshChapterListMaxLines = 300_000;
 
 /** 默认「最近打开」条数上限（可被设置覆盖） */
 export const defaultRecentFilesHistoryLimit = 20;

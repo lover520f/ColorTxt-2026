@@ -16,7 +16,6 @@ const props = defineProps<{
   draftFontSize: number;
   draftLineHeightMultiple: number;
   draftMonacoSmoothScrolling: boolean;
-  draftReaderEditShowLineNumbers: boolean;
   draftCompressBlankKeepOneBlank: boolean;
   draftTxtrDelimitedMatchCrossLine: boolean;
   draftFullscreenReaderWidthPercent: number;
@@ -27,7 +26,6 @@ defineEmits<{
   "update:draftFontSize": [v: number];
   "update:draftLineHeightMultiple": [v: number];
   "update:draftMonacoSmoothScrolling": [v: boolean];
-  "update:draftReaderEditShowLineNumbers": [v: boolean];
   "update:draftCompressBlankKeepOneBlank": [v: boolean];
   "update:draftTxtrDelimitedMatchCrossLine": [v: boolean];
   "update:draftFullscreenReaderWidthPercent": [v: number];
@@ -117,22 +115,6 @@ const draftMaxLineHeightMultiple = computed(() =>
         />
       </div>
       <p class="settingsHint">关闭后，阅读区滚动不再使用平滑动画。</p>
-    </div>
-
-    <div class="settingsRow">
-      <div class="settingsRowMain">
-        <span class="settingsLabel">编辑模式下显示行号</span>
-        <SwitchToggle
-          :model-value="draftReaderEditShowLineNumbers"
-          aria-label="编辑模式下显示行号"
-          @update:model-value="
-            $emit('update:draftReaderEditShowLineNumbers', $event)
-          "
-        />
-      </div>
-      <p class="settingsHint">
-        仅在「编辑模式」下生效，开启后编辑器会显示行号。
-      </p>
     </div>
 
     <div class="settingsRow">

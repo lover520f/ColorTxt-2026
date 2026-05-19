@@ -17,6 +17,7 @@ import {
 } from "../monaco/chapterStickyScroll";
 import {
   buildChapterTitleDecorations,
+  getReaderMinimapCursorLineDecorColor,
   setReaderSyntaxHighlightEnabled,
 } from "../monaco/readerInlineDecorations";
 import { useReaderInlineSearch } from "../composables/useReaderInlineSearch";
@@ -74,6 +75,7 @@ import {
   defaultMonacoCustomHighlight,
   defaultMonacoSmoothScrolling,
   defaultReaderEditShowLineNumbers,
+  defaultReaderEditMinimap,
   defaultTxtrDelimitedMatchCrossLine,
   defaultReaderLineHeightMultiple,
   defaultReaderPaletteDark,
@@ -111,6 +113,9 @@ const chapterTitleDecorationsCollection =
 const inlineSearchDecorationsCollection =
   shallowRef<monaco.editor.IEditorDecorationsCollection | null>(null);
 const voiceReadDecorationsCollection =
+  shallowRef<monaco.editor.IEditorDecorationsCollection | null>(null);
+/** 编辑态小地图：无选区时为当前行铺灰底（与蓝色选区区分） */
+const minimapCursorLineDecorationsCollection =
   shallowRef<monaco.editor.IEditorDecorationsCollection | null>(null);
 /** 朗读高亮行（供上一行/下一行以「正在播的行」为锚点） */
 const voiceReadHighlightLine = ref<number | null>(null);
@@ -184,6 +189,7 @@ const props = withDefaults(
     monacoSmoothScrolling?: boolean;
     /** 编辑模式下是否显示行号（只读模式始终关闭） */
     readerEditShowLineNumbers?: boolean;
+    readerEditMinimap?: boolean;
     /** 主进程流式读盘期间为 true；关闭 sticky 避免旧文件黏性标题在加载全程残留 */
     streamLoading?: boolean;
     /** 合并用户覆盖后的阅读器表面色（亮色 / 暗色） */
@@ -230,6 +236,7 @@ const props = withDefaults(
     monacoAdvancedWrapping: defaultMonacoAdvancedWrapping,
     monacoSmoothScrolling: defaultMonacoSmoothScrolling,
     readerEditShowLineNumbers: defaultReaderEditShowLineNumbers,
+    readerEditMinimap: defaultReaderEditMinimap,
     streamLoading: false,
     readerSurfaceLight: () => ({ ...defaultReaderPaletteLight }),
     readerSurfaceDark: () => ({ ...defaultReaderPaletteDark }),
@@ -302,7 +309,11 @@ function sealReaderEditBaseline() {
 /** 只读 / 编辑：切换 Monaco「阅读优化 chrome」与原生编辑 chrome（字体与配色仍走共享逻辑） */
 function applyReaderMonacoModeOptions(editMode: boolean) {
   editor.value?.updateOptions(
-    buildReaderMonacoModeEditorOptions(editMode, props.readerEditShowLineNumbers),
+    buildReaderMonacoModeEditorOptions(
+      editMode,
+      props.readerEditShowLineNumbers,
+      props.readerEditMinimap,
+    ),
   );
 }
 
@@ -780,10 +791,16 @@ watch(
 );
 
 watch(
-  () => [props.readerEditShowLineNumbers, props.readerEditMode] as const,
+  () =>
+    [
+      props.readerEditShowLineNumbers,
+      props.readerEditMinimap,
+      props.readerEditMode,
+    ] as const,
   () => {
     if (!editor.value) return;
     applyReaderMonacoModeOptions(Boolean(props.readerEditMode));
+    syncMinimapCursorLineDecoration();
   },
 );
 
@@ -1092,6 +1109,7 @@ function clear(opts?: ReaderClearOptions) {
   chapterTitleDecorationsCollection.value?.clear();
   inlineSearch.clearInlineSearchState();
   voiceReadDecorationsCollection.value?.clear();
+  minimapCursorLineDecorationsCollection.value?.clear();
 
   e?.updateOptions({ stickyScroll: { enabled: false } });
 
@@ -1103,6 +1121,8 @@ function clear(opts?: ReaderClearOptions) {
     chapterTitleDecorationsCollection.value = e.createDecorationsCollection();
     inlineSearchDecorationsCollection.value = e.createDecorationsCollection();
     voiceReadDecorationsCollection.value = e.createDecorationsCollection();
+    minimapCursorLineDecorationsCollection.value =
+      e.createDecorationsCollection();
     e.setPosition({ lineNumber: 1, column: 1 });
     e.setScrollTop(0);
     e.layout();
@@ -1199,8 +1219,37 @@ function setChapters(chapters: ChapterStickyLine[]) {
   notifyChapterStickyFoldingRanges?.();
 }
 
+function syncMinimapCursorLineDecoration() {
+  const col = minimapCursorLineDecorationsCollection.value;
+  const e = editor.value;
+  const m = model.value;
+  if (!col || !e || !m) return;
+  if (!props.readerEditMode || !props.readerEditMinimap) {
+    col.clear();
+    return;
+  }
+  const selections = e.getSelections() ?? [];
+  if (selections.some((s) => !s.isEmpty())) {
+    col.clear();
+    return;
+  }
+  const line = Math.max(1, Math.min(m.getLineCount(), e.getPosition()?.lineNumber ?? 1));
+  col.set([
+    {
+      range: new monaco.Range(line, 1, line, 1),
+      options: {
+        minimap: {
+          color: getReaderMinimapCursorLineDecorColor(lastAppThemeName),
+          position: monaco.editor.MinimapPosition.Inline,
+        },
+      },
+    },
+  ]);
+}
+
 function setTheme(themeName: string) {
   lastAppThemeName = themeName;
+  syncMinimapCursorLineDecoration();
   if (themeName === "vs") {
     monaco.editor.setTheme("vs");
   } else if (builtInThemes.has(themeName)) {
@@ -2045,6 +2094,8 @@ onMounted(() => {
     editor.value.createDecorationsCollection();
   voiceReadDecorationsCollection.value =
     editor.value.createDecorationsCollection();
+  minimapCursorLineDecorationsCollection.value =
+    editor.value.createDecorationsCollection();
 
   const e = editor.value;
   if (e) {
@@ -2059,7 +2110,10 @@ onMounted(() => {
       closeHighlightFloatUi();
       emitProbeLine(true);
     });
-    const d2 = e.onDidChangeCursorPosition(() => emitProbeLine(false));
+    const d2 = e.onDidChangeCursorPosition(() => {
+      emitProbeLine(false);
+      syncMinimapCursorLineDecoration();
+    });
     const dSel = e.onDidChangeCursorSelection(() => {
       if (Date.now() < suppressHighlightTipUntilMs) {
         closeHighlightFloatUi();
@@ -2069,6 +2123,7 @@ onMounted(() => {
       if (inlineSearch.hasInlineSearchQuery()) {
         inlineSearch.applyInlineSearchDecorations();
       }
+      syncMinimapCursorLineDecoration();
     });
     const d3 = installReaderScrollKeyHandler(monaco, e, {
       onSpacePageDown: () => {
@@ -2161,6 +2216,7 @@ onMounted(() => {
     });
 
     syncStickyScrollToStreamState();
+    syncMinimapCursorLineDecoration();
   }
 });
 

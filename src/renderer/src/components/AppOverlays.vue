@@ -35,6 +35,8 @@ const props = defineProps<{
   readerLineHeightMultiple: number;
   monacoSmoothScrolling: boolean;
   readerEditShowLineNumbers: boolean;
+  readerEditMinimap: boolean;
+  editAutoRefreshChapterList: boolean;
   compressBlankKeepOneBlank: boolean;
   monacoCustomHighlight: boolean;
   txtrDelimitedMatchCrossLine: boolean;
@@ -183,6 +185,8 @@ onBeforeUnmount(() => {
     :reader-line-height-multiple="readerLineHeightMultiple"
     :monaco-smooth-scrolling="monacoSmoothScrolling"
     :reader-edit-show-line-numbers="readerEditShowLineNumbers"
+    :reader-edit-minimap="readerEditMinimap"
+    :edit-auto-refresh-chapter-list="editAutoRefreshChapterList"
     :compress-blank-keep-one-blank="compressBlankKeepOneBlank"
     :monaco-custom-highlight="monacoCustomHighlight"
     :txtr-delimited-match-cross-line="txtrDelimitedMatchCrossLine"

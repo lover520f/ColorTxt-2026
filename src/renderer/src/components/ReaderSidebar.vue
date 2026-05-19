@@ -118,8 +118,8 @@ const props = withDefaults(
     characterBookStyle?: CharacterBookStylePersisted;
     /** 设置「确定」保存 AI 配置后由 App 递增，用于阅读助手刷新快速提问等 */
     aiAssistantConfigSyncNonce?: number;
-    /** 阅读器编辑模式（章节面板顶栏「刷新章节」图标） */
-    readerEditMode?: boolean;
+    /** 编辑态章节面板是否显示「刷新章节」（仅手动刷新场景） */
+    showEditChapterRefreshButton?: boolean;
   }>(),
   {
     panelExpanded: true,
@@ -154,7 +154,7 @@ const props = withDefaults(
     characterRoster: () => [],
     characterBookStyle: undefined,
     aiAssistantConfigSyncNonce: 0,
-    readerEditMode: false,
+    showEditChapterRefreshButton: false,
   },
 );
 
@@ -590,7 +590,7 @@ defineExpose({
         <div class="sidebarHeaderStart">
           <span class="sidebarHeaderTitle">{{ activePanelTitle }}</span>
           <button
-            v-if="activeTab === 'chapters' && readerEditMode"
+            v-if="activeTab === 'chapters' && showEditChapterRefreshButton"
             type="button"
             class="aiReaderSidebarHeaderIconBtn"
             title="刷新章节"

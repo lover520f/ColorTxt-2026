@@ -26,6 +26,11 @@ export const READER_EDITOR_DEFAULT_FONT_FAMILY = getPresetCssStack("kinghwa");
 
 export const READER_EDITOR_PADDING = { top: 10, bottom: 10 } as const;
 
+/** 垂直滚动条始终显示滑块（Monaco 默认 `auto` 会在失焦后淡出） */
+const READER_SCROLLBAR_VERTICAL_ALWAYS_VISIBLE = {
+  vertical: "visible" as const,
+};
+
 export function readerEditorLineHeight(
   fontSize: number,
   lineHeightMultiple: number,
@@ -110,6 +115,7 @@ export function buildReaderEditorReadOnlyModeChromeOptions(): ReaderMonacoConfig
     showFoldingControls: "never",
     scrollbar: {
       horizontal: "hidden",
+      ...READER_SCROLLBAR_VERTICAL_ALWAYS_VISIBLE,
     },
     guides: {
       indentation: false,
@@ -143,6 +149,8 @@ export function buildReaderEditorEditModeNativeChromeOptions(): ReaderMonacoConf
     showFoldingControls: "never",
     scrollbar: {
       horizontal: "auto",
+      useShadows: true,
+      ...READER_SCROLLBAR_VERTICAL_ALWAYS_VISIBLE,
     },
     guides: {
       indentation: true,
@@ -217,24 +225,47 @@ export function buildReaderEditModeLineNumberOptions(
     : { lineNumbers: "off", lineNumbersMinChars: 0 };
 }
 
+export function buildReaderEditModeMinimapOptions(
+  enabled: boolean,
+): Pick<editor.IEditorOptions, "minimap"> {
+  if (!enabled) {
+    return { minimap: { enabled: false } };
+  }
+  return {
+    minimap: {
+      enabled: true,
+      showSlider: "always",
+      /** 按字符渲染语法色（非色块），与 VS Code 一致 */
+      renderCharacters: true,
+      side: "right",
+    },
+  };
+}
+
 export function buildReaderMonacoModeEditorOptions(
   editMode: boolean,
   editShowLineNumbers = false,
+  editMinimap = false,
 ): ReaderMonacoConfigurableOptions {
   const lineNumberOptions = buildReaderEditModeLineNumberOptions(
     editMode && editShowLineNumbers,
+  );
+  const minimapOptions = buildReaderEditModeMinimapOptions(
+    editMode && editMinimap,
   );
   if (editMode) {
     return {
       ...buildReaderEditorEditModeNativeChromeOptions(),
       ...buildReaderEditorEditableInteractionOptions(),
       ...lineNumberOptions,
+      ...minimapOptions,
     };
   }
   return {
     ...buildReaderEditorReadOnlyModeChromeOptions(),
     ...buildReaderEditorReadOnlyInteractionOptions(),
     ...lineNumberOptions,
+    ...minimapOptions,
   };
 }
 

@@ -106,3 +106,46 @@
   width: 22px;
   height: 22px;
 }
+
+/*
+ * 小地图左侧内阴影：沿用 Monaco 的 .minimap-shadow-visible 子元素（与 VS Code 相同公式）。
+ * wordWrap 下常把 shadow 标为 hidden，此处强制保留可见。
+ */
+.monaco-editor .minimap .minimap-shadow-visible,
+.monaco-editor .minimap .minimap-shadow-hidden {
+  position: absolute;
+  left: -6px;
+  width: 6px;
+  pointer-events: none;
+  box-shadow: var(--vscode-scrollbar-shadow) -6px 0 6px -6px inset;
+}
+
+/*
+ * 概览尺：左边框由 Monaco 在 Canvas 上绘制（editorOverviewRuler.border），勿再叠 DOM border。
+ * 轨道/Canvas 透明，光标位置等标记绘制在 Canvas 上，底色由阅读区透出。
+ */
+.monaco-editor .decorationsOverviewRuler {
+  background-color: transparent;
+}
+
+/*
+ * 滚动条轨道透明；滑块为半透明 token，可透出概览尺上的光标标记（同 VS Code）。
+ */
+.monaco-editor .monaco-scrollable-element > .scrollbar.vertical,
+.monaco-editor .monaco-scrollable-element > .scrollbar.vertical.visible,
+.monaco-editor .monaco-scrollable-element > .scrollbar.horizontal,
+.monaco-editor .monaco-scrollable-element > .scrollbar.horizontal.visible {
+  background: transparent !important;
+}
+
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
+  background: var(--vscode-scrollbarSlider-background) !important;
+}
+
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground) !important;
+}
+
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider.active {
+  background: var(--vscode-scrollbarSlider-activeBackground) !important;
+}
