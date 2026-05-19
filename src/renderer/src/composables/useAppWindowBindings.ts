@@ -91,6 +91,9 @@ export function useAppWindowBindings(deps: {
   pendingRestorePhysicalLine: Ref<number | null>;
   pendingRestoreEditorViewState: Ref<unknown | null>;
   pendingRestoreViewportTopPhysicalLine: Ref<number | null>;
+  pendingRestoreViewportAnchor: Ref<
+    import("../reader/readerViewportAnchor").ReaderViewportRestoreAnchor | null
+  >;
   compressBlankLines: Ref<boolean>;
   suppressFileListCenterAfterLoad: Ref<boolean>;
   suppressChapterListAutoScroll: Ref<boolean>;
@@ -334,6 +337,8 @@ export function useAppWindowBindings(deps: {
           deps.pendingRestoreViewportTopPhysicalLine.value = null;
           const restorePhys = deps.pendingRestorePhysicalLine.value;
           deps.pendingRestorePhysicalLine.value = null;
+          const restoreViewportAnchor = deps.pendingRestoreViewportAnchor.value;
+          deps.pendingRestoreViewportAnchor.value = null;
           const totalPhysical = Math.max(1, deps.stream.getPhysicalLineCount());
 
           const markReadingProgressSynced = () => {
@@ -389,6 +394,31 @@ export function useAppWindowBindings(deps: {
                     reader.jumpToLine(displayLine, false);
                   }
                   void nextTick(finishReadingSync);
+                });
+              });
+            });
+            return;
+          }
+
+          if (restoreViewportAnchor != null) {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                const map = deps.stream.getDisplayLineToPhysicalLine();
+                void Promise.resolve(
+                  deps.readerRef.value?.restoreViewportToRestoreAnchor?.(
+                    restoreViewportAnchor,
+                    map.length > 0 ? [...map] : undefined,
+                  ),
+                ).then(() => {
+                  void nextTick(() => {
+                    deps.readerRef.value?.normalizeScrollAfterEmbeddedViewZones?.();
+                    deps.readerRef.value?.emitProbeLine();
+                    void Promise.resolve(
+                      deps.syncChaptersAfterViewportSettled(),
+                    ).then(() => {
+                      markReadingProgressSynced();
+                    });
+                  });
                 });
               });
             });
@@ -474,6 +504,7 @@ export function useAppWindowBindings(deps: {
         deps.pendingRestorePhysicalLine.value = null;
         deps.pendingRestoreEditorViewState.value = null;
         deps.pendingRestoreViewportTopPhysicalLine.value = null;
+        deps.pendingRestoreViewportAnchor.value = null;
         deps.suppressFileListCenterAfterLoad.value = false;
         deps.suppressChapterListAutoScroll.value = false;
         deps.readingProgressSynced.value = true;

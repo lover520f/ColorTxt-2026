@@ -257,6 +257,10 @@ export function useTxtStreamPipeline(deps: {
     return lineCount;
   }
 
+  function getDisplayLineToPhysicalLine(): readonly number[] {
+    return filteredDisplayToPhysicalLine;
+  }
+
   function getPhysicalLineContent(physicalLine: number) {
     const idx = Math.max(0, Math.floor(physicalLine) - 1);
     return physicalLineContents[idx] ?? "";
@@ -314,6 +318,7 @@ export function useTxtStreamPipeline(deps: {
     calcProgressPercentByViewportDisplay,
     getPhysicalLineCount,
     getLineCount,
+    getDisplayLineToPhysicalLine,
     getPhysicalLineContent,
     physicalSearchRangeToDisplayColumns,
     getPhysicalFilePlainText,

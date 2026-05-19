@@ -560,8 +560,14 @@ const pendingRestorePhysicalLine = ref<number | null>(null);
 const pendingRestoreEditorViewState = ref<unknown | null>(null);
 /** 与视图状态同时恢复的视口首行物理行号锚点（用于恢复后校验） */
 const pendingRestoreViewportTopPhysicalLine = ref<number | null>(null);
-/** 只读→编辑：在切换模式前采集的视口末行对应物理行，供载入磁盘原文后恢复滚动 */
-const pendingReaderEditRestorePhysicalLine = ref<number | null>(null);
+/** 只读↔编辑：在切换模式前采集的视口第二行高锚点 */
+const pendingReaderEditRestoreAnchor = ref<
+  import("./reader/readerViewportAnchor").ReaderViewportRestoreAnchor | null
+>(null);
+/** 编辑→只读：流式加载结束后按视口锚点恢复（与压缩空行切换一致） */
+const pendingRestoreViewportAnchor = ref<
+  import("./reader/readerViewportAnchor").ReaderViewportRestoreAnchor | null
+>(null);
 /** 与主进程 file:stream 的 requestId 对齐；resetSession 时清空，避免重复打开同一文件时旧 chunk 串入 */
 const activeStreamRequestId = ref<number | null>(null);
 const activeStreamFilePath = ref<string | null>(null);
@@ -1101,6 +1107,7 @@ const fileSession = useAppFileSession({
   pendingRestorePhysicalLine,
   pendingRestoreEditorViewState,
   pendingRestoreViewportTopPhysicalLine,
+  pendingRestoreViewportAnchor,
   recentFiles,
   restoreSessionOnStartup,
   activeStreamRequestId,
@@ -1291,17 +1298,19 @@ async function onToggleReaderEdit() {
       readerEditMode.value = false;
       return;
     }
+    const exitAnchor = readerRef.value?.captureViewportRestoreAnchor?.() ?? {
+      physicalLine: Math.max(
+        1,
+        Math.floor(
+          readerRef.value?.getViewportEndLine?.() ?? viewportEndLine.value,
+        ),
+      ),
+      wrappedLineIndex: 0,
+    };
     suppressChapterListAutoScroll.value = true;
     readerEditMode.value = false;
-    /** 编辑态 Monaco 行号即源文件物理行 */
-    const physicalP = Math.max(
-      1,
-      Math.floor(
-        readerRef.value?.getViewportEndLine?.() ?? viewportEndLine.value,
-      ),
-    );
     const opened = await openFilePath(path, {
-      restorePhysicalLine: physicalP,
+      restoreViewportAnchor: exitAnchor,
       skipRememberCurrent: true,
       keepSidebarTab: true,
       skipReaderEditGuard: true,
@@ -1315,8 +1324,11 @@ async function onToggleReaderEdit() {
       appToast("请等待当前文件加载完成后再进入编辑模式。");
       return;
     }
-    pendingReaderEditRestorePhysicalLine.value =
-      captureViewportAnchorPhysicalLine();
+    pendingReaderEditRestoreAnchor.value =
+      captureViewportRestoreAnchor() ?? {
+        physicalLine: captureViewportAnchorPhysicalLine(),
+        wrappedLineIndex: 0,
+      };
     suppressChapterListAutoScroll.value = true;
     readerEditMode.value = true;
   }
@@ -1358,7 +1370,7 @@ function onReaderEditLoaded(payload: { encoding: string }) {
   readerSaveEncoding.value = normalizeIpcEncoding(
     (payload.encoding || "utf8").trim() || "utf8",
   );
-  pendingReaderEditRestorePhysicalLine.value = null;
+  pendingReaderEditRestoreAnchor.value = null;
   stream.resyncMirrorFromReader();
   if (searchQuery.value.trim()) {
     scheduleSidebarSearch();
@@ -1378,7 +1390,7 @@ function onReaderEditContentChange() {
 }
 
 function onReaderEditLoadFailed() {
-  pendingReaderEditRestorePhysicalLine.value = null;
+  pendingReaderEditRestoreAnchor.value = null;
   suppressChapterListAutoScroll.value = false;
   readerEditMode.value = false;
 }
@@ -1986,6 +1998,7 @@ useAppWindowBindings({
   pendingRestorePhysicalLine,
   pendingRestoreEditorViewState,
   pendingRestoreViewportTopPhysicalLine,
+  pendingRestoreViewportAnchor,
   compressBlankLines,
   suppressFileListCenterAfterLoad,
   suppressChapterListAutoScroll,
@@ -2303,9 +2316,7 @@ useAppShellThemeWatch({
           "
           :before-reveal-find-widget="ensurePinBeforeRevealFindWidget"
           :reader-edit-mode="readerEditMode"
-          :reader-edit-restore-physical-line="
-            pendingReaderEditRestorePhysicalLine
-          "
+          :reader-edit-restore-anchor="pendingReaderEditRestoreAnchor"
           :physical-reader-path="physicalReaderPath"
           @probe-line-change="onProbeLineChange"
           @viewport-top-line-change="onViewportTopLineChange"

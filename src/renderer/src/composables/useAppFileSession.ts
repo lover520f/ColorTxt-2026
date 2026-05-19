@@ -83,6 +83,10 @@ export function useAppFileSession(deps: {
   pendingRestoreEditorViewState: Ref<unknown | null>;
   /** 与视图状态配套的视口首行物理行号，用于流结束后校验 */
   pendingRestoreViewportTopPhysicalLine: Ref<number | null>;
+  /** 流结束后按视口第二行高锚点恢复（编辑切回只读等） */
+  pendingRestoreViewportAnchor: Ref<
+    import("../reader/readerViewportAnchor").ReaderViewportRestoreAnchor | null
+  >;
   recentFiles: Ref<import("../components/AppHeader.vue").RecentFileItem[]>;
   restoreSessionOnStartup: Ref<boolean>;
   /** 与主进程流 requestId 对齐；resetSession 时清空，避免旧 chunk 在清空后仍被当作当前流处理 */
@@ -310,6 +314,7 @@ export function useAppFileSession(deps: {
     deps.pendingRestorePhysicalLine.value = null;
     deps.pendingRestoreEditorViewState.value = null;
     deps.pendingRestoreViewportTopPhysicalLine.value = null;
+    deps.pendingRestoreViewportAnchor.value = null;
     deps.readingProgressSynced.value = true;
     deps.currentFile.value = null;
     deps.activeStreamRequestId.value = null;
@@ -627,6 +632,8 @@ export function useAppFileSession(deps: {
       listRow?: TxtFileItem;
       /** 为 true 时跳过「未保存编辑」确认（如编辑切回只读后的同一文件重载） */
       skipReaderEditGuard?: boolean;
+      /** 流结束后按视口第二行高锚点恢复（优先于 restorePhysicalLine） */
+      restoreViewportAnchor?: import("../reader/readerViewportAnchor").ReaderViewportRestoreAnchor;
     },
   ) {
     if (!options?.keepSidebarTab) {
@@ -682,12 +689,18 @@ export function useAppFileSession(deps: {
       !Array.isArray(savedVs) &&
       hasAnchor;
 
-    if (
+    if (options?.restoreViewportAnchor != null) {
+      deps.pendingRestoreEditorViewState.value = null;
+      deps.pendingRestoreViewportTopPhysicalLine.value = null;
+      deps.pendingRestorePhysicalLine.value = null;
+      deps.pendingRestoreViewportAnchor.value = options.restoreViewportAnchor;
+    } else if (
       options?.restorePhysicalLine != null ||
       normalizedExplicitRestore != null
     ) {
       deps.pendingRestoreEditorViewState.value = null;
       deps.pendingRestoreViewportTopPhysicalLine.value = null;
+      deps.pendingRestoreViewportAnchor.value = null;
       deps.pendingRestorePhysicalLine.value =
         options?.restorePhysicalLine != null
           ? Math.max(1, Math.floor(options.restorePhysicalLine))
@@ -695,11 +708,13 @@ export function useAppFileSession(deps: {
     } else if (isReadingCompleteProgress(meta?.progress)) {
       deps.pendingRestoreEditorViewState.value = null;
       deps.pendingRestoreViewportTopPhysicalLine.value = null;
+      deps.pendingRestoreViewportAnchor.value = null;
       deps.pendingRestorePhysicalLine.value =
         RESTORE_PHYSICAL_LINE_SCROLL_TO_END;
     } else if (canRestoreViewState) {
       deps.pendingRestoreEditorViewState.value = savedVs;
       deps.pendingRestorePhysicalLine.value = null;
+      deps.pendingRestoreViewportAnchor.value = null;
       deps.pendingRestoreViewportTopPhysicalLine.value = Math.max(
         1,
         Math.floor(anchorRaw),
@@ -708,6 +723,7 @@ export function useAppFileSession(deps: {
       deps.pendingRestoreEditorViewState.value = null;
       deps.pendingRestoreViewportTopPhysicalLine.value = null;
       deps.pendingRestorePhysicalLine.value = null;
+      deps.pendingRestoreViewportAnchor.value = null;
     }
 
     deps.readerEditMode.value = false;

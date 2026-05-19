@@ -209,10 +209,10 @@ const props = withDefaults(
     /** 编辑模式：Monaco 展示磁盘原文，不经阅读管线后处理 */
     readerEditMode?: boolean;
     /**
-     * 只读→编辑前由 App 采集的视口锚点（源文件物理行号）；
-     * 须在 `readerEditMode` 置 true 之前写入，避免切换后 `getViewportEndLine` 失真。
+     * 只读→编辑前由 App 采集的视口锚点（物理行 + 折行行内下标）；
+     * 须在 `readerEditMode` 置 true 之前写入，避免切换后视口采样失真。
      */
-    readerEditRestorePhysicalLine?: number | null;
+    readerEditRestoreAnchor?: import("../reader/readerViewportAnchor").ReaderViewportRestoreAnchor | null;
     /** 与流式读盘一致的磁盘 txt 路径（编辑读/存用） */
     physicalReaderPath?: string | null;
     /** 章节最少字数；压缩空行格式化时与侧栏章节表一致，不足者不插入标题上下空行 */
@@ -238,7 +238,7 @@ const props = withDefaults(
     voiceReadScrollLocked: false,
     voiceReadPaused: false,
     readerEditMode: false,
-    readerEditRestorePhysicalLine: null,
+    readerEditRestoreAnchor: null,
     physicalReaderPath: null,
     chapterMinCharCount: defaultChapterMinCharCount,
   },
@@ -313,23 +313,19 @@ async function loadReaderEditFromDisk() {
   const m = model.value;
   const e = editor.value;
   if (!m || !e) return;
-  /** 视口末行 → 物理行；编辑态全文无滤空，Monaco 行号即物理行，用 {@link scrollLineToBottom} 贴底恢复 */
-  const pendingAnchor = props.readerEditRestorePhysicalLine;
-  let restorePhysicalLine: number;
-  if (
-    pendingAnchor != null &&
-    Number.isFinite(pendingAnchor) &&
-    pendingAnchor >= 1
-  ) {
-    restorePhysicalLine = Math.max(1, Math.floor(pendingAnchor));
-  } else {
-    const endDisplay = Math.max(1, Math.floor(getViewportEndLine()));
-    const rawP =
-      typeof props.ebookDisplayLineToPhysical === "function"
-        ? props.ebookDisplayLineToPhysical(endDisplay)
-        : endDisplay;
-    restorePhysicalLine = Math.max(1, Math.floor(rawP));
-  }
+  const restoreAnchor =
+    props.readerEditRestoreAnchor ??
+    (() => {
+      const endDisplay = Math.max(1, Math.floor(getViewportEndLine()));
+      const rawP =
+        typeof props.ebookDisplayLineToPhysical === "function"
+          ? props.ebookDisplayLineToPhysical(endDisplay)
+          : endDisplay;
+      return {
+        physicalLine: Math.max(1, Math.floor(rawP)),
+        wrappedLineIndex: 0,
+      };
+    })();
   disposeEbookInternalLinks();
   await applyEmbeddedImageAnchors(null);
   readerEditSuppressDirty = true;
@@ -346,20 +342,9 @@ async function loadReaderEditFromDisk() {
     emit("readerEditLoaded", { encoding: r.encoding });
   };
 
-  const phys = restorePhysicalLine;
-  const totalPhysical = Math.max(1, m.getLineCount());
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      if (phys >= totalPhysical) {
-        scrollToBottom(false);
-      } else if (phys <= 1) {
-        jumpToLine(1, false);
-      } else {
-        scrollLineToBottom(Math.min(phys, totalPhysical), false);
-      }
-      void nextTick(() => {
-        normalizeScrollAfterEmbeddedViewZones();
-        emitProbeLine(false);
+      void restoreViewportToRestoreAnchor(restoreAnchor).then(() => {
         emitReaderEditLoadedAfterViewport();
       });
     });
@@ -380,6 +365,9 @@ function setModelTextIfChanged(text: string): boolean {
 }
 
 function resolveDisplayLineToPhysical(displayLine: number): number {
+  if (props.readerEditMode) {
+    return Math.max(1, Math.floor(displayLine));
+  }
   const map =
     typeof props.ebookDisplayLineToPhysical === "function"
       ? props.ebookDisplayLineToPhysical
