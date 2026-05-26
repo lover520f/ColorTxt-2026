@@ -40,13 +40,13 @@ npm run build
 
 2.3 版本加入了「内置本地模型」，依赖 `@huggingface/transformers`，这是一个比较重的包，需要在 `electron-builder` 打包前对 `node_modules` 进行一些裁剪，以减小安装包的体积。
 
-`npm run build` / `npm run release` 在 `electron-vite build` 之后会执行 **`scripts/prune-pack-deps.mjs`**，从即将打入安装包的 `node_modules` 中移除内置向量模型用不到的依赖（如 `onnxruntime-web`、全平台 `sharp`/`@img`、非当前平台的 `onnxruntime-node` 二进制、Windows 下未使用的 **`DirectML.dll`**（内置向量固定 CPU）、Transformers 的 Web/WASM/CJS/source map、仅保留 Node 入口 **`transformers.node.mjs`** 等），再调用 `electron-builder`。打包完成后若本地 `node_modules` 与开发不一致，可执行 **`npm ci`** 恢复。
+> `npm run build` / `npm run release` 在 `electron-vite build` 之后会执行 **`scripts/prune-pack-deps.mjs`**，从即将打入安装包的 `node_modules` 中移除内置向量模型用不到的依赖（如 `onnxruntime-web`、全平台 `sharp`/`@img`、非当前平台的 `onnxruntime-node` 二进制、Windows 下未使用的 **`DirectML.dll`**（内置向量固定 CPU）、Transformers 的 Web/WASM/CJS/source map、仅保留 Node 入口 **`transformers.node.mjs`** 等），再调用 `electron-builder`。
+>
+> 相较于之前的版本，**`app.asar` 内 `node_modules` 仍会增大约 15～17MB**（主要为当前平台的 `onnxruntime-node` JS + `@huggingface`；原生 `bin` 在 **`app.asar.unpacked`**，约 15MB）。
+>
+> `asarUnpack` 仅解包原生模块目录（如 `better-sqlite3`、`onnxruntime-node/bin`），避免整包 `onnxruntime-node` 在 asar 与 `app.asar.unpacked` 中重复占用空间。
 
-相较于之前的版本，**`app.asar` 内 `node_modules` 仍会增大约 15～17MB**（主要为当前平台的 `onnxruntime-node` JS + `@huggingface`；原生 `bin` 在 **`app.asar.unpacked`**，约 15MB）。
-
-`asarUnpack` 仅解包原生模块目录（如 `better-sqlite3`、`onnxruntime-node/bin`），避免整包 `onnxruntime-node` 在 asar 与 `app.asar.unpacked` 中重复占用空间。
-
-打包后本地开发异常可 **`npm ci`** 恢复完整依赖
+如果打包后本地开发异常，可 **`npm ci`** 恢复完整依赖
 
 ### 发布
 
