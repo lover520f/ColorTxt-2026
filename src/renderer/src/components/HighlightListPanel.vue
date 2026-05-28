@@ -261,6 +261,11 @@ const emptyMessage = computed(() => {
 .highlightFavoriteBtn--active {
   opacity: 1;
   pointer-events: auto;
+  color: var(--primary);
+}
+
+.highlightFavoriteBtn--active:hover {
+  color: var(--muted);
 }
 
 .highlightItem:hover .highlightFavoriteBtn,
@@ -271,7 +276,7 @@ const emptyMessage = computed(() => {
   pointer-events: auto;
 }
 
-.highlightFavoriteBtn:hover {
+.highlightFavoriteBtn:hover:not(.highlightFavoriteBtn--active) {
   color: var(--primary);
 }
 
