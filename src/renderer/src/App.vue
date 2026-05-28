@@ -27,6 +27,7 @@ import type {
 } from "@shared/characterTypes";
 import type { CharacterCardTextureEffectId } from "@shared/characterCardTextureEffects";
 import { DEFAULT_CHARACTER_CARD_TEXTURE_EFFECT } from "@shared/characterCardTextureEffects";
+import { formatTextEncodingLabel } from "@shared/textEncodingDisplay";
 import {
   mergeAiCustomSkills,
   mergeAiSkillOverrides,
@@ -647,13 +648,6 @@ function normalizeIpcEncoding(raw: string): string {
   return raw.trim() || "utf8";
 }
 
-function encodingLabelForFooter(ipcEncoding: string): string {
-  const n = normalizeIpcEncoding(ipcEncoding);
-  if (n === "utf8") return "UTF-8";
-  if (n === "gb2312") return "GB2312";
-  return ipcEncoding.trim().toUpperCase() || "-";
-}
-
 /** 写入磁盘：编辑模式用 Monaco 全文；只读且开压缩空行/行首缩进时用流管道物理行原文 */
 function textForReaderDiskSave(): string {
   if (readerEditMode.value) {
@@ -678,7 +672,7 @@ async function saveReaderBufferWithIpcEncoding(
     return false;
   }
   readerSaveEncoding.value = normalized;
-  fileEncoding.value = encodingLabelForFooter(normalized);
+  fileEncoding.value = formatTextEncodingLabel(normalized);
   readerRef.value?.markReaderEditSaved?.();
   readerEditorDirty.value = false;
   return true;
