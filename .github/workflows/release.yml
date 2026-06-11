@@ -14,43 +14,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: ${{ matrix.name }}
+  build:
+    name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            name: Windows
+          - os: windows-2025-vs2026
+            name: Windows-x64
             prune_platform: win32
             builder_target: win
             arch: x64
           - os: macos-latest
-            name: macOS
+            name: macOS-arm64
             prune_platform: darwin
             builder_target: mac
             arch: arm64
+          - os: macos-latest
+            name: macOS-x64
+            prune_platform: darwin
+            builder_target: mac
+            arch: x64
+          - os: ubuntu-24.04-arm
+            name: Linux-arm64
+            prune_platform: linux
+            builder_target: linux
+            arch: arm64
           - os: ubuntu-latest
-            name: Linux
+            name: Linux-x64
             prune_platform: linux
             builder_target: linux
             arch: x64
 
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # 未配置签名证书时跳过自动签名探测，避免 CI 失败
       CSC_IDENTITY_AUTO_DISCOVERY: false
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
           cache: npm
@@ -67,13 +76,14 @@ jobs:
           fi
 
       - name: Cache Electron downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/electron
             ~/.cache/electron-builder
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: electron-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
+            electron-${{ runner.os }}-${{ matrix.arch }}-
             electron-${{ runner.os }}-
 
       - name: Install dependencies
@@ -85,5 +95,58 @@ jobs:
       - name: Prune pack dependencies
         run: node scripts/prune-pack-deps.mjs --platform ${{ matrix.prune_platform }} --arch ${{ matrix.arch }}
 
-      - name: Package and publish to GitHub Releases
-        run: npx electron-builder --publish always --${{ matrix.builder_target }} --${{ matrix.arch }}
+      - name: Package
+        run: npx electron-builder --publish never --${{ matrix.builder_target }} --${{ matrix.arch }}
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.name }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+            release/*.blockmap
+          if-no-files-found: error
+
+  publish:
+    name: Publish to GitHub Releases
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install electron-builder
+        run: npm ci --ignore-scripts
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          find artifacts -type f \( \
+            -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o \
+            -name '*.blockmap' \
+          \) -exec cp -t release/ {} +
+
+      - name: Publish to GitHub Releases
+        run: npx electron-builder publish --publish always

@@ -68,6 +68,7 @@
   "build": {
     "appId": "com.ssnangua.colortxt",
     "productName": "彩读",
+    "beforePack": "scripts/electron-before-pack.mjs",
     "directories": {
       "output": "release"
     },
@@ -113,7 +114,13 @@
       "icon": "resources/icon.icns",
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist",
-      "artifactName": "${productName}-${version}.${ext}",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "publish": {
+        "provider": "github",
+        "owner": "ssnangua",
+        "repo": "ColorTxt",
+        "channel": "latest-${arch}"
+      },
       "target": [
         "dmg"
       ],
@@ -142,6 +149,13 @@
     },
     "linux": {
       "icon": "resources/icon.png",
+      "artifactName": "${name}-${version}-${arch}.${ext}",
+      "publish": {
+        "provider": "github",
+        "owner": "ssnangua",
+        "repo": "ColorTxt",
+        "channel": "latest-${arch}"
+      },
       "target": [
         "AppImage"
       ]

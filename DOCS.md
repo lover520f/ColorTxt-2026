@@ -60,13 +60,21 @@ git push && git push --tags
 
 也可在 GitHub 仓库 **Actions → Release → Run workflow** 手动触发（用于补跑）。
 
-产物与本地 `npm run release` 一致：Windows（NSIS + Portable）、macOS（DMG，Apple Silicon）、Linux（AppImage）。macOS 未配置签名证书时以未签名包发布（`CSC_IDENTITY_AUTO_DISCOVERY=false`）。
+CI 会并行构建以下架构（共 5 个 job），再由单独 job 统一发布到同一条 GitHub Release：
+
+| 平台 | 架构 | Runner | 产物 |
+| ---- | ---- | ------ | ---- |
+| Windows | x64 | `windows-2025-vs2026` | NSIS 安装包 + Portable |
+| macOS | arm64（Apple Silicon，M 系列） | `macos-latest` | DMG |
+| macOS | x64（Intel） | `macos-latest`（交叉编译） | DMG |
+| Linux | arm64 | `ubuntu-24.04-arm` | AppImage |
+| Linux | x64 | `ubuntu-latest` | AppImage |
+
+macOS / Linux 多架构时，`artifactName` 含 `${arch}`，`publish.channel` 为 `latest-${arch}`，避免更新描述文件互相覆盖。`package.json` 的 `build.beforePack` 会在打入 asar 前再次执行 `prune-pack-deps.mjs`（CI 保险）。macOS 未配置签名证书时以未签名包发布（`CSC_IDENTITY_AUTO_DISCOVERY=false`）。
 
 #### 本地手动发布
 
-若需在单机上打包并上传，仍可使用本地命令。
-
-需 Personal access token（`repo` 权限）并设置 `GH_TOKEN`：
+若需在单机上打包并上传，仍可使用本地命令，需 Personal access token（`repo` 权限）并设置 `GH_TOKEN`：
 
 GitHub 用户 Settings -> Developer settings -> Personal access tokens，
 生成一个 Token 并勾选 `repo` 权限。
@@ -98,6 +106,8 @@ git push origin v1.0.0
 # 构建打包并发布到 GitHub Releases
 npm run release
 ```
+
+> 本地 `npm run release` 只能打**当前机器**对应平台/架构的包，要多架构需走 CI 或在本机多次指定 `--platform` / `--arch` 分别打包。
 
 ### 撤销发布
 
