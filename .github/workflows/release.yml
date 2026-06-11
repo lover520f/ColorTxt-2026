@@ -51,6 +51,8 @@ jobs:
     env:
       # 未配置签名证书时跳过自动签名探测，避免 CI 失败
       CSC_IDENTITY_AUTO_DISCOVERY: false
+      # Linux x64 上 onnxruntime-node postinstall 会拉取 CUDA EP（约 300MB+）；内置向量仅用 CPU
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
       COLORTXT_PRUNE_PLATFORM: ${{ matrix.prune_platform }}
       COLORTXT_PRUNE_ARCH: ${{ matrix.arch }}
 

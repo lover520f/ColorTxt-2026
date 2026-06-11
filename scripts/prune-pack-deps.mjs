@@ -121,6 +121,26 @@ function pruneOnnxDirectMl(nodeModulesRoot, plat, arch) {
   rm(dml);
 }
 
+/** Linux x64 postinstall 可能已拉取 CUDA/TensorRT EP（约 300MB+）；内置向量仅用 CPU */
+function pruneOnnxLinuxGpuProviders(nodeModulesRoot, plat, arch) {
+  if (plat !== "linux" || arch !== "x64") return;
+  const dir = path.join(
+    nodeModulesRoot,
+    "onnxruntime-node",
+    "bin",
+    "napi-v3",
+    "linux",
+    "x64",
+  );
+  if (!fs.existsSync(dir)) return;
+  for (const name of [
+    "libonnxruntime_providers_cuda.so",
+    "libonnxruntime_providers_tensorrt.so",
+  ]) {
+    rm(path.join(dir, name));
+  }
+}
+
 /** @param {string} nodeModulesRoot */
 function pruneOnnxRuntimeNodePackage(nodeModulesRoot) {
   const ortRoot = path.join(nodeModulesRoot, "onnxruntime-node");
@@ -411,6 +431,7 @@ function main() {
   pruneOnnxRuntimeNode(nm, plat, arch);
   pruneOnnxRuntimeNodePackage(nm);
   pruneOnnxDirectMl(nm, plat, arch);
+  pruneOnnxLinuxGpuProviders(nm, plat, arch);
   pruneOnnxRuntimeCommon(nm);
 
   pruneTransformersPackage(nm);

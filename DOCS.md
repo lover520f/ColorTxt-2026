@@ -188,7 +188,7 @@ git push
 | --- | -------- | -------------- |
 | `@huggingface/transformers` | `dist/*` 除 `transformers.node.mjs`；`src/`、`types/`、README；`package.json` 中的 `onnxruntime-web`、`sharp` 依赖声明 | Node 入口 `transformers.node.mjs` |
 | `@huggingface/jinja` | `src/`、`tsconfig.json`、README、`dist/*.d.ts.map` | `dist` 下编译产物 |
-| `onnxruntime-node` | 非目标平台的 `bin/napi-v3/*`；`lib/`、`script/`、README；`dist/*.map`；Windows 下 **`DirectML.dll`**（内置向量固定 CPU） | 当前平台 `bin/napi-v3/{plat}/{arch}` 与 `dist/*.js` |
+| `onnxruntime-node` | 非目标平台的 `bin/napi-v3/*`；`lib/`、`script/`、README；`dist/*.map`；Windows 下 **`DirectML.dll`**；Linux x64 下 **`libonnxruntime_providers_cuda.so`**、**`libonnxruntime_providers_tensorrt.so`**（内置向量固定 CPU；CI 另设 `ONNXRUNTIME_NODE_INSTALL_CUDA=skip` 跳过 postinstall 下载） | 当前平台 `bin/napi-v3/{plat}/{arch}` 与 `dist/*.js` |
 | `onnxruntime-common` | `lib/`（TS 源码）、README、`dist/**/*.map`、`dist/**/*.d.ts` | `dist` 下 JS |
 | `better-sqlite3` | **`deps/`**（含 **`sqlite3.c`**）、`src/`、`binding.gyp`、README；`package.json` 中的 **`prebuild-install`** 依赖声明 | `lib/`、`build/Release/*.node`、`bindings` |
 | `font-list` | 非当前平台的 `libs/{darwin,linux,win32}`；`demo.js`、测试脚本、类型定义、README | `index.js`、`index.mjs`（ESM 入口）、`libs/core.js`、当前平台 `libs/` |
