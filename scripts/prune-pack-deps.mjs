@@ -6,13 +6,12 @@
  * 裁剪同时作用于将打入 app.asar 与 app.asar.unpacked 的依赖树。
  * 打包后若需恢复完整依赖：npm ci
  *
- * 用法：node scripts/prune-pack-deps.mjs [--platform win32|darwin|linux] [--arch x64|arm64]
+ * 用法：node scripts/prune-pack-deps.mjs [--platform win32|darwin|linux] [--arch x64|arm64] [--node-modules <path>]
  */
 import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const nm = path.join(root, "node_modules");
 
 /** @param {string} abs */
 function rm(abs) {
@@ -36,11 +35,20 @@ function parseArgs() {
   const argv = process.argv.slice(2);
   let platform = process.env.npm_config_platform || process.platform;
   let arch = process.env.npm_config_arch || process.arch;
+  let nodeModulesRoot = null;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--platform" && argv[i + 1]) platform = argv[++i];
     if (argv[i] === "--arch" && argv[i + 1]) arch = argv[++i];
+    if (argv[i] === "--node-modules" && argv[i + 1]) {
+      nodeModulesRoot = path.resolve(argv[++i]);
+    }
   }
-  return resolveOnnxPlatformArch(platform, arch);
+  const { plat, arch: archName } = resolveOnnxPlatformArch(platform, arch);
+  return {
+    plat,
+    arch: archName,
+    nm: nodeModulesRoot ?? path.join(root, "node_modules"),
+  };
 }
 
 /**
@@ -67,11 +75,20 @@ function sqliteVecPlatformPackageName(plat, arch) {
   return `sqlite-vec-${os}-${arch}`;
 }
 
+/** Linux AppImage / electron-builder 常用 x86_64 目录名，与 prune 入参 x64 对齐 */
+function onnxRuntimeArchDirsToKeep(plat, archName) {
+  const keep = new Set([archName]);
+  if (plat === "linux" && archName === "x64") keep.add("x86_64");
+  return keep;
+}
+
 /** @param {string} nodeModulesRoot */
 function pruneOnnxRuntimeNode(nodeModulesRoot, plat, archName) {
   const ortRoot = path.join(nodeModulesRoot, "onnxruntime-node");
   const napiRoot = path.join(ortRoot, "bin", "napi-v3");
   if (!fs.existsSync(napiRoot)) return;
+
+  const keepArchs = onnxRuntimeArchDirsToKeep(plat, archName);
 
   for (const platformDir of fs.readdirSync(napiRoot, { withFileTypes: true })) {
     if (!platformDir.isDirectory()) continue;
@@ -82,7 +99,7 @@ function pruneOnnxRuntimeNode(nodeModulesRoot, plat, archName) {
     }
     for (const archDir of fs.readdirSync(platformPath, { withFileTypes: true })) {
       if (!archDir.isDirectory()) continue;
-      if (archDir.name !== archName) {
+      if (!keepArchs.has(archDir.name)) {
         rm(path.join(platformPath, archDir.name));
       }
     }
@@ -371,12 +388,12 @@ function pruneJiebaPlatformPackages(nodeModulesRoot, plat, arch) {
 }
 
 function main() {
+  const { plat, arch, nm } = parseArgs();
   if (!fs.existsSync(nm)) {
-    console.warn("[prune-pack-deps] skip: node_modules not found");
+    console.warn(`[prune-pack-deps] skip: node_modules not found (${nm})`);
     return;
   }
 
-  const { plat, arch } = parseArgs();
   const beforeMb = dirSizeMb(nm);
 
   rm(path.join(nm, "onnxruntime-web"));

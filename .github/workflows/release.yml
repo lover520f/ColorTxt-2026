@@ -98,6 +98,18 @@ jobs:
       - name: Package
         run: npx electron-builder --publish never --${{ matrix.builder_target }} --${{ matrix.arch }}
 
+      - name: Verify Linux x64 package size
+        if: matrix.name == 'Linux-x64'
+        shell: bash
+        run: |
+          appimage=(release/*.AppImage)
+          size=$(stat -c%s "${appimage[0]}")
+          echo "AppImage size: $(( size / 1024 / 1024 )) MB"
+          if [ "$size" -gt 200000000 ]; then
+            echo "Linux x64 AppImage exceeds 200 MB — prune or pack regression"
+            exit 1
+          fi
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v6
         with:
@@ -107,6 +119,7 @@ jobs:
             release/*.dmg
             release/*.AppImage
             release/*.blockmap
+            release/*.yml
           if-no-files-found: error
 
   publish:
@@ -133,7 +146,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: release-*
@@ -145,8 +158,20 @@ jobs:
           mkdir -p release
           find artifacts -type f \( \
             -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o \
-            -name '*.blockmap' \
+            -name '*.blockmap' -o -name '*.yml' \
           \) -exec cp -t release/ {} +
 
       - name: Publish to GitHub Releases
-        run: npx electron-builder publish --publish always
+        shell: bash
+        run: |
+          shopt -s nullglob
+          args=()
+          for f in release/*; do
+            args+=(--files "$f")
+          done
+          if [ ${#args[@]} -eq 0 ]; then
+            echo "No release files found"
+            ls -laR release artifacts 2>/dev/null || true
+            exit 1
+          fi
+          npx electron-builder publish --publish always "${args[@]}"
