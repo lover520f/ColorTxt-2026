@@ -662,11 +662,32 @@ function getSelectionRange(): monaco.Range | null {
   return monaco.Range.lift(sel);
 }
 
-function revealSmartFormatSegment(startLine: number): void {
+/** 智能排版进行中：选中当前分段，并将分段末行贴齐视口底 */
+function revealSmartFormatSegment(startLine: number, endLine: number): void {
   const e = editor.value;
-  if (!e) return;
-  const ln = Math.max(1, Math.floor(startLine));
-  e.revealLineNearTop(ln, monacoScrollType(false));
+  const m = model.value;
+  if (!e || !m || !props.readerEditMode) return;
+
+  const apply = () => {
+    const lineCount = m.getLineCount();
+    if (lineCount < 1) return;
+    const sl = Math.max(1, Math.min(Math.floor(startLine), lineCount));
+    const el = Math.max(sl, Math.min(Math.floor(endLine), lineCount));
+    const selection = new monaco.Selection(
+      sl,
+      1,
+      el,
+      m.getLineMaxColumn(el),
+    );
+    e.layout();
+    scrollLineToBottom(el, true);
+    e.setSelection(selection);
+    e.focus();
+  };
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(apply);
+  });
 }
 
 /** 排版预览「应用」写回后：选中写回范围，并将末行贴齐视口底 */
@@ -697,7 +718,7 @@ function focusSmartFormatAppliedRange(
     );
     e.layout();
     e.setSelection(selection);
-    scrollLineToBottom(el, false);
+    scrollLineToBottom(el, true);
     e.setSelection(selection);
     e.focus();
   };

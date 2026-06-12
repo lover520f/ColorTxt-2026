@@ -227,6 +227,7 @@ export function useAiSmartFormat(deps: {
   > {
     const reader = deps.readerRef.value;
     if (!reader) return { ok: false, fatal: true, message: "编辑器未就绪" };
+    reader.revealSmartFormatSegment?.(plan.startLine, plan.endLine);
     const startIdx = plan.startLine - rangeStart + lineDeltaAcc.value;
     const endIdx = plan.endLine - rangeStart + lineDeltaAcc.value;
     const text = workingLines.slice(startIdx, endIdx + 1).join("\n");
@@ -325,7 +326,6 @@ export function useAiSmartFormat(deps: {
       lineDeltaAcc.value += lineDeltaAfterReplace(text, working);
       changed = true;
     }
-    reader.revealSmartFormatSegment?.(plan.startLine);
     if (total > 1) progressCurrent.value = index + 1;
     return { ok: true, changed };
   }
