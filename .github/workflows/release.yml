@@ -121,6 +121,10 @@ jobs:
             exit 1
           fi
 
+      - name: Remove builder debug metadata
+        shell: bash
+        run: rm -f release/builder-debug.yml
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v6
         with:
@@ -169,7 +173,8 @@ jobs:
           mkdir -p release
           find artifacts -type f \( \
             -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o \
-            -name '*.blockmap' -o -name '*.yml' \
+            -name '*.blockmap' -o \
+            \( -name '*.yml' ! -name 'builder-debug.yml' \) \
           \) -exec cp -t release/ {} +
 
       - name: Publish to GitHub Releases
