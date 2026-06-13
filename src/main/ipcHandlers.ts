@@ -46,6 +46,7 @@ import {
 } from "./globalShortcuts";
 import { registerAiIpcHandlers } from "./registerAiIpc";
 import { registerSecretsIpcHandlers } from "./registerSecretsIpc";
+import { registerTextConvertIpcHandlers } from "./registerTextConvertIpc";
 import {
   copyImageToAbsolutePath,
   migrateCharacterPortraitCacheRoot,
@@ -874,4 +875,5 @@ export function registerMainIpcHandlers(
 
   registerAiIpcHandlers();
   registerSecretsIpcHandlers();
+  registerTextConvertIpcHandlers();
 }

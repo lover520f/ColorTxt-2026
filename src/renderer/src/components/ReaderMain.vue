@@ -62,6 +62,15 @@ import {
   formatPhysicalPlainTextForReader,
   type ReaderDisplayFormatOptions,
 } from "../reader/readerDisplayPipeline";
+import {
+  applyTextConvertDigits,
+  applyTextConvertLetters,
+  applyTextConvertZh,
+} from "../services/textConvertApply";
+import type {
+  TextConvertWidthMode,
+  TextConvertZhMode,
+} from "@shared/textConvertTypes";
 import { isMarkdownFilePath } from "../ebook/ebookFormat";
 import {
   captureReaderViewportRestoreAnchor,
@@ -858,6 +867,28 @@ async function applyEditFormat(
   return true;
 }
 
+async function applyEditFormatAsync(
+  format: (plain: string) => Promise<{
+    text: string;
+    displayLineToPhysicalLine?: readonly number[];
+  }>,
+): Promise<boolean> {
+  const m = model.value;
+  if (!m || !props.readerEditMode) return false;
+  const anchor =
+    captureViewportRestoreAnchor() ?? {
+      physicalLine: resolveDisplayLineToPhysical(
+        Math.max(1, Math.floor(getViewportEndLine())),
+      ),
+      wrappedLineIndex: 0,
+    };
+  const { text, displayLineToPhysicalLine } = await format(m.getValue());
+  if (!setModelTextIfChanged(text)) return false;
+  emitReaderEditDirtyIfChanged();
+  await restoreViewportToRestoreAnchor(anchor, displayLineToPhysicalLine);
+  return true;
+}
+
 async function applyEditFormatCompressBlankLines(
   keepOneBlank: boolean,
 ): Promise<boolean> {
@@ -879,6 +910,30 @@ async function applyEditFormatLeadIndentFullWidth(): Promise<boolean> {
       readerFormatOptions({ leadIndentFullWidth: true }),
     ),
   );
+}
+
+async function applyEditFormatTextConvertZh(
+  mode: TextConvertZhMode,
+): Promise<boolean> {
+  return applyEditFormatAsync(async (plain) => ({
+    text: await applyTextConvertZh(plain, mode),
+  }));
+}
+
+async function applyEditFormatTextConvertLetters(
+  mode: TextConvertWidthMode,
+): Promise<boolean> {
+  return applyEditFormat((plain) => ({
+    text: applyTextConvertLetters(plain, mode),
+  }));
+}
+
+async function applyEditFormatTextConvertDigits(
+  mode: TextConvertWidthMode,
+): Promise<boolean> {
+  return applyEditFormat((plain) => ({
+    text: applyTextConvertDigits(plain, mode),
+  }));
 }
 
 function applySmartFormatReviewFormat(
@@ -3078,6 +3133,9 @@ defineExpose({
   applyEditFormatCompressBlankLines,
   applyEditFormatCompressBlankLinesInRange,
   applyEditFormatLeadIndentFullWidth,
+  applyEditFormatTextConvertZh,
+  applyEditFormatTextConvertLetters,
+  applyEditFormatTextConvertDigits,
   applyEditFormatLeadIndentFullWidthInRange,
   applySmartFormatReviewCompressBlankLines,
   applySmartFormatReviewLeadIndentFullWidth,

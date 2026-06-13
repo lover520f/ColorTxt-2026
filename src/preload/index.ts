@@ -324,6 +324,11 @@ const api = {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   listSystemFonts: () =>
     ipcRenderer.invoke("fonts:listSystemFonts") as Promise<string[]>,
+  convertTextOpenCc: (text: string, config: string) =>
+    ipcRenderer.invoke("text-convert:opencc", {
+      text,
+      config,
+    }) as Promise<string>,
   openExternal: (url: string) =>
     ipcRenderer.invoke("shell:openExternal", url) as Promise<void>,
   showItemInFolder: (filePath: string) =>

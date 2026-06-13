@@ -91,6 +91,7 @@ export default defineConfig({
           "@huggingface/jinja",
           "onnxruntime-node",
           "onnxruntime-common",
+          "opencc",
         ],
         output: {
           format: "es",

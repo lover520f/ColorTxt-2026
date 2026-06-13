@@ -88,6 +88,9 @@ import {
   defaultChapterMinCharCount,
   defaultFullscreenReaderWidthPercent,
   defaultLeadIndentFullWidth,
+  defaultTextConvertDigitMode,
+  defaultTextConvertLetterMode,
+  defaultTextConvertZhMode,
   defaultMonacoAdvancedWrapping,
   defaultMonacoCustomHighlight,
   defaultMonacoSmoothScrolling,
@@ -127,6 +130,10 @@ import {
   SIDEBAR_ACTIVITY_BAR_WIDTH,
   type ReaderSurfacePalette,
 } from "./constants/appUi";
+import type {
+  TextConvertWidthMode,
+  TextConvertZhMode,
+} from "@shared/textConvertTypes";
 import { mergeVoiceReadSettings, type VoiceReadSettings } from "./constants/voiceRead";
 import {
   DEFAULT_HIGHLIGHT_COLORS_DARK,
@@ -430,6 +437,9 @@ const compressBlankKeepOneBlank = ref(defaultCompressBlankKeepOneBlank);
 const txtrDelimitedMatchCrossLine = ref(defaultTxtrDelimitedMatchCrossLine);
 /** 为 true 时正文行统一行首两个全角空格（章节标题行与空行除外） */
 const leadIndentFullWidth = ref(defaultLeadIndentFullWidth);
+const textConvertZh = ref<TextConvertZhMode>(defaultTextConvertZhMode);
+const textConvertLetter = ref<TextConvertWidthMode>(defaultTextConvertLetterMode);
+const textConvertDigit = ref<TextConvertWidthMode>(defaultTextConvertDigitMode);
 const readerFontSize = ref(defaultReaderFontSize);
 const readerLineHeightMultiple = ref(defaultReaderLineHeightMultiple);
 const monacoFontFamily = ref(READER_EDITOR_DEFAULT_FONT_FAMILY);
@@ -771,6 +781,9 @@ const stream = useTxtStreamPipeline({
   compressBlankLines,
   compressBlankKeepOneBlank,
   leadIndentFullWidth,
+  textConvertZh,
+  textConvertLetter,
+  textConvertDigit,
   chapterMinCharCount,
   currentFileIsMarkdown,
   afterFullTextInstalled: () => afterStreamFullTextInstalled(),
@@ -827,6 +840,9 @@ const persistence = useAppPersistence({
   compressBlankKeepOneBlank,
   txtrDelimitedMatchCrossLine,
   leadIndentFullWidth,
+  textConvertZh,
+  textConvertLetter,
+  textConvertDigit,
   showChapterCounts,
   readerFontSize,
   readerLineHeightMultiple,
@@ -1518,6 +1534,28 @@ function onFormatEditLeadIndentFullWidth() {
   );
 }
 
+function onApplyTextConvertZhEdit(mode: Exclude<TextConvertZhMode, "off">) {
+  void runEditFormatWithChapterSync(() =>
+    readerRef.value?.applyEditFormatTextConvertZh?.(mode),
+  );
+}
+
+function onApplyTextConvertLetterEdit(
+  mode: Exclude<TextConvertWidthMode, "off">,
+) {
+  void runEditFormatWithChapterSync(() =>
+    readerRef.value?.applyEditFormatTextConvertLetters?.(mode),
+  );
+}
+
+function onApplyTextConvertDigitEdit(
+  mode: Exclude<TextConvertWidthMode, "off">,
+) {
+  void runEditFormatWithChapterSync(() =>
+    readerRef.value?.applyEditFormatTextConvertDigits?.(mode),
+  );
+}
+
 const smartFormatCtl = useAiSmartFormat({
   readerRef,
   chapters,
@@ -1652,6 +1690,9 @@ const readerUi = useAppReaderUiPrefs({
   monacoAdvancedWrapping,
   compressBlankLines,
   leadIndentFullWidth,
+  textConvertZh,
+  textConvertLetter,
+  textConvertDigit,
   withChapterListScrollSuppressed,
   currentFile,
   stream,
@@ -1680,6 +1721,9 @@ const {
   toggleMonacoAdvancedWrapping,
   toggleCompressBlankLines,
   toggleLeadIndentFullWidth,
+  setTextConvertZhRead,
+  setTextConvertLetterRead,
+  setTextConvertDigitRead,
   onToggleFind,
 } = readerUi;
 
@@ -2403,6 +2447,9 @@ useAppShellThemeWatch({
         :monaco-custom-highlight="monacoCustomHighlight"
         :compress-blank-lines="compressBlankLines"
         :lead-indent-full-width="leadIndentFullWidth"
+        :text-convert-zh="textConvertZh"
+        :text-convert-letter="textConvertLetter"
+        :text-convert-digit="textConvertDigit"
         :reader-edit-mode="readerEditMode"
         :can-enter-reader-edit-mode="canEnterReaderEditMode"
         :shortcut-bindings="shortcutBindings"
@@ -2425,6 +2472,12 @@ useAppShellThemeWatch({
         @toggle-lead-indent-full-width="toggleLeadIndentFullWidth"
         @format-edit-compress-blank-lines="onFormatEditCompressBlankLines"
         @format-edit-lead-indent-full-width="onFormatEditLeadIndentFullWidth"
+        @select-text-convert-zh-read="setTextConvertZhRead"
+        @select-text-convert-letter-read="setTextConvertLetterRead"
+        @select-text-convert-digit-read="setTextConvertDigitRead"
+        @apply-text-convert-zh-edit="onApplyTextConvertZhEdit"
+        @apply-text-convert-letter-edit="onApplyTextConvertLetterEdit"
+        @apply-text-convert-digit-edit="onApplyTextConvertDigitEdit"
         @toggle-find="onToggleFind"
         :chapter-rules-disabled="currentFileIsMarkdown"
         @open-chapter-rules="

@@ -15,7 +15,13 @@ const root = process.cwd();
 
 /** @param {string} abs */
 function rm(abs) {
-  if (fs.existsSync(abs)) fs.rmSync(abs, { recursive: true, force: true });
+  if (!fs.existsSync(abs)) return;
+  fs.rmSync(abs, {
+    recursive: true,
+    force: true,
+    maxRetries: 3,
+    retryDelay: 100,
+  });
 }
 
 /**
@@ -407,6 +413,68 @@ function pruneJiebaPlatformPackages(nodeModulesRoot, plat, arch) {
   }
 }
 
+/**
+ * OpenCC：运行时需 node/opencc.js、prebuilds/assets 词典，以及 **electron-rebuild** 的
+ * build/Release/opencc.node。npm 自带 prebuilds/*.node 面向 Node ABI，在 Electron 下会报
+ *「not a valid Win32 application」，故 postinstall 重建后优先保留 build/Release。
+ * @param {string} nodeModulesRoot
+ * @param {string} plat
+ * @param {string} arch
+ */
+function pruneOpencc(nodeModulesRoot, plat, arch) {
+  const pkgRoot = path.join(nodeModulesRoot, "opencc");
+  if (!fs.existsSync(pkgRoot)) return;
+
+  for (const name of ["deps", "src", "data", "scripts", "binding.gyp", "bin"]) {
+    rm(path.join(pkgRoot, name));
+  }
+
+  const nodeDir = path.join(pkgRoot, "node");
+  if (fs.existsSync(nodeDir)) {
+    rm(path.join(nodeDir, "cli.js"));
+  }
+
+  const prebuildsRoot = path.join(pkgRoot, "prebuilds");
+  const dropPrebuildPlatformDirs = () => {
+    if (!fs.existsSync(prebuildsRoot)) return;
+    for (const ent of fs.readdirSync(prebuildsRoot, { withFileTypes: true })) {
+      if (ent.isDirectory() && ent.name !== "assets") {
+        rm(path.join(prebuildsRoot, ent.name));
+      }
+    }
+  };
+
+  const buildRoot = path.join(pkgRoot, "build");
+  const releaseNode = path.join(buildRoot, "Release", "opencc.node");
+
+  if (fs.existsSync(releaseNode)) {
+    const nodeBytes = fs.readFileSync(releaseNode);
+    try {
+      rm(buildRoot);
+    } catch (err) {
+      const code = err && typeof err === "object" && "code" in err ? err.code : "";
+      if (code === "EPERM" || code === "EBUSY") {
+        console.warn(
+          "[prune-pack-deps] opencc: build/ locked (stop dev server); keeping electron-rebuilt .node in place",
+        );
+        dropPrebuildPlatformDirs();
+        return;
+      }
+      throw err;
+    }
+    const releaseDir = path.join(buildRoot, "Release");
+    fs.mkdirSync(releaseDir, { recursive: true });
+    fs.writeFileSync(path.join(releaseDir, "opencc.node"), nodeBytes);
+    dropPrebuildPlatformDirs();
+    return;
+  }
+
+  console.error(
+    "[prune-pack-deps] opencc: missing build/Release/opencc.node — run `npm run postinstall` or `electron-rebuild -f -w opencc` before packaging. npm prebuilds/*.node target Node ABI and crash in Electron (not a valid Win32 application).",
+  );
+  process.exit(1);
+}
+
 function main() {
   const { plat, arch, nm } = parseArgs();
   if (!fs.existsSync(nm)) {
@@ -425,6 +493,7 @@ function main() {
   pruneFontList(nm, plat);
   pruneSqliteVec(nm, plat, arch);
   pruneJiebaPlatformPackages(nm, plat, arch);
+  pruneOpencc(nm, plat, arch);
   pruneInstallOnlyPackages(nm);
   patchBetterSqlite3Manifest(nm);
 
@@ -446,8 +515,9 @@ function main() {
   const ortMb = dirSizeMb(path.join(nm, "onnxruntime-node"));
   const hfMb = dirSizeMb(path.join(nm, "@huggingface"));
   const sqliteMb = dirSizeMb(path.join(nm, "better-sqlite3"));
+  const openccMb = dirSizeMb(path.join(nm, "opencc"));
   console.log(
-    `[prune-pack-deps] ${plat}/${arch} done; node_modules ${beforeMb}MB → ${afterMb}MB (−${saved.toFixed(1)}MB); better-sqlite3≈${sqliteMb}MB onnxruntime-node≈${ortMb}MB @huggingface≈${hfMb}MB`,
+    `[prune-pack-deps] ${plat}/${arch} done; node_modules ${beforeMb}MB → ${afterMb}MB (−${saved.toFixed(1)}MB); better-sqlite3≈${sqliteMb}MB opencc≈${openccMb}MB onnxruntime-node≈${ortMb}MB @huggingface≈${hfMb}MB`,
   );
 }
 

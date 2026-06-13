@@ -17,6 +17,11 @@ import { yieldToUi } from "../ebook/yieldToUi";
 import type { ReaderViewportRestoreAnchor } from "../reader/readerViewportAnchor";
 import { floorReadingProgressPercentByLines } from "../utils/format";
 import { createPhysicalLineSplitter } from "../services/physicalLineStream";
+import { applyTextDisplayConverts } from "../services/textConvertApply";
+import type {
+  TextConvertWidthMode,
+  TextConvertZhMode,
+} from "@shared/textConvertTypes";
 
 type ReaderRef = Ref<InstanceType<typeof ReaderMain> | null>;
 
@@ -31,6 +36,9 @@ export function useTxtStreamPipeline(deps: {
   compressBlankLines: Ref<boolean>;
   compressBlankKeepOneBlank: Ref<boolean>;
   leadIndentFullWidth: Ref<boolean>;
+  textConvertZh: Ref<TextConvertZhMode>;
+  textConvertLetter: Ref<TextConvertWidthMode>;
+  textConvertDigit: Ref<TextConvertWidthMode>;
   chapterMinCharCount: Ref<number>;
   currentFileIsMarkdown: Ref<boolean>;
   /** 展示正文写入 Monaco 且插图/内链处理完成后 */
@@ -289,21 +297,29 @@ export function useTxtStreamPipeline(deps: {
     );
     await yieldToUi();
 
+    let displayText = formatted.text;
+    displayText = await applyTextDisplayConverts(displayText, {
+      zh: deps.textConvertZh.value,
+      letter: deps.textConvertLetter.value,
+      digit: deps.textConvertDigit.value,
+    });
+    await yieldToUi();
+
     filteredDisplayToPhysicalLine = formatted.displayLineToPhysicalLine;
     lastFormattedDisplayLines =
-      formatted.text.length > 0 ? formatted.text.split("\n") : [];
+      displayText.length > 0 ? displayText.split("\n") : [];
     chapterTitleDisplayLineByPhysical = new Map(
       formatted.chapterTitleDisplayLineByPhysical,
     );
     lineCount = formatted.lineCount;
-    deps.totalCharCount.value = formatted.text.length;
+    deps.totalCharCount.value = displayText.length;
     deps.totalLineCount.value = formatted.lineCount;
 
     const isHeavyDocument =
-      formatted.lineCount > 80_000 || formatted.text.length > 25_000_000;
+      formatted.lineCount > 80_000 || displayText.length > 25_000_000;
 
     r.setPendingEbookInternalLinkSidecar?.(formatted.ebookSidecar ?? null);
-    await r.setFullText(formatted.text, { heavy: isHeavyDocument });
+    await r.setFullText(displayText, { heavy: isHeavyDocument });
     if (deps.leadIndentFullWidth.value) {
       r.normalizeLastLineLeadIndent?.();
     }

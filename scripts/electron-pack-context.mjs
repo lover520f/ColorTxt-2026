@@ -46,6 +46,26 @@ export function onnxArchDirsToKeep(plat, arch) {
   return [arch];
 }
 
+/**
+ * opencc 预编译目录名（`prebuilds/{name}/opencc.node`）。
+ * macOS x64 无预编译包，打包保留 `build/Release/opencc.node`（electron-rebuild 产物）。
+ * @param {string} plat
+ * @param {string} arch
+ * @returns {string | null}
+ */
+export function openccPrebuildDir(plat, arch) {
+  if (plat === "darwin") {
+    return arch === "arm64" ? "darwin-arm64" : null;
+  }
+  if (plat === "linux") {
+    return arch === "arm64" ? "linux-arm64" : "linux-x64";
+  }
+  if (plat === "win32") {
+    return "win32-x64";
+  }
+  return null;
+}
+
 /** @param {string} file */
 export function normalizePackPath(file) {
   return file.replace(/\\/g, "/");
@@ -94,6 +114,27 @@ export function shouldIncludeNodeModuleFile(file) {
 
   if (f.includes("/@huggingface/transformers/dist/")) {
     if (!f.endsWith("/transformers.node.mjs")) return false;
+  }
+
+  if (f.includes("/node_modules/opencc/")) {
+    for (const drop of [
+      "/node_modules/opencc/deps/",
+      "/node_modules/opencc/src/",
+      "/node_modules/opencc/data/",
+      "/node_modules/opencc/scripts/",
+      "/node_modules/opencc/bin/",
+      "/node_modules/opencc/binding.gyp",
+    ]) {
+      if (f.includes(drop) || f.endsWith(drop.replace(/\/$/, ""))) return false;
+    }
+    for (const m of f.matchAll(/node_modules\/opencc\/prebuilds\/([^/]+)/g)) {
+      if (m[1] !== "assets") return false;
+    }
+    if (f.includes("/node_modules/opencc/build/")) {
+      if (!f.includes("/node_modules/opencc/build/Release/opencc.node")) {
+        return false;
+      }
+    }
   }
 
   return undefined;

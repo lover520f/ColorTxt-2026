@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-还有章节识别、空行压缩、行首缩进、语音朗读、AI 阅读助手、AI 智能排版等功能。
+还有章节识别、简繁互转、语音朗读、AI 阅读助手、AI 智能排版等功能。
 </p>
 
 <p align="center">
@@ -35,6 +35,7 @@
 - **章节标题常驻**：章节标题会常驻顶部，看到哪里一目了然。
 - 支持修改字体、字号、行高（内置 `京華老宋体`，也可以选择系统中安装的任意字体）。
 - 支持**空行压缩**、**行首缩进**。
+- 支持**简繁互转**、**字母数字全半角互转**。
 - **阅读进度恢复**：自动记录阅读进度，下次打开可以继续阅读。
 - 最近打开记录：默认记录最近打开的20个文件。
 - 文件列表功能：支持**分类**、**排序**、文件名**过滤**。
@@ -191,3 +192,5 @@ OpenAI 接口拼接方式：
 - 其他电子书格式的解析，主要参考 [foliate-js](https://github.com/johnfactotum/foliate-js) 的实现
 - AI 聊天助手和语音朗读的基础功能，主要参考了 [ReadAny](https://github.com/codedogQBY/ReadAny) 的实现
 - 角色卡 3D 卡片效果的实现思路及部分样式、贴图资源参考 [pokemon-cards-css](https://github.com/simeydotme/pokemon-cards-css)
+- 基于 [@node-rs/jieba](https://github.com/napi-rs/node-rs/tree/main/packages/jieba) 实现中文分词，以支持生成词云
+- 基于 [OpenCC](https://github.com/byvoid/opencc) 实现简繁互转

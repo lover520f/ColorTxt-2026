@@ -55,6 +55,9 @@ export type PersistedSettingsData = {
   compressBlankKeepOneBlank?: boolean;
   /** 是否为正文行统一行首两个全角空格（章节标题行与空行除外） */
   leadIndentFullWidth?: boolean;
+  textConvertZh?: string;
+  textConvertLetter?: string;
+  textConvertDigit?: string;
   /** 章节列表是否显示每章字数 */
   showChapterCounts?: boolean;
   chapterRules?: ChapterMatchRule[];
@@ -237,6 +240,15 @@ export function loadPersistedSettingsData(
   }
   if (typeof obj.leadIndentFullWidth === "boolean") {
     data.leadIndentFullWidth = obj.leadIndentFullWidth;
+  }
+  if (typeof obj.textConvertZh === "string") {
+    data.textConvertZh = obj.textConvertZh;
+  }
+  if (typeof obj.textConvertLetter === "string") {
+    data.textConvertLetter = obj.textConvertLetter;
+  }
+  if (typeof obj.textConvertDigit === "string") {
+    data.textConvertDigit = obj.textConvertDigit;
   }
   if (typeof obj.showChapterCounts === "boolean") {
     data.showChapterCounts = obj.showChapterCounts;

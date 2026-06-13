@@ -19,6 +19,10 @@ import {
   type AiSmartFormatSettings,
 } from "@shared/aiSmartFormatTypes";
 import {
+  parseTextConvertWidthMode,
+  parseTextConvertZhMode,
+} from "@shared/textConvertTypes";
+import {
   loadPersistedSettingsData,
   loadSessionSnapshot,
   loadTxtFileListSnapshot,
@@ -150,6 +154,9 @@ export function useAppPersistence(deps: {
   /** 与「内容上色」同时生效：成对引号/括号是否跨行 */
   txtrDelimitedMatchCrossLine: Ref<boolean>;
   leadIndentFullWidth: Ref<boolean>;
+  textConvertZh: Ref<import("@shared/textConvertTypes").TextConvertZhMode>;
+  textConvertLetter: Ref<import("@shared/textConvertTypes").TextConvertWidthMode>;
+  textConvertDigit: Ref<import("@shared/textConvertTypes").TextConvertWidthMode>;
   showChapterCounts: Ref<boolean>;
   readerFontSize: Ref<number>;
   readerLineHeightMultiple: Ref<number>;
@@ -676,6 +683,20 @@ export function useAppPersistence(deps: {
       deps.leadIndentFullWidth.value = data.leadIndentFullWidth;
     }
 
+    if (data.textConvertZh != null) {
+      deps.textConvertZh.value = parseTextConvertZhMode(data.textConvertZh);
+    }
+    if (data.textConvertLetter != null) {
+      deps.textConvertLetter.value = parseTextConvertWidthMode(
+        data.textConvertLetter,
+      );
+    }
+    if (data.textConvertDigit != null) {
+      deps.textConvertDigit.value = parseTextConvertWidthMode(
+        data.textConvertDigit,
+      );
+    }
+
     if (typeof data.showChapterCounts === "boolean") {
       deps.showChapterCounts.value = data.showChapterCounts;
     }
@@ -901,6 +922,9 @@ export function useAppPersistence(deps: {
       compressBlankKeepOneBlank: deps.compressBlankKeepOneBlank.value,
       txtrDelimitedMatchCrossLine: deps.txtrDelimitedMatchCrossLine.value,
       leadIndentFullWidth: deps.leadIndentFullWidth.value,
+      textConvertZh: deps.textConvertZh.value,
+      textConvertLetter: deps.textConvertLetter.value,
+      textConvertDigit: deps.textConvertDigit.value,
       showChapterCounts: deps.showChapterCounts.value,
       chapterRules: deps.chapterRuleState.value.rules,
       restoreSessionOnStartup: deps.restoreSessionOnStartup.value,

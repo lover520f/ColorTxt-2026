@@ -14,8 +14,10 @@ withDefaults(
     disabled?: boolean;
     /** 表格操作列等：32×32、图标 18px */
     large?: boolean;
+    /** 编辑态「格式化」类操作：图标使用主题色，与只读切换按钮区分 */
+    primary?: boolean;
   }>(),
-  { active: false, multicolor: false, disabled: false, large: false },
+  { active: false, multicolor: false, disabled: false, large: false, primary: false },
 );
 
 defineEmits<{ click: [e: MouseEvent] }>();
@@ -25,7 +27,7 @@ defineEmits<{ click: [e: MouseEvent] }>();
   <button
     type="button"
     class="iconBtn"
-    :class="{ active, large }"
+    :class="{ active, large, primary }"
     :title="title"
     :aria-label="ariaLabel"
     :aria-pressed="pressed"
@@ -95,5 +97,18 @@ defineEmits<{ click: [e: MouseEvent] }>();
 
 .iconBtn.active .icon:not(.icon--multicolor) {
   color: var(--icon-btn-fg);
+}
+
+.iconBtn.primary {
+  background: var(--primary);
+}
+.iconBtn.primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.iconBtn.primary .icon:not(.icon--multicolor) {
+  color: #ffffff;
+}
+.iconBtn.primary:hover:not(:disabled) .icon:not(.icon--multicolor) {
+  color: #ffffff;
 }
 </style>

@@ -9,6 +9,10 @@ import {
   normalizeLineHeightMultiple,
 } from "../constants/appUi";
 import type { useTxtStreamPipeline } from "./useTxtStreamPipeline";
+import type {
+  TextConvertWidthMode,
+  TextConvertZhMode,
+} from "@shared/textConvertTypes";
 
 type Stream = ReturnType<typeof useTxtStreamPipeline>;
 
@@ -22,6 +26,9 @@ export function useAppReaderUiPrefs(deps: {
   monacoAdvancedWrapping: Ref<boolean>;
   compressBlankLines: Ref<boolean>;
   leadIndentFullWidth: Ref<boolean>;
+  textConvertZh: Ref<TextConvertZhMode>;
+  textConvertLetter: Ref<TextConvertWidthMode>;
+  textConvertDigit: Ref<TextConvertWidthMode>;
   withChapterListScrollSuppressed: <T>(fn: () => Promise<T> | T) => Promise<T>;
   currentFile: Ref<string | null>;
   stream: Stream;
@@ -187,6 +194,45 @@ export function useAppReaderUiPrefs(deps: {
     );
   }
 
+  async function setTextConvertZhRead(mode: TextConvertZhMode) {
+    const prev = deps.textConvertZh.value;
+    if (prev === mode) return;
+    await applyDisplayToggleFromPhysical(
+      () => {
+        deps.textConvertZh.value = mode;
+      },
+      () => {
+        deps.textConvertZh.value = prev;
+      },
+    );
+  }
+
+  async function setTextConvertLetterRead(mode: TextConvertWidthMode) {
+    const prev = deps.textConvertLetter.value;
+    if (prev === mode) return;
+    await applyDisplayToggleFromPhysical(
+      () => {
+        deps.textConvertLetter.value = mode;
+      },
+      () => {
+        deps.textConvertLetter.value = prev;
+      },
+    );
+  }
+
+  async function setTextConvertDigitRead(mode: TextConvertWidthMode) {
+    const prev = deps.textConvertDigit.value;
+    if (prev === mode) return;
+    await applyDisplayToggleFromPhysical(
+      () => {
+        deps.textConvertDigit.value = mode;
+      },
+      () => {
+        deps.textConvertDigit.value = prev;
+      },
+    );
+  }
+
   function toggleReaderFind() {
     if (deps.isVoiceReadBlocksFind?.value) return;
     deps.readerRef.value?.toggleFindWidget?.();
@@ -210,6 +256,9 @@ export function useAppReaderUiPrefs(deps: {
     toggleMonacoAdvancedWrapping,
     toggleCompressBlankLines,
     toggleLeadIndentFullWidth,
+    setTextConvertZhRead,
+    setTextConvertLetterRead,
+    setTextConvertDigitRead,
     toggleReaderFind,
     onToggleFind,
   };
