@@ -52,6 +52,8 @@ import { appAlert } from "../services/appDialog";
 import {
   collectFsPathsFromDataTransfer,
   dataTransferLikelyHasExternalFiles,
+  DROP_ZONE_CHARACTER_PORTRAIT,
+  isDragOverDropZone,
 } from "../utils/dragDropFsPaths";
 
 const props = withDefaults(
@@ -535,20 +537,29 @@ function bindBookmarkListRef(value: any) {
 
 const sidebarDragOverlayVisible = ref(false);
 
-function onSidebarDragEnter(ev: DragEvent) {
+function syncSidebarDragOverlay(ev: DragEvent) {
   const dt = ev.dataTransfer;
-  if (!dataTransferLikelyHasExternalFiles(dt)) return;
-  ev.preventDefault();
+  if (!dataTransferLikelyHasExternalFiles(dt)) {
+    sidebarDragOverlayVisible.value = false;
+    return;
+  }
+  if (isDragOverDropZone(ev, DROP_ZONE_CHARACTER_PORTRAIT)) {
+    sidebarDragOverlayVisible.value = false;
+    return;
+  }
   sidebarDragOverlayVisible.value = true;
 }
 
-function onSidebarDragOver(ev: DragEvent) {
-  const dt = ev.dataTransfer;
-  if (!dataTransferLikelyHasExternalFiles(dt)) return;
+function onSidebarDragEnter(ev: DragEvent) {
   ev.preventDefault();
-  sidebarDragOverlayVisible.value = true;
+  syncSidebarDragOverlay(ev);
+}
+
+function onSidebarDragOver(ev: DragEvent) {
+  ev.preventDefault();
+  syncSidebarDragOverlay(ev);
   try {
-    if (dt) dt.dropEffect = "copy";
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
   } catch {
     /* ignore */
   }
@@ -583,8 +594,8 @@ defineExpose({
     class="sidebar"
     data-reader-sidebar-root
     data-drop-zone="reader-sidebar"
-    @dragenter="onSidebarDragEnter"
-    @dragover="onSidebarDragOver"
+    @dragenter.capture="onSidebarDragEnter"
+    @dragover.capture="onSidebarDragOver"
     @dragleave="onSidebarDragLeave"
     @drop="onSidebarDrop"
   >

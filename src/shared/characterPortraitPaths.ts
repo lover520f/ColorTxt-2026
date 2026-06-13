@@ -1,6 +1,45 @@
 /** 位于 `app.getPath("userData")` 下的默认角色立绘缓存子目录名 */
 export const CHARACTER_PORTRAIT_DEFAULT_SUBDIR = "CharacterPortrait";
 
+/** 侧栏立绘上传/拖放允许的常见图片后缀（不含点） */
+export const PORTRAIT_UPLOAD_IMAGE_EXTENSIONS = [
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "ico",
+  "svg",
+] as const;
+
+export function portraitImageExtensionFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").trim();
+  const name = normalized.slice(normalized.lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return "";
+  return name.slice(dot + 1).toLowerCase();
+}
+
+export function isPortraitUploadImagePath(path: string): boolean {
+  const ext = portraitImageExtensionFromPath(path);
+  return (
+    ext !== "" &&
+    (PORTRAIT_UPLOAD_IMAGE_EXTENSIONS as readonly string[]).includes(ext)
+  );
+}
+
+/** 「选择图片」文件对话框过滤器 */
+export const PORTRAIT_UPLOAD_OPEN_DIALOG_FILTERS: Array<{
+  name: string;
+  extensions: string[];
+}> = [
+  {
+    name: "图片",
+    extensions: [...PORTRAIT_UPLOAD_IMAGE_EXTENSIONS],
+  },
+];
+
 const WIN_BAD = /[/\\?%*:|"<>]/g;
 
 function joinPathSegments(...segments: string[]): string {

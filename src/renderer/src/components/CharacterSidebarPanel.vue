@@ -29,6 +29,8 @@ import {
   characterPortraitImageAbs,
   characterPortraitSessionDraftImageAbs,
   characterPortraitTmpImageAbs,
+  isPortraitUploadImagePath,
+  PORTRAIT_UPLOAD_OPEN_DIALOG_FILTERS,
   sanitizeBookFolderSegment,
 } from "@shared/characterPortraitPaths";
 import { runAiBookVectorIndexBuild } from "../ai/buildBookVectorIndex";
@@ -45,6 +47,11 @@ import type { CharacterCardTextureEffectId } from "@shared/characterCardTextureE
 import { DEFAULT_CHARACTER_CARD_TEXTURE_EFFECT } from "@shared/characterCardTextureEffects";
 import CharacterRosterCard from "./CharacterRosterCard.vue";
 import { pushEscBeforeModal } from "../utils/modalStack";
+import {
+  collectFsPathsFromDataTransfer,
+  dataTransferLikelyHasExternalFiles,
+  DROP_ZONE_CHARACTER_PORTRAIT,
+} from "../utils/dragDropFsPaths";
 import IconButton from "./IconButton.vue";
 import ReaderImageLightbox from "./ReaderImageLightbox.vue";
 import type ReaderMain from "./ReaderMain.vue";
@@ -198,6 +205,7 @@ const genTempReadableUrl = ref<string | null>(null);
 const genTmpAbsPath = ref<string | null>(null);
 const genApplying = ref(false);
 const drawerPortraitPreviewUrl = ref<string | null>(null);
+const drawerPortraitDragOverlayVisible = ref(false);
 /** 编辑抽屉内待保存立绘会话键：编辑时为角色 id，添加时为 uuid */
 const portraitEditSessionKey = ref("");
 
@@ -864,6 +872,7 @@ function closeSlide() {
   slideError.value = "";
   retrieveNoticeBanner.value = "";
   retrieveEverThisDrawer.value = false;
+  hideDrawerPortraitDragOverlay();
 }
 
 function abortRetrieveIndexBuild() {
@@ -1401,19 +1410,15 @@ async function onGenApply() {
   }
 }
 
-async function onDrawerUploadPortrait() {
+async function applyPortraitFromFilePath(fromPath: string) {
   const sk = portraitEditSessionKey.value.trim();
   if (!sk) {
     await window.colorTxt.alert("请关闭并重新打开编辑面板后再试。");
     return;
   }
-  const r = await window.colorTxt.showOpenDialog({ properties: ["openFile"] });
-  const picked =
-    r.canceled || r.filePaths.length === 0 ? "" : (r.filePaths[0] ?? "");
-  if (!picked.trim()) return;
   const dest = await portraitSessionDraftAbs(sk);
   const cp = await window.colorTxt.characterPortrait.copyFileTo({
-    from: picked.trim(),
+    from: fromPath.trim(),
     to: dest,
   });
   if (!cp.ok) {
@@ -1421,6 +1426,72 @@ async function onDrawerUploadPortrait() {
     return;
   }
   await refreshDrawerPortraitPreview();
+}
+
+async function onDrawerUploadPortrait() {
+  const r = await window.colorTxt.showOpenDialog({
+    properties: ["openFile"],
+    filters: PORTRAIT_UPLOAD_OPEN_DIALOG_FILTERS,
+  });
+  const picked =
+    r.canceled || r.filePaths.length === 0 ? "" : (r.filePaths[0] ?? "");
+  if (!picked.trim()) return;
+  await applyPortraitFromFilePath(picked);
+}
+
+function canAcceptPortraitDrop(): boolean {
+  return !extracting.value && Boolean(draftDisplayName.value.trim());
+}
+
+function showDrawerPortraitDragOverlay() {
+  drawerPortraitDragOverlayVisible.value = canAcceptPortraitDrop();
+}
+
+function hideDrawerPortraitDragOverlay() {
+  drawerPortraitDragOverlayVisible.value = false;
+}
+
+function onDrawerPortraitDragEnter(ev: DragEvent) {
+  if (!canAcceptPortraitDrop()) return;
+  if (!dataTransferLikelyHasExternalFiles(ev.dataTransfer)) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  showDrawerPortraitDragOverlay();
+}
+
+function onDrawerPortraitDragOver(ev: DragEvent) {
+  if (!canAcceptPortraitDrop()) {
+    hideDrawerPortraitDragOverlay();
+    return;
+  }
+  if (!dataTransferLikelyHasExternalFiles(ev.dataTransfer)) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  showDrawerPortraitDragOverlay();
+  try {
+    ev.dataTransfer!.dropEffect = "copy";
+  } catch {
+    /* ignore */
+  }
+}
+
+function onDrawerPortraitDragLeave(ev: DragEvent) {
+  const root = ev.currentTarget;
+  if (!(root instanceof HTMLElement)) return;
+  const related = ev.relatedTarget;
+  if (related instanceof Node && root.contains(related)) return;
+  hideDrawerPortraitDragOverlay();
+}
+
+async function onDrawerPortraitDrop(ev: DragEvent) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  hideDrawerPortraitDragOverlay();
+  if (extracting.value || !draftDisplayName.value.trim()) return;
+  const paths = collectFsPathsFromDataTransfer(ev.dataTransfer);
+  const picked = paths.find((p) => isPortraitUploadImagePath(p));
+  if (!picked) return;
+  await applyPortraitFromFilePath(picked);
 }
 
 async function onClearAllCharacters() {
@@ -1663,6 +1734,7 @@ onBeforeUnmount(() => {
               <div class="drawerPortraitBlock">
                 <div
                   class="drawerPortraitFrame"
+                  :data-drop-zone="DROP_ZONE_CHARACTER_PORTRAIT"
                   :class="{
                     portraitPreviewClickable: Boolean(drawerPortraitPreviewUrl),
                   }"
@@ -1671,6 +1743,10 @@ onBeforeUnmount(() => {
                   "
                   role="presentation"
                   @click="openPortraitLightboxFromUrl(drawerPortraitPreviewUrl)"
+                  @dragenter="onDrawerPortraitDragEnter"
+                  @dragover="onDrawerPortraitDragOver"
+                  @dragleave="onDrawerPortraitDragLeave"
+                  @drop="onDrawerPortraitDrop"
                 >
                   <img
                     v-if="drawerPortraitPreviewUrl"
@@ -1679,6 +1755,15 @@ onBeforeUnmount(() => {
                     class="drawerPortraitImg"
                   />
                   <span v-else class="drawerPortraitPlaceholder">暂无立绘</span>
+                  <Transition name="drawerPortraitDropOverlay">
+                    <div
+                      v-if="drawerPortraitDragOverlayVisible"
+                      class="drawerPortraitDropOverlay"
+                      aria-hidden="true"
+                    >
+                      <p class="drawerPortraitDropOverlayText">拖放图片</p>
+                    </div>
+                  </Transition>
                 </div>
                 <div class="drawerPortraitBtns">
                   <button
@@ -2257,6 +2342,7 @@ onBeforeUnmount(() => {
 }
 
 .drawerPortraitFrame {
+  position: relative;
   width: 100%;
   aspect-ratio: 3 / 4;
   max-height: 200px;
@@ -2268,6 +2354,39 @@ onBeforeUnmount(() => {
   justify-content: center;
   overflow: hidden;
   box-sizing: border-box;
+}
+
+.drawerPortraitDropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.drawerPortraitDropOverlayText {
+  margin: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background-color: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+  text-align: center;
+}
+
+.drawerPortraitDropOverlay-enter-active,
+.drawerPortraitDropOverlay-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.drawerPortraitDropOverlay-enter-from,
+.drawerPortraitDropOverlay-leave-to {
+  opacity: 0;
 }
 
 .portraitPreviewClickable {
