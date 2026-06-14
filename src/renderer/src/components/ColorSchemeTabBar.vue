@@ -1,10 +1,10 @@
 <script setup lang="ts">
 defineProps<{
-  activeTab: "reader" | "highlight";
+  activeTab: "reader" | "highlight" | "lineation";
 }>();
 
 const emit = defineEmits<{
-  "update:activeTab": [value: "reader" | "highlight"];
+  "update:activeTab": [value: "reader" | "highlight" | "lineation"];
 }>();
 </script>
 
@@ -30,6 +30,16 @@ const emit = defineEmits<{
         @click="emit('update:activeTab', 'highlight')"
       >
         高亮色
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tabBtn"
+        :class="{ active: activeTab === 'lineation' }"
+        :aria-selected="activeTab === 'lineation'"
+        @click="emit('update:activeTab', 'lineation')"
+      >
+        标注色
       </button>
     </div>
   </div>

@@ -178,7 +178,6 @@ const vrFormatLock = computed(() => props.voiceReadHeaderLocked);
         :icon-html="icons.aiCompose"
         title="AI 智能排版"
         aria-label="AI 智能排版"
-        primary
         :disabled="vrFormatLock || aiSmartFormatRunning"
         @click="emit('aiSmartFormatFull')"
       />

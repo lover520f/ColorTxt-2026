@@ -445,3 +445,31 @@ body > .overflowingContentWidgets
   display: inline-block !important;
   box-sizing: border-box;
 }
+
+/* 阅读器笔记/划线：须命中 .view-line span，并用 box-decoration-break 覆盖 Monarch 分词 span */
+.monaco-editor .hoverHighlight {
+  background-color: transparent !important;
+}
+
+.monaco-editor .view-lines .view-line span.readerAnnotationHit {
+  cursor: pointer;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.monaco-editor .view-lines .view-line span.readerAnnotationNoteOnly {
+  text-decoration: none !important;
+  background-image: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--vscode-editor-foreground, #888) 32%, transparent) 0,
+    color-mix(in srgb, var(--vscode-editor-foreground, #888) 32%, transparent) 4px,
+    transparent 4px,
+    transparent 6px
+  ) !important;
+  background-size: 6px 1px !important;
+  background-repeat: repeat-x !important;
+  background-position: 0 100% !important;
+  padding-bottom: 2px !important;
+  box-decoration-break: clone !important;
+  -webkit-box-decoration-break: clone !important;
+}

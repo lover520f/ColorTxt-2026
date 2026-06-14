@@ -78,6 +78,9 @@ import genderUnknownIcon from "./assets/unknown.svg?raw";
 import warningIcon from "./assets/warning.svg?raw";
 import favoriteIcon from "./assets/favorite.svg?raw";
 import favoriteFillIcon from "./assets/favorite_fill.svg?raw";
+import noteIcon from "./assets/note.svg?raw";
+import quoteIcon from "./assets/quote.svg?raw";
+import deleteLineationIcon from "./assets/delete_lineation.svg?raw";
 
 export const icons = {
   dark: darkIcon,
@@ -175,4 +178,7 @@ export const icons = {
   favorite: favoriteIcon,
   /** 高亮词：已收藏（常驻） */
   favoriteFill: favoriteFillIcon,
+  note: noteIcon,
+  quote: quoteIcon,
+  deleteLineation: deleteLineationIcon,
 } as const;

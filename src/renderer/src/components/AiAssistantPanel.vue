@@ -768,6 +768,7 @@ watch(
         void refreshChatModels();
       }
       await nextTick();
+      autosizeComposerInput();
       flushPendingScrollToBottomAfterVisible();
       focusComposer();
     })();
@@ -1759,9 +1760,37 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+function scrollComposerToCaretEnd() {
+  const el = composerInputRef.value;
+  if (!el) return;
+  const len = el.value.length;
+  el.setSelectionRange(len, len);
+  el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+}
+
+function prefillQuotedText(text: string) {
+  const quoted = text
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+  input.value = `${quoted}\n\n`;
+  void nextTick(() => {
+    const layoutComposer = () => {
+      autosizeComposerInput();
+      const el = composerInputRef.value;
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      scrollComposerToCaretEnd();
+    };
+    layoutComposer();
+    requestAnimationFrame(layoutComposer);
+  });
+}
+
 defineExpose({
   requestRebuildVectorIndex,
   requestClearAiBookCache,
+  prefillQuotedText,
 });
 </script>
 

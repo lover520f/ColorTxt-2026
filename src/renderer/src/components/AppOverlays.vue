@@ -63,6 +63,8 @@ const props = defineProps<{
   monacoFontFamily: string;
   highlightColorsLight: string[];
   highlightColorsDark: string[];
+  lineationColorsLight: string[];
+  lineationColorsDark: string[];
   ebookConvertOutputDir: string;
   characterPortraitCacheDir: string;
   aiSkillsEnabled: Record<string, boolean>;
@@ -82,6 +84,7 @@ const emit = defineEmits<{
     payload: { light: ReaderSurfacePalette; dark: ReaderSurfacePalette },
   ];
   applyHighlightColors: [payload: { light: string[]; dark: string[] }];
+  applyLineationColors: [payload: { light: string[]; dark: string[] }];
 }>();
 
 const showAboutPanel = defineModel<boolean>("showAboutPanel", {
@@ -215,8 +218,11 @@ onBeforeUnmount(() => {
     :monaco-font-family="monacoFontFamily"
     :highlight-colors-light="highlightColorsLight"
     :highlight-colors-dark="highlightColorsDark"
+    :lineation-colors-light="lineationColorsLight"
+    :lineation-colors-dark="lineationColorsDark"
     @apply-reader-palettes="emit('applyReaderPalettes', $event)"
     @apply-highlight-colors="emit('applyHighlightColors', $event)"
+    @apply-lineation-colors="emit('applyLineationColors', $event)"
   />
 
   <AppModal

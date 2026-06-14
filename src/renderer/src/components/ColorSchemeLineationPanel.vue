@@ -8,15 +8,15 @@ import {
   useSortableReorder,
 } from "../composables/useSortableReorder";
 
-export type HighlightColorRow = { id: string; color: string };
+export type LineationColorRow = { id: string; color: string };
 
 const props = defineProps<{
-  rows: HighlightColorRow[];
+  rows: LineationColorRow[];
   previewHexes: string[];
-  highlightReaderBg: string;
+  lineationReaderBg: string;
   bodyTextColor: string;
   monacoFontFamily: string;
-  minHighlightColors: number;
+  minLineationColors: number;
 }>();
 
 const emit = defineEmits<{
@@ -32,13 +32,13 @@ const tableScrollEl = ref<HTMLElement | null>(null);
 const tableBodyRef = ref<HTMLElement | null>(null);
 const rowCount = computed(() => props.rows.length);
 
-const { remount: remountHighlightSortable } = useSortableReorder({
+const { remount: remountLineationSortable } = useSortableReorder({
   containerRef: tableBodyRef,
   itemCount: rowCount,
   enabled: computed(() => props.rows.length > 1),
   onReorder(from, to) {
     emit("reorder", from, to);
-    remountHighlightSortable();
+    remountLineationSortable();
   },
 });
 
@@ -48,18 +48,41 @@ async function onAddClick() {
   const el = tableScrollEl.value;
   if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
 }
+
+function markerStyle(hex: string) {
+  return {
+    backgroundColor: `color-mix(in srgb, ${hex} 35%, transparent)`,
+    borderRadius: "2px",
+  };
+}
+
+function wavyStyle(hex: string) {
+  return {
+    textDecoration: `underline wavy ${hex}`,
+    textDecorationThickness: "2px",
+    textUnderlineOffset: "4px",
+  };
+}
+
+function straightStyle(hex: string) {
+  return {
+    textDecoration: `underline solid ${hex}`,
+    textDecorationThickness: "2px",
+    textUnderlineOffset: "4px",
+  };
+}
 </script>
 
 <template>
-  <div class="colorSchemeHighlight" role="tabpanel">
+  <div class="colorSchemeLineation" role="tabpanel">
     <div ref="tableScrollEl" class="schemePanelTableScroll">
-      <table class="highlightTable" :class="{ 'hasScrollBar': rows.length >= 6 }">
+      <table class="lineationTable" :class="{ hasScrollBar: rows.length >= 6 }">
         <tbody ref="tableBodyRef">
           <tr v-for="(row, rowIdx) in rows" :key="row.id">
-            <td class="hlColLabel colorSchemeRowLabel">
-              高亮色 {{ rowIdx + 1 }}
+            <td class="lnColLabel colorSchemeRowLabel">
+              标注色 {{ rowIdx + 1 }}
             </td>
-            <td class="hlColPicker">
+            <td class="lnColPicker">
               <HexColorPickerField
                 :model-value="row.color"
                 @update:model-value="emit('update-color', rowIdx, $event)"
@@ -67,21 +90,30 @@ async function onAddClick() {
                 @draft-end="emit('draft-end')"
               />
             </td>
-            <td class="hlColPreview">
+            <td class="lnColPreview">
               <div
-                class="hlPreviewBox"
+                class="lnPreviewBox"
                 :style="{
-                  backgroundColor: highlightReaderBg,
+                  backgroundColor: lineationReaderBg,
                   fontFamily: monacoFontFamily,
+                  color: bodyTextColor,
                 }"
               >
-                <span :style="{ color: bodyTextColor }">这是</span
-                ><span :style="{ color: previewHexes[rowIdx] }">高亮</span
-                ><span :style="{ color: bodyTextColor }">示例</span>
+                <span class="lnPreviewItem" :style="markerStyle(previewHexes[rowIdx]!)">
+                  马克笔
+                </span>
+                <span class="lnPreviewSep" aria-hidden="true">　</span>
+                <span class="lnPreviewItem" :style="wavyStyle(previewHexes[rowIdx]!)">
+                  波浪线
+                </span>
+                <span class="lnPreviewSep" aria-hidden="true">　</span>
+                <span class="lnPreviewItem" :style="straightStyle(previewHexes[rowIdx]!)">
+                  直线
+                </span>
               </div>
             </td>
-            <td class="hlColActions">
-              <div class="hlActionsInner">
+            <td class="lnColActions">
+              <div class="lnActionsInner">
                 <IconButton
                   :class="SORTABLE_ROW_HANDLE_CLASS"
                   :icon-html="icons.move"
@@ -90,7 +122,7 @@ async function onAddClick() {
                   :disabled="rows.length <= 1"
                 />
                 <IconButton
-                  :class="{ invisible: rows.length <= minHighlightColors }"
+                  :class="{ invisible: rows.length <= minLineationColors }"
                   :icon-html="icons.remove"
                   aria-label="删除"
                   title="删除"
@@ -104,13 +136,13 @@ async function onAddClick() {
     </div>
     <button
       type="button"
-      class="btn highlightAddBtn"
+      class="btn lineationAddBtn"
       size="large"
-      aria-label="新增高亮色"
-      title="新增高亮色"
+      aria-label="新增标注色"
+      title="新增标注色"
       @click="onAddClick"
     >
-      <span class="highlightAddBtnIcon" aria-hidden="true" v-html="icons.add"></span>
+      <span class="lineationAddBtnIcon" aria-hidden="true" v-html="icons.add"></span>
     </button>
   </div>
 </template>
@@ -121,7 +153,7 @@ async function onAddClick() {
   color: var(--fg);
 }
 
-.colorSchemeHighlight {
+.colorSchemeLineation {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -137,45 +169,55 @@ async function onAddClick() {
   background: var(--bg);
 }
 
-.highlightTable {
+.lineationTable {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
   table-layout: fixed;
 }
 
-.highlightTable td {
+.lineationTable td {
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
 
-.highlightTable.hasScrollBar tbody tr:last-child td {
+.lineationTable.hasScrollBar tbody tr:last-child td {
   border-bottom: none;
 }
 
-.hlColLabel {
+.lnColLabel {
   width: 20%;
   white-space: nowrap;
 }
 
-.hlColPicker {
+.lnColPicker {
   width: 20%;
 }
 
-.hlColPreview {
+.lnColPreview {
   min-width: 0;
 }
 
-.hlPreviewBox {
-  display: inline-block;
+.lnPreviewBox {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0;
   padding: 8px 14px;
   font-size: 18px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
-.hlColActions {
-  /* width 30×2 + gap 4 + padding 10×2 */
+.lnPreviewItem {
+  white-space: nowrap;
+}
+
+.lnPreviewSep {
+  user-select: none;
+}
+
+.lnColActions {
   width: 84px;
   text-align: right;
 }
@@ -184,7 +226,7 @@ async function onAddClick() {
   visibility: hidden;
 }
 
-.hlActionsInner {
+.lnActionsInner {
   display: inline-flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -192,14 +234,14 @@ async function onAddClick() {
   gap: 4px;
 }
 
-.highlightAddBtn {
+.lineationAddBtn {
   margin-top: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.highlightAddBtnIcon {
+.lineationAddBtnIcon {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -207,13 +249,13 @@ async function onAddClick() {
   color: inherit;
 }
 
-.highlightAddBtnIcon :deep(svg) {
+.lineationAddBtnIcon :deep(svg) {
   width: 18px;
   height: 18px;
   display: block;
 }
 
-.highlightAddBtnIcon :deep(path) {
+.lineationAddBtnIcon :deep(path) {
   fill: currentColor;
 }
 

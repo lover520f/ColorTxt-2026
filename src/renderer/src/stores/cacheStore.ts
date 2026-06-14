@@ -14,6 +14,8 @@ import {
 
 export type { TxtFileItem };
 import { parseHighlightColorsArray } from "../constants/highlightColors";
+import { parseLineationColorsArray } from "../constants/lineationColors";
+import { parseLineationLastColors } from "../constants/annotationColors";
 import {
   normalizeHighlightWordsByIndex,
   type HighlightWordsByIndex,
@@ -93,8 +95,14 @@ export type PersistedSettingsData = {
   highlightColorsLight?: string[];
   /** 自定义高亮色（暗色主题） */
   highlightColorsDark?: string[];
+  /** 划线标注色（亮色主题） */
+  lineationColorsLight?: string[];
+  /** 划线标注色（暗色主题） */
+  lineationColorsDark?: string[];
   /** 已收藏（全书通用）高亮词，按高亮色索引分桶 */
   highlightWordsByIndexGlobal?: HighlightWordsByIndex;
+  /** 划线（马克笔/波浪/直线）各自上次选用的 5 色索引 */
+  lineationLastColors?: import("../constants/annotationColors").LineationLastColorPrefs;
   /**
    * 电子书转换输出目录：空字符串表示与源书同目录。
    * 非空时为绝对路径。若设置 JSON 中无此键，应用默认使用 `userData/ConvertedTxt`。
@@ -327,6 +335,17 @@ export function loadPersistedSettingsData(
   if (Array.isArray(obj.highlightColorsDark)) {
     const h = parseHighlightColorsArray(obj.highlightColorsDark);
     if (h) data.highlightColorsDark = h;
+  }
+  if (Array.isArray(obj.lineationColorsLight)) {
+    const c = parseLineationColorsArray(obj.lineationColorsLight);
+    if (c) data.lineationColorsLight = c;
+  }
+  if (Array.isArray(obj.lineationColorsDark)) {
+    const c = parseLineationColorsArray(obj.lineationColorsDark);
+    if (c) data.lineationColorsDark = c;
+  }
+  if (obj.lineationLastColors != null && typeof obj.lineationLastColors === "object") {
+    data.lineationLastColors = parseLineationLastColors(obj.lineationLastColors);
   }
   const globalHl = normalizeHighlightWordsByIndex(
     obj.highlightWordsByIndexGlobal,

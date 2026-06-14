@@ -1,3 +1,4 @@
+import { normalizeReaderAnnotations } from "../utils/readerAnnotations";
 import type {
   CharacterBookStylePersisted,
   CharacterGender,
@@ -23,6 +24,29 @@ export type PersistedEditorViewState = Record<string, unknown>;
 /** 自定义高亮词：键为索引字符串 `"0"`,`"1"`…，值为该索引下高亮词（仅存索引不存色值） */
 export type HighlightWordsByIndex = Record<string, string[]>;
 
+export type ReaderLineationType = "marker" | "wavy" | "straight";
+
+export type ReaderAnnotationRecord = {
+  id: string;
+  startPhysicalLine: number;
+  startColumn: number;
+  endPhysicalLine: number;
+  endColumn: number;
+  text: string;
+  lineation?: {
+    type: ReaderLineationType;
+    colorIndex: number;
+  };
+  note?: {
+    content: string;
+    createdAt: number;
+    updatedAt: number;
+  };
+  createdAt: number;
+  updatedAt: number;
+  stale?: boolean;
+};
+
 export type FileMetaRecord = {
   path: string;
   fileName: string;
@@ -44,6 +68,8 @@ export type FileMetaRecord = {
   bookmarks: FileBookmarkItem[];
   /** 按高亮色索引分组的高亮词；索引越界时阅读器忽略该桶 */
   highlightWordsByIndex?: HighlightWordsByIndex;
+  /** 阅读器划线 / 笔记标注 */
+  readerAnnotations?: ReaderAnnotationRecord[];
   /**
    * 应用内最后一次打开该文件（阅读器开始加载该会话路径）的时间戳（ms）。
    * 与 `updatedAt` 分离：改分类等操作也会刷新 `updatedAt`，但不应影响「打开时间」排序。
@@ -268,6 +294,7 @@ function normalizeRecord(item: Partial<FileMetaRecord>): FileMetaRecord | null {
   const highlightWordsByIndex = normalizeHighlightWordsByIndex(
     item.highlightWordsByIndex,
   );
+  const readerAnnotations = normalizeReaderAnnotations(item.readerAnnotations);
   const convertedMdPath =
     typeof item.convertedMdPath === "string" && item.convertedMdPath.trim()
       ? item.convertedMdPath.trim()
@@ -297,6 +324,7 @@ function normalizeRecord(item: Partial<FileMetaRecord>): FileMetaRecord | null {
     viewportTopPhysicalLine,
     bookmarks,
     highlightWordsByIndex,
+    ...(readerAnnotations.length ? { readerAnnotations } : {}),
     lastOpenedAt,
     updatedAt,
     ...(characterBookStyle ? { characterBookStyle } : {}),
@@ -388,6 +416,7 @@ export function upsertFileMetaRecord(
     viewportTopPhysicalLine: prev?.viewportTopPhysicalLine,
     bookmarks: prev?.bookmarks ?? [],
     highlightWordsByIndex: prev?.highlightWordsByIndex,
+    readerAnnotations: prev?.readerAnnotations,
     convertedMdPath: prev?.convertedMdPath,
     sourceMtimeMsAtConvert: prev?.sourceMtimeMsAtConvert,
     lastOpenedAt: prev?.lastOpenedAt,
@@ -503,4 +532,49 @@ export function removeHighlightTermFromFile(
       highlightWordsByIndex: Object.keys(base).length > 0 ? base : undefined,
     };
   });
+}
+
+export function upsertReaderAnnotationForFile(
+  items: FileMetaRecord[],
+  path: string,
+  annotation: ReaderAnnotationRecord,
+) {
+  return upsertFileMetaRecord(items, path, (prev) => {
+    const base = [...(prev?.readerAnnotations ?? [])];
+    const idx = base.findIndex((a) => a.id === annotation.id);
+    if (idx >= 0) base[idx] = annotation;
+    else base.push(annotation);
+    return { readerAnnotations: base };
+  });
+}
+
+export function removeReaderAnnotationForFile(
+  items: FileMetaRecord[],
+  path: string,
+  id: string,
+) {
+  return upsertFileMetaRecord(items, path, (prev) => ({
+    readerAnnotations: (prev?.readerAnnotations ?? []).filter(
+      (a) => a.id !== id,
+    ),
+  }));
+}
+
+export function setReaderAnnotationsForFile(
+  items: FileMetaRecord[],
+  path: string,
+  annotations: ReaderAnnotationRecord[],
+) {
+  return upsertFileMetaRecord(items, path, () => ({
+    readerAnnotations: annotations.length ? annotations : undefined,
+  }));
+}
+
+export function clearReaderAnnotationsForFile(
+  items: FileMetaRecord[],
+  path: string,
+) {
+  return upsertFileMetaRecord(items, path, () => ({
+    readerAnnotations: undefined,
+  }));
 }

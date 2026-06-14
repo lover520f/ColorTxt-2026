@@ -2,6 +2,7 @@ import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import type { Chapter } from "../chapter";
 import { defaultChapterMinCharCount } from "../constants/appUi";
 import type VirtualList from "../components/VirtualList.vue";
+import type { BookmarkListPanelExpose } from "../components/BookmarkListPanel.vue";
 import type { FileSortMode } from "../constants/fileCategories";
 import {
   FILE_CATEGORY_FILTER_ALL,
@@ -210,7 +211,7 @@ export function useReaderSidebarLists(
 ) {
   const chapterListRef = ref<InstanceType<typeof VirtualList> | null>(null);
   const fileListRef = ref<InstanceType<typeof VirtualList> | null>(null);
-  const bookmarkListRef = ref<InstanceType<typeof VirtualList> | null>(null);
+  const bookmarkListRef = ref<BookmarkListPanelExpose | null>(null);
 
   const fileFilterQuery = ref("");
 
@@ -571,18 +572,14 @@ export function useReaderSidebarLists(
     await nextTick();
     const activeLine = props.activeBookmarkLine ?? -1;
     if (activeLine < 0) return;
-    const idx = bookmarksVisible.value.findIndex(
-      (it) => it.line === activeLine,
-    );
-    if (idx < 0) return;
-    const vl = bookmarkListRef.value;
-    if (!vl) return;
+    if (!bookmarksVisible.value.some((it) => it.line === activeLine)) return;
+    const list = bookmarkListRef.value;
+    if (!list) return;
     const behavior = props.inFullscreen ? "auto" : smooth ? "smooth" : "auto";
-    if (mode === "center") {
-      vl.scrollToIndex(idx, { align: "center", behavior });
-      return;
-    }
-    vl.scrollToIndex(idx, { align: "auto", behavior });
+    list.scrollToLine(activeLine, {
+      align: mode === "center" ? "center" : "auto",
+      behavior,
+    });
   }
 
   function onChapterItemClick(chapter: Chapter) {

@@ -79,11 +79,11 @@ import {
   type ReaderViewportRestoreAnchor,
 } from "../reader/readerViewportAnchor";
 import AppContextMenu from "./AppContextMenu.vue";
-import ReaderHighlightFloat from "./ReaderHighlightFloat.vue";
+import ReaderSelectionToolbar from "./ReaderSelectionToolbar.vue";
+import ReaderNoteInputPanel from "./ReaderNoteInputPanel.vue";
 import ReaderImageLightbox from "./ReaderImageLightbox.vue";
 import VoiceReadResumeGuide from "./VoiceReadResumeGuide.vue";
 import "./readerMainMonaco.css";
-import { getSelectionEndViewportAnchor } from "../reader/readerHighlightGeometry";
 import {
   positionFromClientPoint,
   clientXWithinSingleLineModelRange,
@@ -108,7 +108,17 @@ import {
   type ReaderSurfacePalette,
 } from "../constants/appUi";
 import { DEFAULT_HIGHLIGHT_COLORS_LIGHT } from "../constants/highlightColors";
-import type { HighlightWordsByIndex } from "../stores/fileMetaStore";
+import { DEFAULT_LINEATION_COLORS_LIGHT } from "../constants/lineationColors";
+import {
+  DEFAULT_LINEATION_LAST_COLORS,
+  type LineationLastColorPrefs,
+} from "../constants/annotationColors";
+import type {
+  HighlightWordsByIndex,
+  ReaderAnnotationRecord,
+} from "../stores/fileMetaStore";
+import { useReaderAnnotations } from "../composables/useReaderAnnotations";
+import { annotationMarkerCssRules } from "../reader/readerAnnotationDecor";
 import { floorReadingPercentFromScrollRatio } from "../utils/format";
 import {
   hasEscBeforeModalLayers,
@@ -147,13 +157,6 @@ const HL_FLOAT_Z_INDEX = READER_HL_FLOAT_ROOT_Z_INDEX;
 
 const editorEl = ref<HTMLDivElement | null>(null);
 const diffHostEl = ref<HTMLDivElement | null>(null);
-const editorContextMenuOpen = ref(false);
-const editorContextMenuX = ref(0);
-const editorContextMenuY = ref(0);
-/** 打开自定义复制菜单时固化的选区（右键在选区外时 Monaco 会先清选区，不能再依赖 getSelection） */
-const editorContextMenuCopyRange = shallowRef<monaco.Range | null>(null);
-
-const EDITOR_CONTEXT_MENU_ITEMS = [{ id: "copy", label: "复制" }] as const;
 
 const editorEditContextMenuOpen = ref(false);
 const editorEditContextMenuX = ref(0);
@@ -232,6 +235,8 @@ const chapterTitleDecorationsCollection =
   shallowRef<monaco.editor.IEditorDecorationsCollection | null>(null);
 const inlineSearchDecorationsCollection =
   shallowRef<monaco.editor.IEditorDecorationsCollection | null>(null);
+const annotationDecorationsCollection =
+  shallowRef<monaco.editor.IEditorDecorationsCollection | null>(null);
 const voiceReadDecorationsCollection =
   shallowRef<monaco.editor.IEditorDecorationsCollection | null>(null);
 /** 编辑态小地图：无选区时为当前行铺灰底（与蓝色选区区分） */
@@ -242,14 +247,6 @@ const chapterMinimapDecorationsCollection =
   shallowRef<monaco.editor.IEditorDecorationsCollection | null>(null);
 /** 朗读高亮行（供上一行/下一行以「正在播的行」为锚点） */
 const voiceReadHighlightLine = ref<number | null>(null);
-const hlTipVisible = ref(false);
-const hlPickerVisible = ref(false);
-const hlFloatTop = ref(0);
-const hlFloatLeft = ref(0);
-const hlPickerTop = ref(0);
-const hlPickerLeft = ref(0);
-const hlDraftText = ref("");
-const hlFloatRootRef = ref<HTMLElement | null>(null);
 const imageLightboxSrc = ref("");
 const imageViewZoneIds = ref<string[]>([]);
 /** 滚动时与 View Zone 合成对齐：取消未执行的 rAF，避免 dispose 后仍 render */
@@ -281,8 +278,6 @@ let ebookLinkScrollDecorDisposable: monaco.IDisposable | null = null;
 const MD_LINK_BULK_STRIP_EDIT_THRESHOLD = 512;
 /** 格式化阶段预剥离的内链侧车；插图删行后须 shift 再安装 */
 let pendingEbookSidecar: MdInternalLinkSidecar | null = null;
-/** 选区靠近阅读区上缘时为 true：笔尖与色盘改为在选区下方展开 */
-const hlFloatOpenDownward = ref(false);
 
 const voiceReadScrollLocked = computed(
   () => props.voiceReadScrollLocked === true,
@@ -374,10 +369,15 @@ const props = withDefaults(
     readerSurfaceDark?: ReaderSurfacePalette;
     /** 当前主题下的高亮色列表（与设置中亮/暗数组之一对应） */
     highlightColors?: string[];
+    /** 当前主题下的划线标注色列表（与设置中亮/暗数组之一对应） */
+    lineationColors?: string[];
     /** 合并后的高亮词（全局 + 本书；上色时本书同色词优先） */
     highlightWordsByIndex?: HighlightWordsByIndex;
     /** 仅本书高亮词（选区浮层判定「是否已是高亮词」） */
     highlightWordsByIndexBookOnly?: HighlightWordsByIndex;
+    /** 本书阅读器划线 / 笔记 */
+    readerAnnotations?: ReaderAnnotationRecord[];
+    lineationLastColors?: LineationLastColorPrefs;
     /** 已打开文件路径；为空时不显示选区高亮入口 */
     readerFilePath?: string | null;
     /** 电子书 MD 锚点/内链：物理行号 → Monaco 显示行（与流式滤空一致） */
@@ -415,6 +415,8 @@ const props = withDefaults(
     canUseAiSmartFormat?: boolean;
     /** 智能排版 Diff 预览（非 null 时在编辑器区域展示左右对比） */
     smartFormatReviewSession?: SmartFormatReviewSession | null;
+    /** 与 Monaco 阅读区一致的正文字体 */
+    monacoFontFamily?: string;
   }>(),
   {
     monacoCustomHighlight: defaultMonacoCustomHighlight,
@@ -428,8 +430,11 @@ const props = withDefaults(
     readerSurfaceLight: () => ({ ...defaultReaderPaletteLight }),
     readerSurfaceDark: () => ({ ...defaultReaderPaletteDark }),
     highlightColors: () => [...DEFAULT_HIGHLIGHT_COLORS_LIGHT],
+    lineationColors: () => [...DEFAULT_LINEATION_COLORS_LIGHT],
     highlightWordsByIndex: undefined,
     highlightWordsByIndexBookOnly: undefined,
+    readerAnnotations: () => [],
+    lineationLastColors: () => ({ ...DEFAULT_LINEATION_LAST_COLORS }),
     readerFilePath: null,
     ebookAnchorPhysicalToDisplay: undefined,
     ebookDisplayLineToPhysical: undefined,
@@ -445,6 +450,7 @@ const props = withDefaults(
     aiFeaturesEnabled: false,
     canUseAiSmartFormat: false,
     smartFormatReviewSession: null,
+    monacoFontFamily: READER_EDITOR_DEFAULT_FONT_FAMILY,
   },
 );
 
@@ -455,6 +461,12 @@ const emit = defineEmits<{
   viewportVisualProgressChange: [percent: number, atBottom: boolean];
   addHighlightTerm: [payload: { text: string; colorIndex: number }];
   removeHighlightTerm: [payload: { text: string }];
+  upsertReaderAnnotation: [annotation: ReaderAnnotationRecord];
+  removeReaderAnnotation: [id: string];
+  updateLineationLastColor: [
+    payload: { type: import("../stores/fileMetaStore").ReaderLineationType; colorIndex: number },
+  ];
+  askAiWithQuote: [text: string];
   readerEditDirtyChange: [dirty: boolean];
   readerEditContentChange: [];
   readerEditLoaded: [payload: { encoding: string }];
@@ -475,6 +487,62 @@ const smartFormatRunning = ref(false);
 const smartFormatReviewActive = computed(
   () => props.smartFormatReviewSession != null,
 );
+
+const readerAnn = useReaderAnnotations({
+  editor,
+  model,
+  readerAnnotations: () => props.readerAnnotations ?? [],
+  lineationLastColors: () => props.lineationLastColors ?? DEFAULT_LINEATION_LAST_COLORS,
+  readerFilePath: () => props.readerFilePath,
+  readerEditMode: () => props.readerEditMode === true,
+  monacoCustomHighlight: () => props.monacoCustomHighlight === true,
+  highlightWordsByIndexBookOnly: () => props.highlightWordsByIndexBookOnly,
+  highlightColorsLength: () => props.highlightColors.length,
+  lineationColorsLength: () => props.lineationColors.length,
+  emitUpsert: (ann) => emit("upsertReaderAnnotation", ann),
+  emitRemove: (id) => emit("removeReaderAnnotation", id),
+  emitUpdateLineationColor: (payload) => emit("updateLineationLastColor", payload),
+  emitAddHighlightTerm: (payload) => emit("addHighlightTerm", payload),
+  emitRemoveHighlightTerm: (payload) => emit("removeHighlightTerm", payload),
+  emitAskAiWithQuote: (text) => emit("askAiWithQuote", text),
+  ebookDisplayLineToPhysical: () => props.ebookDisplayLineToPhysical,
+  ebookAnchorPhysicalToDisplay: () => props.ebookAnchorPhysicalToDisplay,
+  annotationDecorationsCollection,
+});
+
+const {
+  toolbarVisible,
+  colorPickerMode,
+  lineationPickerType,
+  floatCenterX,
+  floatRootTop,
+  floatOpenDownward,
+  floatRootRef,
+  activeLineation,
+  toolbarHasLineation,
+  toolbarHasNote,
+  lineationPickerSelectedIndex,
+  hlPickerShowRemoveRow,
+  hlPickerExistingColorIndex,
+  notePanelOpen,
+  notePanelDraft,
+  notePanelEditing,
+  notePanelSourceText,
+  notePanelRootRef,
+  closeNotePanel,
+  onToolbarAction,
+  onHighlightPickConfirm,
+  onHighlightPickRemove,
+  onLineationPickConfirm,
+  onNotePanelConfirm,
+  onNotePanelDelete,
+  jumpToAnnotationRange,
+  rebuildAnnotationIndex,
+  refreshAnnotationDecorations,
+  bindAnnotationScrollSync,
+  disposeAnnotationDecorations,
+  onSelectionChangedDuringInteraction,
+} = readerAnn;
 
 const smartFormatReviewScopeLabel = computed(() => {
   const s = props.smartFormatReviewSession;
@@ -515,7 +583,6 @@ const {
     session: () => props.smartFormatReviewSession,
     getCreateOptionsInput: getDiffEditorOptionsInput,
     onContextMenuRequest: (request) => {
-      closeEditorContextMenu();
       closeEditorEditContextMenu();
       diffReviewContextMenuSide.value = request.side;
       diffReviewContextMenuHasSelection.value = request.hasSelection;
@@ -1012,84 +1079,6 @@ function applyEditFormatLeadIndentFullWidthInRange(
   );
 }
 
-const HL_TIP_H = 36;
-const HL_FLOAT_GAP = 4;
-const HL_READER_EDGE = 10;
-
-function getReaderSelectionEndAnchor() {
-  const e = editor.value;
-  const m = model.value;
-  if (!e || !m) return null;
-  return getSelectionEndViewportAnchor(e, m);
-}
-
-/**
- * 根据阅读区上缘空间决定向上或向下展开，并写入 `hlFloatTop` / `hlPickerTop`。
- * `reserveSpaceForPicker`：仅展示笔尖时为 false，避免为色盘预留高度而把笔尖误摆到下方；打开色盘时为 true。
- */
-function applyHighlightVerticalPlacement(
-  anchor: {
-    anchorTop: number;
-    lineBottom: number;
-  },
-  opts?: { reserveSpaceForPicker?: boolean },
-): void {
-  const reservePicker = opts?.reserveSpaceForPicker ?? true;
-  const dom = editor.value?.getDomNode();
-  if (!dom) return;
-  const er = dom.getBoundingClientRect();
-
-  // 总共有多少行色块
-  const totalRows = Math.ceil(props.highlightColors.length / 5);
-  /** 色盘在「向上」模式时占用高度（用于判断是否顶到阅读区上缘） */
-  const hlPanelEstHeightUp =
-    /* padding */ 20 +
-    /* color swatch width */ totalRows * 26 +
-    /* color swatch gap */ (totalRows - 1) * 8 +
-    /* remove row + gap */ (hlPickerShowRemoveRow.value ? 26 + 10 : 0);
-  const tipTopIfUp = anchor.anchorTop - HL_TIP_H - HL_FLOAT_GAP;
-  const cantFitTipUp = tipTopIfUp < er.top + HL_READER_EDGE;
-  const cantFitPanelUp =
-    anchor.anchorTop - hlPanelEstHeightUp < er.top + HL_READER_EDGE;
-  hlFloatOpenDownward.value = cantFitTipUp || (reservePicker && cantFitPanelUp);
-
-  if (hlFloatOpenDownward.value) {
-    const below = anchor.lineBottom + HL_FLOAT_GAP;
-    hlFloatTop.value = Math.min(
-      Math.max(below, er.top + HL_READER_EDGE),
-      window.innerHeight - HL_TIP_H - 6,
-    );
-    hlPickerTop.value = Math.max(below, er.top + HL_READER_EDGE);
-  } else {
-    hlFloatTop.value = Math.max(
-      er.top + HL_READER_EDGE,
-      anchor.anchorTop - HL_TIP_H - HL_FLOAT_GAP,
-    );
-    hlPickerTop.value = Math.max(6, anchor.anchorTop - 6);
-  }
-}
-
-function findStoredHighlightColorIndex(term: string): number | null {
-  const map = props.highlightWordsByIndexBookOnly;
-  if (!map || !term) return null;
-  for (const [k, words] of Object.entries(map)) {
-    if (words.some((w) => w === term)) {
-      const idx = Number.parseInt(k, 10);
-      if (Number.isFinite(idx) && idx >= 0) return idx;
-    }
-  }
-  return null;
-}
-
-const hlPickerExistingColorIndex = computed(() => {
-  if (!hlPickerVisible.value) return null;
-  return findStoredHighlightColorIndex(hlDraftText.value.trim());
-});
-
-const hlPickerShowRemoveRow = computed(
-  () => hlPickerExistingColorIndex.value !== null,
-);
-
 function getTxtrMonarchHighlightOptions(): TxtrMonarchHighlightOptions {
   return {
     enabled: props.monacoCustomHighlight,
@@ -1110,136 +1099,7 @@ function applyTxtrMonarchTokenizer() {
 }
 
 function closeHighlightFloatUi() {
-  hlTipVisible.value = false;
-  hlPickerVisible.value = false;
-  hlDraftText.value = "";
-}
-
-/** 设为/取消高亮词后：取消选区，光标落在原选区几何末端 */
-function collapseMonacoSelectionToHighlightEnd() {
-  const e = editor.value;
-  if (!e) return;
-  const sel = e.getSelection();
-  if (!sel || sel.isEmpty()) return;
-  const end = sel.getEndPosition();
-  e.setSelection(monaco.Selection.fromPositions(end, end));
-  e.focus();
-}
-
-/** 笔尖右缘与选区右缘对齐；仅按笔尖宽度夹紧视口，不因色盘宽度左移笔尖 */
-function placeHighlightFloatHorizontal(anchor: {
-  selectionRightX: number;
-}): void {
-  const tipW = 36;
-  // 每行最多显示 5 个色块
-  const colorsPerRow = Math.min(5, props.highlightColors.length);
-  const panelReserve =
-    /* padding */ 24 +
-    /* color swatch width */ colorsPerRow * 26 +
-    /* color swatch gap */ (colorsPerRow - 1) * 8;
-  const leftRaw = anchor.selectionRightX - tipW;
-  hlFloatLeft.value = Math.max(
-    6,
-    Math.min(leftRaw, window.innerWidth - tipW - 6),
-  );
-  hlPickerLeft.value = Math.max(
-    6,
-    Math.min(leftRaw, window.innerWidth - panelReserve - 6),
-  );
-}
-
-function updateHighlightTipFromSelection() {
-  if (!props.monacoCustomHighlight) {
-    closeHighlightFloatUi();
-    return;
-  }
-  const e = editor.value;
-  if (!e || !props.readerFilePath) {
-    closeHighlightFloatUi();
-    return;
-  }
-  const m = model.value;
-  if (!m) {
-    closeHighlightFloatUi();
-    return;
-  }
-  const sel = e.getSelection();
-  if (!sel || sel.isEmpty()) {
-    closeHighlightFloatUi();
-    return;
-  }
-  const raw = m.getValueInRange(sel);
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    closeHighlightFloatUi();
-    return;
-  }
-  if (hlPickerVisible.value && trimmed !== hlDraftText.value.trim()) {
-    closeHighlightFloatUi();
-    return;
-  }
-  const anchor = getReaderSelectionEndAnchor();
-  if (!anchor) {
-    closeHighlightFloatUi();
-    return;
-  }
-  placeHighlightFloatHorizontal(anchor);
-  if (hlPickerVisible.value) {
-    applyHighlightVerticalPlacement(anchor, { reserveSpaceForPicker: true });
-    return;
-  }
-  applyHighlightVerticalPlacement(anchor, { reserveSpaceForPicker: false });
-  hlTipVisible.value = true;
-}
-
-function openHighlightPicker(ev: PointerEvent) {
-  ev.preventDefault();
-  ev.stopPropagation();
-  if (!props.monacoCustomHighlight) return;
-  const e = editor.value;
-  const m = model.value;
-  if (!e || !m || !props.readerFilePath) return;
-  const sel = e.getSelection();
-  if (!sel || sel.isEmpty()) return;
-  const text = m.getValueInRange(sel).trim();
-  if (!text) return;
-  hlDraftText.value = text;
-  hlTipVisible.value = false;
-  hlPickerVisible.value = true;
-  const anchor = getReaderSelectionEndAnchor();
-  if (!anchor) return;
-  placeHighlightFloatHorizontal(anchor);
-  applyHighlightVerticalPlacement(anchor, { reserveSpaceForPicker: true });
-}
-
-function removeHighlightKeywordFromPicker() {
-  const t = hlDraftText.value.trim();
-  if (!t) {
-    closeHighlightFloatUi();
-    return;
-  }
-  emit("removeHighlightTerm", { text: t });
-  collapseMonacoSelectionToHighlightEnd();
-  closeHighlightFloatUi();
-}
-
-function confirmHighlightColor(colorIndex: number) {
-  if (
-    colorIndex < 0 ||
-    colorIndex >= props.highlightColors.length ||
-    !Number.isFinite(colorIndex)
-  ) {
-    closeHighlightFloatUi();
-    return;
-  }
-  const t = hlDraftText.value.trim();
-  if (!t) {
-    closeHighlightFloatUi();
-    return;
-  }
-  emit("addHighlightTerm", { text: t, colorIndex });
-  collapseMonacoSelectionToHighlightEnd();
-  closeHighlightFloatUi();
+  readerAnn.closeToolbarUi();
 }
 
 watch(
@@ -1251,37 +1111,20 @@ watch(
 );
 
 watch(
+  () => props.lineationColors,
+  () => {
+    syncLineationColorStyles();
+  },
+  { deep: true },
+);
+
+watch(
   () => props.highlightWordsByIndex,
   () => {
     applyTxtrMonarchTokenizer();
   },
   { deep: true },
 );
-
-watch([hlTipVisible, hlPickerVisible], () => {
-  removeHlGlobalListeners?.();
-  removeHlGlobalListeners = null;
-  if (!hlTipVisible.value && !hlPickerVisible.value) return;
-  const onKey = (ev: KeyboardEvent) => {
-    if (ev.key === "Escape") closeHighlightFloatUi();
-  };
-  const onPtr = (ev: PointerEvent) => {
-    const t = ev.target as Node | null;
-    if (!t) return;
-    const root = hlFloatRootRef.value;
-    const ed = editor.value?.getDomNode();
-    if (root?.contains(t)) return;
-    // 点在编辑器内不关；点顶栏/侧栏/底栏等外面关
-    if (ed?.contains(t)) return;
-    closeHighlightFloatUi();
-  };
-  document.addEventListener("keydown", onKey, true);
-  document.addEventListener("pointerdown", onPtr, true);
-  removeHlGlobalListeners = () => {
-    document.removeEventListener("keydown", onKey, true);
-    document.removeEventListener("pointerdown", onPtr, true);
-  };
-});
 
 watch(
   () => props.monacoAdvancedWrapping,
@@ -1349,8 +1192,6 @@ watch(
 
 /** 程序性滚动（跳转、复位等）期间，onDidScrollChange 仍触发，但不视为用户阅读滚动 */
 let programmaticScrollDepth = 0;
-/** 程序化改选区后的短时间抑制：避免搜索跳转触发笔尖提示。 */
-let suppressHighlightTipUntilMs = 0;
 
 function beginProgrammaticScroll() {
   programmaticScrollDepth++;
@@ -1430,6 +1271,8 @@ async function setFullText(text: string, opts?: { heavy?: boolean }) {
     e.setModel(nextModel);
     model.value = nextModel;
     m.dispose();
+    annotationDecorationsCollection.value?.clear();
+    annotationDecorationsCollection.value = e.createDecorationsCollection();
   } else {
     m.setValue(text);
   }
@@ -1991,6 +1834,7 @@ async function applyEmbeddedImageAnchors(
 
 function clear(opts?: ReaderClearOptions) {
   disposeEbookInternalLinks();
+  disposeAnnotationDecorations();
   pendingEbookSidecar = null;
   disposeImageViewZones();
   imageLightboxSrc.value = "";
@@ -2002,6 +1846,7 @@ function clear(opts?: ReaderClearOptions) {
   const prevModel = model.value;
   chapterTitleDecorationsCollection.value?.clear();
   inlineSearch.clearInlineSearchState();
+  annotationDecorationsCollection.value?.clear();
   voiceReadDecorationsCollection.value?.clear();
   minimapCursorLineDecorationsCollection.value?.clear();
   chapterMinimapDecorationsCollection.value?.clear();
@@ -2015,6 +1860,7 @@ function clear(opts?: ReaderClearOptions) {
     model.value = next;
     chapterTitleDecorationsCollection.value = e.createDecorationsCollection();
     inlineSearchDecorationsCollection.value = e.createDecorationsCollection();
+    annotationDecorationsCollection.value = e.createDecorationsCollection();
     voiceReadDecorationsCollection.value = e.createDecorationsCollection();
     minimapCursorLineDecorationsCollection.value =
       e.createDecorationsCollection();
@@ -2023,6 +1869,7 @@ function clear(opts?: ReaderClearOptions) {
     e.setPosition({ lineNumber: 1, column: 1 });
     e.setScrollTop(0);
     e.layout();
+    bindAnnotationScrollSync(e);
   } else {
     prevModel?.setValue("");
   }
@@ -2488,8 +2335,8 @@ function setVoiceReadLineHighlight(lineNumber: number | null) {
 }
 
 function suppressHighlightTipForProgrammaticSelection() {
-  suppressHighlightTipUntilMs = Date.now() + 300;
-  closeHighlightFloatUi();
+  readerAnn.setSuppressToolbarUntilMs(Date.now() + 300);
+  readerAnn.closeToolbarUi();
 }
 
 const inlineSearch = useReaderInlineSearch({
@@ -2602,25 +2449,6 @@ function getModelLineCount(): number {
   return model.value?.getLineCount() ?? 0;
 }
 
-/** 仅在右键落点落在当前选区内（或命中隐藏 textarea）时提供复制菜单，避免在选区外右键仍出现「复制」 */
-function contextMenuTargetInSelection(
-  mouseEv: monaco.editor.IEditorMouseEvent,
-  sel: monaco.Selection,
-): boolean {
-  const t = mouseEv.target;
-  if (t.type === monaco.editor.MouseTargetType.TEXTAREA) {
-    return true;
-  }
-  if (
-    t.type === monaco.editor.MouseTargetType.CONTENT_TEXT ||
-    t.type === monaco.editor.MouseTargetType.CONTENT_EMPTY
-  ) {
-    const pos = t.position;
-    return pos != null && sel.containsPosition(pos);
-  }
-  return false;
-}
-
 function monacoPositionAfterPaste(
   start: monaco.Position,
   text: string,
@@ -2663,22 +2491,6 @@ async function pasteClipboardIntoMonacoEditor(
   e.pushUndoStop();
   const end = monacoPositionAfterPaste(anchor, text);
   e.setSelection(monaco.Selection.fromPositions(end, end));
-}
-
-function closeEditorContextMenu() {
-  editorContextMenuOpen.value = false;
-  editorContextMenuCopyRange.value = null;
-}
-
-function onEditorContextMenuSelect(id: string) {
-  const range = editorContextMenuCopyRange.value;
-  closeEditorContextMenu();
-  if (id !== "copy") return;
-  const m = model.value;
-  if (!m || !range || range.isEmpty()) return;
-  const text = m.getValueInRange(range);
-  if (!text) return;
-  void navigator.clipboard.writeText(text);
 }
 
 function closeEditorEditContextMenu() {
@@ -3173,6 +2985,10 @@ defineExpose({
   shiftPendingEbookSidecarForDeletedDisplayLines,
   getEbookLeadingLinkLabelsByDisplayLine,
   getReaderEditorDomNode: () => editor.value?.getDomNode() ?? null,
+  jumpToAnnotationRange,
+  getModel: () => model.value,
+  refreshReaderAnnotationDecorations: refreshAnnotationDecorations,
+  suppressHighlightTipForProgrammaticSelection,
 });
 
 function applyReaderSyntaxFromProps() {
@@ -3184,6 +3000,20 @@ function applyReaderSyntaxFromProps() {
     props.highlightColors,
   );
   setTheme(lastAppThemeName);
+}
+
+const LINEATION_COLOR_STYLE_ID = "txtr-reader-lineation-colors";
+
+function syncLineationColorStyles() {
+  let styleEl = document.getElementById(
+    LINEATION_COLOR_STYLE_ID,
+  ) as HTMLStyleElement | null;
+  if (!styleEl) {
+    styleEl = document.createElement("style");
+    styleEl.id = LINEATION_COLOR_STYLE_ID;
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = annotationMarkerCssRules(props.lineationColors);
 }
 
 watch(
@@ -3226,6 +3056,7 @@ onMounted(() => {
 
   applyTxtrMonarchTokenizer();
   applyReaderSyntaxFromProps();
+  syncLineationColorStyles();
 
   const fontStyleId = "txtr-reader-kinghwa-font";
   if (!document.getElementById(fontStyleId)) {
@@ -3264,12 +3095,17 @@ onMounted(() => {
     editor.value.createDecorationsCollection();
   inlineSearchDecorationsCollection.value =
     editor.value.createDecorationsCollection();
+  annotationDecorationsCollection.value =
+    editor.value.createDecorationsCollection();
   voiceReadDecorationsCollection.value =
     editor.value.createDecorationsCollection();
   minimapCursorLineDecorationsCollection.value =
     editor.value.createDecorationsCollection();
   chapterMinimapDecorationsCollection.value =
     editor.value.createDecorationsCollection();
+
+  bindAnnotationScrollSync(editor.value);
+  rebuildAnnotationIndex();
 
   const e = editor.value;
   if (e) {
@@ -3281,7 +3117,6 @@ onMounted(() => {
         });
     }
     const d1 = e.onDidScrollChange(() => {
-      closeHighlightFloatUi();
       emitProbeLine(true);
     });
     const d2 = e.onDidChangeCursorPosition(() => {
@@ -3291,11 +3126,11 @@ onMounted(() => {
     });
     const dSel = e.onDidChangeCursorSelection(() => {
       if (!smartFormatReviewActive.value) emitReaderEditCursorStatus();
-      if (Date.now() < suppressHighlightTipUntilMs) {
+      if (readerAnn.shouldSuppressToolbar()) {
         closeHighlightFloatUi();
         return;
       }
-      void nextTick(() => updateHighlightTipFromSelection());
+      onSelectionChangedDuringInteraction();
       if (inlineSearch.hasInlineSearchQuery()) {
         inlineSearch.applyInlineSearchDecorations();
       }
@@ -3334,15 +3169,6 @@ onMounted(() => {
         editorEditContextMenuOpen.value = true;
         return;
       }
-      const sel = e.getSelection();
-      if (!sel || sel.isEmpty()) return;
-      if (!contextMenuTargetInSelection(mouseEv, sel)) return;
-      mouseEv.event.preventDefault();
-      mouseEv.event.stopPropagation();
-      editorContextMenuCopyRange.value = monaco.Range.lift(sel);
-      editorContextMenuX.value = mouseEv.event.browserEvent.clientX;
-      editorContextMenuY.value = mouseEv.event.browserEvent.clientY;
-      editorContextMenuOpen.value = true;
     });
     saveCommandDisposable = e.addAction({
       id: "colortxt.readerEdit.save",
@@ -3367,6 +3193,7 @@ onMounted(() => {
         ev.stopImmediatePropagation();
         return;
       }
+      readerAnn.beginSelectionPointerInteraction();
       if (imageViewZoneIds.value.length === 0) return;
       const t = ev.target;
       if (!(t instanceof Element)) return;
@@ -3390,6 +3217,7 @@ onMounted(() => {
       ev.preventDefault();
       ev.stopImmediatePropagation();
       imageLightboxSrc.value = url;
+      readerAnn.cancelSelectionPointerInteraction();
     };
     editorHost?.addEventListener(
       "pointerdown",
@@ -3409,6 +3237,7 @@ onMounted(() => {
         onReaderPointerDownCapture,
         true,
       );
+      readerAnn.cancelSelectionPointerInteraction();
     });
 
     applyReaderMonacoModeOptions(Boolean(props.readerEditMode));
@@ -3434,6 +3263,7 @@ onBeforeUnmount(() => {
   removeVoiceReadKeyCapture = null;
   removeSmartFormatReviewKeyCapture?.();
   removeSmartFormatReviewKeyCapture = null;
+  disposeAnnotationDecorations();
   editor.value?.dispose();
   model.value?.dispose();
   disposeReaderMonacoOverflowHost();
@@ -3445,7 +3275,6 @@ watch(
   () => [props.readerEditMode, props.physicalReaderPath] as const,
   async ([edit, physRaw]) => {
     const phys = physRaw?.trim() ?? "";
-    if (edit) closeEditorContextMenu();
     if (!edit) {
       teardownReaderEditContentListener();
       readerEditLoadedPhysicalKey = "";
@@ -3510,7 +3339,8 @@ watch(
 
 onMounted(() => {
   unsubModalStack = subscribeModalStackChange(() => {
-    if (!hlTipVisible.value && !hlPickerVisible.value) return;
+    if (!toolbarVisible.value && !colorPickerMode.value) return;
+    if (readerAnn.shouldSuppressToolbar()) return;
     if (hasModalOnStack() || hasEscBeforeModalLayers()) {
       closeHighlightFloatUi();
     }
@@ -3640,39 +3470,49 @@ watch(smartFormatReviewActive, (active) => {
         :visible="voiceReadPaused === true"
         @resume="emit('voiceReadResume')"
       />
+      <div ref="notePanelRootRef" class="notePanelHost">
+        <ReaderNoteInputPanel
+          :open="notePanelOpen"
+          :draft="notePanelDraft"
+          :source-text="notePanelSourceText"
+          :editing="notePanelEditing"
+          :monaco-font-family="monacoFontFamily"
+          @confirm="onNotePanelConfirm"
+          @close="closeNotePanel"
+          @delete-note="onNotePanelDelete"
+        />
+      </div>
     </div>
     <div
-      v-if="hlTipVisible || hlPickerVisible"
-      ref="hlFloatRootRef"
+      v-if="toolbarVisible || colorPickerMode"
+      ref="floatRootRef"
       class="hlFloatRoot"
       :style="{ zIndex: HL_FLOAT_Z_INDEX }"
       aria-live="polite"
     >
-      <ReaderHighlightFloat
-        :tip-visible="hlTipVisible"
-        :picker-visible="hlPickerVisible"
-        :tip-top="hlFloatTop"
-        :tip-left="hlFloatLeft"
-        :picker-top="hlPickerTop"
-        :picker-left="hlPickerLeft"
-        :open-downward="hlFloatOpenDownward"
+      <ReaderSelectionToolbar
+        :toolbar-visible="toolbarVisible"
+        :color-picker-mode="colorPickerMode"
+        :lineation-picker-type="lineationPickerType"
+        :float-center-x="floatCenterX"
+        :float-root-top="floatRootTop"
+        :open-downward="floatOpenDownward"
         :highlight-colors="highlightColors"
-        :show-remove-row="hlPickerShowRemoveRow"
-        :existing-color-index="hlPickerExistingColorIndex"
-        @pick-open="openHighlightPicker"
-        @pick-confirm="confirmHighlightColor"
-        @pick-remove="removeHighlightKeywordFromPicker"
+        :lineation-colors="lineationColors"
+        :show-highlight-remove-row="hlPickerShowRemoveRow"
+        :existing-highlight-color-index="hlPickerExistingColorIndex"
+        :active-lineation="activeLineation"
+        :lineation-picker-selected-index="lineationPickerSelectedIndex"
+        :monaco-custom-highlight="monacoCustomHighlight"
+        :ai-features-enabled="aiFeaturesEnabled"
+        :has-lineation="toolbarHasLineation"
+        :has-note="toolbarHasNote"
+        @action="onToolbarAction"
+        @highlight-pick-confirm="onHighlightPickConfirm"
+        @highlight-pick-remove="onHighlightPickRemove"
+        @lineation-pick-confirm="onLineationPickConfirm"
       />
     </div>
-    <AppContextMenu
-      :open="editorContextMenuOpen"
-      :x="editorContextMenuX"
-      :y="editorContextMenuY"
-      :items="EDITOR_CONTEXT_MENU_ITEMS"
-      :min-width="120"
-      @close="closeEditorContextMenu"
-      @select="onEditorContextMenuSelect"
-    />
     <AppContextMenu
       :open="editorEditContextMenuOpen"
       :x="editorEditContextMenuX"

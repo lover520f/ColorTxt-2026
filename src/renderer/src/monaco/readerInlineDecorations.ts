@@ -82,6 +82,8 @@ function readerChromeThemeColors(
     "editorOverviewRuler.border": READER_OVERVIEW_RULER_BORDER,
     "menu.background": surfaceBg,
     "menu.foreground": palette.bodyText,
+    /** 笔记/装饰 hover 时不高亮原文 range（Monaco `.hoverHighlight`） */
+    "editor.hoverHighlightBackground": "#00000000",
     ...readerEditorHighlightColors(variant),
   };
   if (variant === "dark") {

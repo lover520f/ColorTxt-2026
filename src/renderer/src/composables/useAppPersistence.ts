@@ -70,6 +70,19 @@ import {
   parseHighlightColorsArray,
 } from "../constants/highlightColors";
 import {
+  DEFAULT_LINEATION_COLORS_DARK,
+  DEFAULT_LINEATION_COLORS_LIGHT,
+  lineationColorsPersistPayload,
+  mergeLineationColors,
+  parseLineationColorsArray,
+} from "../constants/lineationColors";
+import {
+  clampLineationLastColorsToCount,
+  DEFAULT_LINEATION_LAST_COLORS,
+  parseLineationLastColors,
+  type LineationLastColorPrefs,
+} from "../constants/annotationColors";
+import {
   defaultChapterMinCharCount,
   defaultFullscreenReaderWidthPercent,
   defaultRecentFilesHistoryLimit,
@@ -181,7 +194,10 @@ export function useAppPersistence(deps: {
   readerPaletteOverridesDark: Ref<Partial<ReaderSurfacePalette>>;
   highlightColorsLight: Ref<string[]>;
   highlightColorsDark: Ref<string[]>;
+  lineationColorsLight: Ref<string[]>;
+  lineationColorsDark: Ref<string[]>;
   highlightWordsByIndexGlobal: Ref<HighlightWordsByIndex | undefined>;
+  lineationLastColors: Ref<LineationLastColorPrefs>;
   /** 电子书转换输出目录；空字符串表示与源文件同目录；无持久化键时默认 userData/ConvertedTxt */
   ebookConvertOutputDir: Ref<string>;
   /** 角色立绘缓存根目录（绝对路径）；无键时默认 userData/CharacterPortrait */
@@ -812,8 +828,24 @@ export function useAppPersistence(deps: {
       parsedHD,
     );
 
+    const parsedLL = parseLineationColorsArray(data.lineationColorsLight);
+    deps.lineationColorsLight.value = mergeLineationColors(
+      DEFAULT_LINEATION_COLORS_LIGHT,
+      parsedLL,
+    );
+    const parsedLD = parseLineationColorsArray(data.lineationColorsDark);
+    deps.lineationColorsDark.value = mergeLineationColors(
+      DEFAULT_LINEATION_COLORS_DARK,
+      parsedLD,
+    );
+
     deps.highlightWordsByIndexGlobal.value = normalizeHighlightWordsByIndex(
       data.highlightWordsByIndexGlobal,
+    );
+
+    deps.lineationLastColors.value = clampLineationLastColorsToCount(
+      parseLineationLastColors(data.lineationLastColors),
+      deps.lineationColorsLight.value.length,
     );
 
     const normalizedRules = normalizeLoadedChapterRules(data.chapterRules);
@@ -955,7 +987,24 @@ export function useAppPersistence(deps: {
         deps.highlightColorsDark.value,
         DEFAULT_HIGHLIGHT_COLORS_DARK,
       ),
+      lineationColorsLight: lineationColorsPersistPayload(
+        deps.lineationColorsLight.value,
+        DEFAULT_LINEATION_COLORS_LIGHT,
+      ),
+      lineationColorsDark: lineationColorsPersistPayload(
+        deps.lineationColorsDark.value,
+        DEFAULT_LINEATION_COLORS_DARK,
+      ),
       highlightWordsByIndexGlobal: deps.highlightWordsByIndexGlobal.value,
+      lineationLastColors:
+        deps.lineationLastColors.value.marker ===
+          DEFAULT_LINEATION_LAST_COLORS.marker &&
+        deps.lineationLastColors.value.wavy ===
+          DEFAULT_LINEATION_LAST_COLORS.wavy &&
+        deps.lineationLastColors.value.straight ===
+          DEFAULT_LINEATION_LAST_COLORS.straight
+          ? undefined
+          : { ...deps.lineationLastColors.value },
       ebookConvertOutputDir: deps.ebookConvertOutputDir.value,
       characterPortraitCacheDir: deps.characterPortraitCacheDir.value.trim(),
       characterCardTextureEffect: deps.characterCardTextureEffect.value,

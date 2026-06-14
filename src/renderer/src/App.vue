@@ -66,14 +66,32 @@ import { useAppVoiceRead } from "./composables/useAppVoiceRead";
 import { useTxtStreamPipeline } from "./composables/useTxtStreamPipeline";
 import { fileHistoryKey } from "./stores/recentHistoryStore";
 import {
+  clampLineationLastColorsToCount,
+  DEFAULT_LINEATION_LAST_COLORS,
+  type LineationLastColorPrefs,
+} from "./constants/annotationColors";
+import {
   assignHighlightTermToColorForFile,
+  clearReaderAnnotationsForFile,
   fileNameKey,
   findFileMetaRecord,
   removeHighlightTermFromFile,
+  removeReaderAnnotationForFile,
+  setReaderAnnotationsForFile,
   upsertFileMetaRecord,
+  upsertReaderAnnotationForFile,
   type FileMetaRecord,
   type HighlightWordsByIndex,
+  type ReaderAnnotationRecord,
+  type ReaderLineationType,
 } from "./stores/fileMetaStore";
+import {
+  buildAnnotationListRows,
+  groupAnnotationListRowsByChapter,
+  mergeImportedAnnotations,
+  normalizeReaderAnnotations,
+  revalidateAnnotations,
+} from "./utils/readerAnnotations";
 import {
   assignHighlightTermToColorMap,
   buildHighlightListTerms,
@@ -141,13 +159,18 @@ import {
   MIN_HIGHLIGHT_COLORS,
   mergeHighlightColors,
 } from "./constants/highlightColors";
+import {
+  DEFAULT_LINEATION_COLORS_DARK,
+  DEFAULT_LINEATION_COLORS_LIGHT,
+  MIN_LINEATION_COLORS,
+  mergeLineationColors,
+} from "./constants/lineationColors";
 import { formatCharCount, formatFileSize } from "./utils/format";
 import { READER_EDITOR_DEFAULT_FONT_FAMILY } from "./monaco/readerEditorOptions";
 import {
   createDefaultShortcutBindings,
   type ShortcutBindingMap,
 } from "./services/shortcutRegistry";
-import { appAlert, appConfirm } from "./services/appDialog";
 import {
   defaultAiSmartFormatSettings,
   aiSmartFormatHasAnyTask,
@@ -156,6 +179,7 @@ import {
 import { useAiSmartFormat } from "./composables/useAiSmartFormat";
 import AiSmartFormatProgressModal from "./components/AiSmartFormatProgressModal.vue";
 import { appToast } from "./services/appToast";
+import { appAlert, appConfirm } from "./services/appDialog";
 import { mergeShortcutBindings } from "./services/shortcutUtils";
 import {
   syncTxtFilesCategoriesAfterCatalogEdit,
@@ -506,10 +530,15 @@ const readerPaletteOverridesDark = ref<Partial<ReaderSurfacePalette>>({});
 
 const highlightColorsLight = ref<string[]>([...DEFAULT_HIGHLIGHT_COLORS_LIGHT]);
 const highlightColorsDark = ref<string[]>([...DEFAULT_HIGHLIGHT_COLORS_DARK]);
+const lineationColorsLight = ref<string[]>([...DEFAULT_LINEATION_COLORS_LIGHT]);
+const lineationColorsDark = ref<string[]>([...DEFAULT_LINEATION_COLORS_DARK]);
 /** 已收藏（全书通用）高亮词 */
 const highlightWordsByIndexGlobal = ref<HighlightWordsByIndex | undefined>(
   undefined,
 );
+const lineationLastColors = ref<LineationLastColorPrefs>({
+  ...DEFAULT_LINEATION_LAST_COLORS,
+});
 
 const readerSurfaceLight = computed(() =>
   mergeReaderSurfacePalette(
@@ -530,6 +559,12 @@ const highlightColorsForReader = computed(() =>
     : highlightColorsDark.value,
 );
 
+const lineationColorsForReader = computed(() =>
+  currentTheme.value === "vs"
+    ? lineationColorsLight.value
+    : lineationColorsDark.value,
+);
+
 const currentFileMetaRecord = computed(() => {
   const p = currentFile.value;
   if (!p) return undefined;
@@ -546,6 +581,28 @@ const currentFileCharacterBookStyle = computed(
 
 const currentFileHighlightWords = computed(
   () => currentFileMetaRecord.value?.highlightWordsByIndex,
+);
+
+const currentFileAnnotations = computed(
+  () => currentFileMetaRecord.value?.readerAnnotations ?? [],
+);
+
+const annotationListRows = computed(() =>
+  buildAnnotationListRows(currentFileAnnotations.value),
+);
+
+function physicalLineToDisplayForAnnotation(physicalLine: number): number {
+  return readerEditMode.value
+    ? Math.max(1, Math.floor(physicalLine))
+    : stream.physicalLineToDisplayForReader(physicalLine);
+}
+
+const annotationListGroups = computed(() =>
+  groupAnnotationListRowsByChapter(
+    annotationListRows.value,
+    chapters.value,
+    physicalLineToDisplayForAnnotation,
+  ),
 );
 
 function onCharacterFileMetaPatch(payload: {
@@ -867,7 +924,10 @@ const persistence = useAppPersistence({
   readerPaletteOverridesDark,
   highlightColorsLight,
   highlightColorsDark,
+  lineationColorsLight,
+  lineationColorsDark,
   highlightWordsByIndexGlobal,
+  lineationLastColors,
   ebookConvertOutputDir,
   characterPortraitCacheDir,
   characterCardTextureEffect,
@@ -1345,6 +1405,8 @@ afterStreamFullTextInstalled = async () => {
     await readerRef.value?.applyMarkdownInternalLinks?.();
   }
   stream.resyncMirrorFromReader();
+  revalidateCurrentFileAnnotations();
+  readerRef.value?.refreshReaderAnnotationDecorations?.();
 };
 
 /** 视口已按物理行恢复且 probe 已更新后：重算章节并居中侧栏（加载结束等） */
@@ -1824,6 +1886,22 @@ function onApplyHighlightColors(payload: { light: string[]; dark: string[] }) {
   persistSettings();
 }
 
+function onApplyLineationColors(payload: { light: string[]; dark: string[] }) {
+  lineationColorsLight.value = mergeLineationColors(
+    DEFAULT_LINEATION_COLORS_LIGHT,
+    payload.light.length >= MIN_LINEATION_COLORS ? payload.light : undefined,
+  );
+  lineationColorsDark.value = mergeLineationColors(
+    DEFAULT_LINEATION_COLORS_DARK,
+    payload.dark.length >= MIN_LINEATION_COLORS ? payload.dark : undefined,
+  );
+  lineationLastColors.value = clampLineationLastColorsToCount(
+    lineationLastColors.value,
+    lineationColorsForReader.value.length,
+  );
+  persistSettings();
+}
+
 function onAddHighlightTerm(payload: { text: string; colorIndex: number }) {
   const path = currentFile.value;
   if (!path) return;
@@ -1934,6 +2012,203 @@ function onFindHighlightTermFromSidebar(text: string) {
   });
   hasInlineSearchHighlight.value = found === true;
   scheduleVoiceReadResumeAfterJump();
+}
+
+function onUpsertReaderAnnotation(annotation: ReaderAnnotationRecord) {
+  const path = currentFile.value;
+  if (!path) return;
+  fileMetaRecords.value = upsertReaderAnnotationForFile(
+    fileMetaRecords.value,
+    path,
+    annotation,
+  );
+  persistFileMeta();
+}
+
+function onRemoveReaderAnnotation(id: string) {
+  const path = currentFile.value;
+  if (!path) return;
+  fileMetaRecords.value = removeReaderAnnotationForFile(
+    fileMetaRecords.value,
+    path,
+    id,
+  );
+  persistFileMeta();
+}
+
+function onClearStaleReaderAnnotations() {
+  const path = currentFile.value;
+  if (!path) return;
+  const next = currentFileAnnotations.value.filter((ann) => !ann.stale);
+  if (next.length === currentFileAnnotations.value.length) return;
+  fileMetaRecords.value = setReaderAnnotationsForFile(
+    fileMetaRecords.value,
+    path,
+    next,
+  );
+  persistFileMeta();
+}
+
+function onUpdateLineationLastColor(payload: {
+  type: ReaderLineationType;
+  colorIndex: number;
+}) {
+  lineationLastColors.value = clampLineationLastColorsToCount(
+    {
+      ...lineationLastColors.value,
+      [payload.type]: payload.colorIndex,
+    },
+    lineationColorsForReader.value.length,
+  );
+  persistSettings();
+}
+
+function onClearReaderAnnotations() {
+  const path = currentFile.value;
+  if (!path) return;
+  fileMetaRecords.value = clearReaderAnnotationsForFile(
+    fileMetaRecords.value,
+    path,
+  );
+  persistFileMeta();
+}
+
+function onJumpToReaderAnnotation(ann: ReaderAnnotationRecord) {
+  readerRef.value?.jumpToAnnotationRange?.(ann, { smooth: true });
+  scheduleVoiceReadResumeAfterJump();
+}
+
+async function onClearReaderAnnotationsWithConfirm() {
+  const path = currentFile.value;
+  if (!path || currentFileAnnotations.value.length === 0) return;
+  if (!window.colorTxt) return;
+  const r = await window.colorTxt.showMessageBox({
+    type: "warning",
+    title: APP_DISPLAY_NAME,
+    buttons: ["取消", "清空"],
+    defaultId: 1,
+    cancelId: 0,
+    message: "确定要清空当前文件的全部标注与笔记吗？",
+    detail: "此操作不可逆！",
+    noLink: true,
+  });
+  if (r.response !== 1) return;
+  onClearReaderAnnotations();
+}
+
+async function onExportAnnotationsMd() {
+  const path = currentFile.value;
+  if (!path || currentFileAnnotations.value.length === 0) return;
+  const {
+    buildAnnotationExportDefaultName,
+    buildReaderAnnotationsExportMarkdown,
+    saveAnnotationExportFile,
+  } = await import("./utils/readerAnnotationExport");
+  const name = buildAnnotationExportDefaultName(fileNameKey(path), "md");
+  const data = buildReaderAnnotationsExportMarkdown(
+    fileNameKey(path),
+    currentFileAnnotations.value,
+    {
+      chapters: chapters.value,
+      physicalLineToDisplayLine: physicalLineToDisplayForAnnotation,
+    },
+  );
+  const r = await saveAnnotationExportFile(name, data, "md");
+  if (!r.ok && "error" in r) await appAlert(r.error);
+}
+
+async function onExportAnnotationsJson() {
+  const path = currentFile.value;
+  if (!path || currentFileAnnotations.value.length === 0) return;
+  const {
+    buildAnnotationExportDefaultName,
+    buildReaderAnnotationsExportJson,
+    saveAnnotationExportFile,
+  } = await import("./utils/readerAnnotationExport");
+  const name = buildAnnotationExportDefaultName(fileNameKey(path), "json");
+  const data = buildReaderAnnotationsExportJson(
+    path,
+    fileNameKey(path),
+    currentFileAnnotations.value,
+  );
+  const r = await saveAnnotationExportFile(name, data, "json");
+  if (!r.ok && "error" in r) await appAlert(r.error);
+}
+
+async function onImportAnnotationsJson() {
+  const path = currentFile.value;
+  if (!path) return;
+  const {
+    parseReaderAnnotationsExportJson,
+    pickAndReadJsonFile,
+  } = await import("./utils/readerAnnotationExport");
+  const picked = await pickAndReadJsonFile();
+  if (!picked.ok) {
+    if ("error" in picked) await appAlert(picked.error);
+    return;
+  }
+  const envelope = parseReaderAnnotationsExportJson(picked.text);
+  if (!envelope) {
+    await appAlert("无效的笔记 JSON 文件");
+    return;
+  }
+  if (
+    envelope.bookPath.replace(/\\/g, "/").toLowerCase() !==
+    path.replace(/\\/g, "/").toLowerCase()
+  ) {
+    const ok = await appConfirm("该文件来自其他书籍，仍导入到当前书？");
+    if (!ok) return;
+  }
+  const imported = normalizeReaderAnnotations(envelope.annotations);
+  const merged = mergeImportedAnnotations(
+    currentFileAnnotations.value,
+    imported,
+  );
+  const model = readerRef.value?.getModel?.();
+  const physicalToDisplay = (n: number) =>
+    stream.physicalLineToDisplayForReader(n);
+  const validated = model
+    ? revalidateAnnotations(model, merged, physicalToDisplay)
+    : merged;
+  fileMetaRecords.value = setReaderAnnotationsForFile(
+    fileMetaRecords.value,
+    path,
+    validated,
+  );
+  persistFileMeta();
+  const staleN = validated.filter((a) => a.stale).length;
+  appToast(
+    `导入 ${imported.length} 条${staleN > 0 ? `，${staleN} 条已失效` : ""}`,
+    { kind: "success" },
+  );
+}
+
+function onAskAiWithQuote(text: string) {
+  sidebarTab.value = "aiAssistant";
+  showSidebar.value = true;
+  void nextTick(() => {
+    readerSidebarRef.value?.prefillAiAssistantQuotedText?.(text);
+  });
+}
+
+function revalidateCurrentFileAnnotations() {
+  const path = currentFile.value;
+  if (!path) return;
+  const anns = currentFileAnnotations.value;
+  if (anns.length === 0) return;
+  const model = readerRef.value?.getModel?.();
+  if (!model) return;
+  const physicalToDisplay = (n: number) =>
+    stream.physicalLineToDisplayForReader(n);
+  const validated = revalidateAnnotations(model, anns, physicalToDisplay);
+  const changed = validated.some((a, i) => !!a.stale !== !!anns[i]?.stale);
+  if (!changed) return;
+  fileMetaRecords.value = setReaderAnnotationsForFile(
+    fileMetaRecords.value,
+    path,
+    validated,
+  );
+  persistFileMeta();
 }
 
 function clearReaderInlineSearchHighlight() {
@@ -2543,6 +2818,7 @@ useAppShellThemeWatch({
           :live-reading-progress-percent="liveReadingProgressForUi"
           :bookmarks="bookmarkListItems"
           :highlight-terms="currentFileHighlightTerms"
+          :annotation-groups="annotationListGroups"
           :search-query="searchQuery"
           :search-results="searchResults"
           :search-in-progress="searchInProgress"
@@ -2557,6 +2833,7 @@ useAppShellThemeWatch({
               : readerSurfaceDark.readerBg
           "
           :monaco-font-family="monacoFontFamily"
+          :lineation-colors="lineationColorsForReader"
           :active-bookmark-line="activeBookmarkLine"
           :current-file-path="currentFile"
           :physical-reader-path="physicalReaderPath"
@@ -2610,6 +2887,13 @@ useAppShellThemeWatch({
           @favorite-highlight-term="onFavoriteHighlightTerm"
           @unfavorite-highlight-term="onUnfavoriteHighlightTerm"
           @clear-highlights="clearCurrentFileHighlightTerms"
+          @jump-to-annotation="onJumpToReaderAnnotation"
+          @remove-annotation="onRemoveReaderAnnotation"
+          @clear-annotations="onClearReaderAnnotationsWithConfirm"
+          @clear-stale-annotations="onClearStaleReaderAnnotations"
+          @export-annotations-md="onExportAnnotationsMd"
+          @export-annotations-json="onExportAnnotationsJson"
+          @import-annotations-json="onImportAnnotationsJson"
           @character-file-meta-patch="onCharacterFileMetaPatch"
           @persist-ui="onPersistUi"
           @update:file-category="fileCategory = $event"
@@ -2681,8 +2965,11 @@ useAppShellThemeWatch({
           :reader-surface-light="readerSurfaceLight"
           :reader-surface-dark="readerSurfaceDark"
           :highlight-colors="highlightColorsForReader"
+          :lineation-colors="lineationColorsForReader"
           :highlight-words-by-index="mergedHighlightWordsForReader"
           :highlight-words-by-index-book-only="currentFileHighlightWords"
+          :reader-annotations="currentFileAnnotations"
+          :lineation-last-colors="lineationLastColors"
           :reader-file-path="currentFile"
           :ebook-anchor-physical-to-display="
             stream.physicalLineToDisplayForReader
@@ -2699,6 +2986,7 @@ useAppShellThemeWatch({
           :ai-features-enabled="aiFeaturesEnabled"
           :can-use-ai-smart-format="canUseAiSmartFormat"
           :smart-format-review-session="aiSmartFormatReviewSession"
+          :monaco-font-family="monacoFontFamily"
           @ai-smart-format-full="onAiSmartFormatFull"
           @ai-smart-format-selection="onAiSmartFormatSelection"
           @smart-format-review-apply="applySmartFormatReview()"
@@ -2709,6 +2997,10 @@ useAppShellThemeWatch({
           @viewport-visual-progress-change="onViewportVisualProgressChange"
           @add-highlight-term="onAddHighlightTerm"
           @remove-highlight-term="onRemoveHighlightTerm"
+          @upsert-reader-annotation="onUpsertReaderAnnotation"
+          @remove-reader-annotation="onRemoveReaderAnnotation"
+          @update-lineation-last-color="onUpdateLineationLastColor"
+          @ask-ai-with-quote="onAskAiWithQuote"
           @reader-edit-dirty-change="onReaderEditDirtyChange"
           @reader-edit-content-change="onReaderEditContentChange"
           @reader-edit-loaded="onReaderEditLoaded"
@@ -2853,6 +3145,8 @@ useAppShellThemeWatch({
       :monaco-font-family="monacoFontFamily"
       :highlight-colors-light="highlightColorsLight"
       :highlight-colors-dark="highlightColorsDark"
+      :lineation-colors-light="lineationColorsLight"
+      :lineation-colors-dark="lineationColorsDark"
       :ebook-convert-output-dir="ebookConvertOutputDir"
       :character-portrait-cache-dir="characterPortraitCacheDir"
       :voice-read-settings="voiceReadSettings"
@@ -2869,6 +3163,7 @@ useAppShellThemeWatch({
       @confirm-remove-active-bookmark="confirmRemoveActiveBookmark"
       @apply-reader-palettes="onApplyReaderPalettes"
       @apply-highlight-colors="onApplyHighlightColors"
+      @apply-lineation-colors="onApplyLineationColors"
     />
   </div>
 </template>

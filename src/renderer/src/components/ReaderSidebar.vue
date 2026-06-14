@@ -22,7 +22,12 @@ import ChapterListPanel from "./ChapterListPanel.vue";
 import FileListPanel from "./FileListPanel.vue";
 import BookmarkListPanel from "./BookmarkListPanel.vue";
 import HighlightListPanel from "./HighlightListPanel.vue";
+import AnnotationListPanel from "./AnnotationListPanel.vue";
 import type { HighlightListTerm } from "../utils/highlightWords";
+import type {
+  AnnotationListChapterGroup,
+} from "../utils/readerAnnotations";
+import type { ReaderAnnotationRecord } from "../stores/fileMetaStore";
 import AiAssistantPanel from "./AiAssistantPanel.vue";
 import CharacterSidebarPanel from "./CharacterSidebarPanel.vue";
 import SearchPanel from "./SearchPanel.vue";
@@ -70,6 +75,7 @@ const props = withDefaults(
     /** 当前打开文件的实时进度（%），滚动时更新 */
     liveReadingProgressPercent?: number;
     highlightTerms?: HighlightListTerm[];
+    annotationGroups?: AnnotationListChapterGroup[];
     searchQuery?: string;
     searchResults?: Array<{
       physicalLine: number;
@@ -85,6 +91,7 @@ const props = withDefaults(
     hasInlineSearchHighlight?: boolean;
     highlightPreviewBg?: string;
     monacoFontFamily?: string;
+    lineationColors?: readonly string[];
     bookmarks: Array<{ line: number; note?: string; content: string }>;
     currentFilePath: string | null;
     activeChapterIdx: number;
@@ -160,6 +167,7 @@ const props = withDefaults(
     hasInlineSearchHighlight: false,
     highlightPreviewBg: "var(--reader-bg, var(--bg))",
     monacoFontFamily: "",
+    lineationColors: () => [],
     readerMainRef: null,
     physicalReaderPath: null,
     aiSkillsEnabled: () => ({}),
@@ -244,6 +252,13 @@ const emit = defineEmits<{
   unfavoriteHighlightTerm: [payload: { text: string; colorIndex: number }];
   clearInlineSearchHighlight: [];
   clearHighlights: [];
+  jumpToAnnotation: [ann: ReaderAnnotationRecord];
+  removeAnnotation: [id: string];
+  clearAnnotations: [];
+  clearStaleAnnotations: [];
+  exportAnnotationsMd: [];
+  exportAnnotationsJson: [];
+  importAnnotationsJson: [];
   "update:searchQuery": [value: string];
   "update:searchMatchCase": [value: boolean];
   "update:searchWholeWord": [value: boolean];
@@ -429,6 +444,8 @@ const activePanelTitle = computed(() => {
       return "书签";
     case "highlights":
       return "高亮词";
+    case "notes":
+      return "笔记";
     case "aiAssistant":
       return "AI 阅读助手";
     case "character":
@@ -445,7 +462,12 @@ const AI_ASSISTANT_HEADER_MORE_MENU_W = 168;
 const aiAssistantPanelRef = ref<{
   requestRebuildVectorIndex: () => Promise<void>;
   requestClearAiBookCache: () => Promise<void>;
+  prefillQuotedText: (text: string) => void;
 } | null>(null);
+const annotationPanelRef = ref<InstanceType<typeof AnnotationListPanel> | null>(
+  null,
+);
+const notesHeaderMoreBtnRef = ref<HTMLButtonElement | null>(null);
 const aiAssistantHeaderMoreBtnRef = ref<HTMLButtonElement | null>(null);
 
 const aiAssistantPanelTeleportPopoversOpen = ref(false);
@@ -586,6 +608,9 @@ defineExpose({
   scrollFileListToIndex,
   resetChapterListScroll,
   centerActiveChapterInList,
+  prefillAiAssistantQuotedText(text: string) {
+    aiAssistantPanelRef.value?.prefillQuotedText(text);
+  },
 });
 </script>
 
@@ -657,6 +682,16 @@ defineExpose({
           @click="onPrimaryTabClick('highlights')"
         >
           <span class="activityIcon" v-html="icons.highlightMark"></span>
+        </button>
+        <button
+          type="button"
+          class="activityTabBtn"
+          :class="{ active: panelExpanded && activeTab === 'notes' }"
+          title="笔记"
+          aria-label="笔记"
+          @click="onPrimaryTabClick('notes')"
+        >
+          <span class="activityIcon" v-html="icons.note"></span>
         </button>
         <button
           v-if="aiAssistantTabVisible"
@@ -749,6 +784,18 @@ defineExpose({
             <span class="svg" v-html="icons.more" />
           </button>
         </div>
+        <div v-else-if="activeTab === 'notes'" class="sidebarHeaderEnd">
+          <button
+            ref="notesHeaderMoreBtnRef"
+            type="button"
+            class="aiReaderSidebarHeaderIconBtn"
+            title="更多"
+            aria-label="更多"
+            @click="annotationPanelRef?.openMoreMenu()"
+          >
+            <span class="svg" v-html="icons.more" />
+          </button>
+        </div>
         <div v-else-if="activeTab === 'aiAssistant'" class="sidebarHeaderEnd">
           <button
             ref="aiAssistantHeaderMoreBtnRef"
@@ -835,6 +882,22 @@ defineExpose({
         @unfavorite-highlight-term="emit('unfavoriteHighlightTerm', $event)"
         @clear-inline-search-highlight="emit('clearInlineSearchHighlight')"
         @clear-highlights="emit('clearHighlights')"
+      />
+      <AnnotationListPanel
+        ref="annotationPanelRef"
+        v-show="activeTab === 'notes'"
+        :current-file-path="currentFilePath"
+        :groups="annotationGroups ?? []"
+        :menu-anchor-el="notesHeaderMoreBtnRef"
+        :monaco-font-family="monacoFontFamily"
+        :lineation-colors="lineationColors"
+        @jump-to-annotation="emit('jumpToAnnotation', $event)"
+        @remove-annotation="emit('removeAnnotation', $event)"
+        @clear-annotations="emit('clearAnnotations')"
+        @clear-stale-annotations="emit('clearStaleAnnotations')"
+        @export-annotations-md="emit('exportAnnotationsMd')"
+        @export-annotations-json="emit('exportAnnotationsJson')"
+        @import-annotations-json="emit('importAnnotationsJson')"
       />
       <div v-show="activeTab === 'aiAssistant'" class="sidebarAiHost">
         <AiAssistantPanel

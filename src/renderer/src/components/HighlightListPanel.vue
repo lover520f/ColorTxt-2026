@@ -76,7 +76,7 @@ const highlightRows = computed(() =>
 
 const emptyMessage = computed(() => {
   if (props.highlightTerms.length > 0) return "";
-  return props.currentFilePath ? "当前文件暂无高亮词" : "暂无高亮词";
+  return props.currentFilePath ? "当前文件暂无高亮词" : "未打开文件";
 });
 </script>
 
