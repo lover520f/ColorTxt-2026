@@ -32,7 +32,13 @@ export type ReaderAnnotationRecord = {
   startColumn: number;
   endPhysicalLine: number;
   endColumn: number;
+  /** 创建时 Monaco 展示行（压缩空行切换后仍准确定位） */
+  startDisplayLine?: number;
+  endDisplayLine?: number;
+  /** 源文件物理区间原文（用于校验是否失效） */
   text: string;
+  /** 阅读器展示层原文（简繁/全半角等与当前展示一致；与 `text` 相同时可不写入） */
+  displayText?: string;
   lineation?: {
     type: ReaderLineationType;
     colorIndex: number;

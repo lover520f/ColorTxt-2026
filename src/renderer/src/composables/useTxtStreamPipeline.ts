@@ -2,9 +2,12 @@ import { nextTick, type Ref } from "vue";
 import {
   applyLeadIndentFullWidth,
   chapterTitleForDisplay,
-  physicalRangeToDisplayColumns,
 } from "../chapter";
 import type ReaderMain from "../components/ReaderMain.vue";
+import {
+  annotationColumnMapOptions,
+  physicalColumnToDisplayColumn,
+} from "../utils/readerAnnotations";
 import {
   physicalLineToChapterTitleDisplayLine,
   physicalLineToLastFilteredDisplayLine,
@@ -368,20 +371,44 @@ export function useTxtStreamPipeline(deps: {
     return physicalLineContents[idx] ?? "";
   }
 
+  /** 当前展示层单行文本（优先 Monaco，与装饰/选区一致；回退 `lastFormattedDisplayLines`） */
+  function getDisplayLineContent(displayLine: number): string {
+    const reader = deps.readerRef.value;
+    const ln = Math.max(1, Math.floor(displayLine));
+    if (reader && typeof reader.getEditorLineContent === "function") {
+      const lineCount =
+        typeof reader.getModelLineCount === "function"
+          ? reader.getModelLineCount()
+          : 0;
+      if (lineCount > 0 && ln <= lineCount) {
+        return reader.getEditorLineContent(ln);
+      }
+    }
+    if (deps.readerEditMode.value) return "";
+    const idx = ln - 1;
+    return lastFormattedDisplayLines[idx] ?? "";
+  }
+
   /** 侧栏搜索等在物理行上的匹配 → Monaco 展示行列号 */
   function physicalSearchRangeToDisplayColumns(
     physicalLine: number,
     range: { start: number; end: number },
   ): { startColumn: number; endColumn: number } {
     const raw = getPhysicalLineContent(physicalLine);
-    // 编辑态 Monaco 为磁盘原文，无压缩空行/行首缩进展示处理
-    if (deps.readerEditMode.value || !deps.leadIndentFullWidth.value) {
-      return {
-        startColumn: range.start + 1,
-        endColumn: Math.max(range.start + 2, range.end + 1),
-      };
-    }
-    return physicalRangeToDisplayColumns(raw, range);
+    const columnMap = annotationColumnMapOptions({
+      readerEditMode: deps.readerEditMode.value,
+      leadIndentFullWidth: deps.leadIndentFullWidth.value,
+    });
+    const startColumn = physicalColumnToDisplayColumn(
+      raw,
+      range.start + 1,
+      columnMap,
+    );
+    const endColumn = Math.max(
+      physicalColumnToDisplayColumn(raw, range.start + 2, columnMap),
+      physicalColumnToDisplayColumn(raw, range.end + 1, columnMap),
+    );
+    return { startColumn, endColumn };
   }
 
   function getPhysicalFilePlainText(): string {
@@ -432,6 +459,7 @@ export function useTxtStreamPipeline(deps: {
     getLineCount,
     getDisplayLineToPhysicalLine,
     getPhysicalLineContent,
+    getDisplayLineContent,
     physicalSearchRangeToDisplayColumns,
     getPhysicalFilePlainText,
     resyncMirrorFromReader,

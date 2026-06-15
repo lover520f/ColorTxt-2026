@@ -2,6 +2,7 @@ import {
   convertDigitsWidth,
   convertLettersWidth,
 } from "@shared/textWidthConvert";
+import type { HighlightWordsByIndex } from "../stores/fileMetaStore";
 import {
   resolveOpenCcConfig,
   type TextConvertWidthMode,
@@ -53,4 +54,22 @@ export function applyTextConvertDigits(
   mode: TextConvertWidthMode,
 ): string {
   return convertDigitsWidth(text, mode);
+}
+
+/** 只读展示层：将高亮词表各词条经与正文相同的转换规则处理 */
+export async function applyTextDisplayConvertsToHighlightWordsByIndex(
+  map: HighlightWordsByIndex | undefined,
+  options: TextDisplayConvertOptions,
+): Promise<HighlightWordsByIndex | undefined> {
+  if (!map) return undefined;
+  const out: HighlightWordsByIndex = {};
+  for (const [key, words] of Object.entries(map)) {
+    const converted: string[] = [];
+    for (const word of words) {
+      if (!word) continue;
+      converted.push(await applyTextDisplayConverts(word, options));
+    }
+    if (converted.length > 0) out[key] = converted;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }

@@ -21,7 +21,7 @@ const props = withDefaults(
     matchCase?: boolean;
     wholeWord?: boolean;
     useRegex?: boolean;
-    activeSearchResult?: { physicalLine: number; rangeStart: number } | null;
+    activeSearchResult?: { displayLine: number; rangeStart: number } | null;
   }>(),
   {
     loading: false,
@@ -35,11 +35,11 @@ const props = withDefaults(
 
 function isActiveSearchResult(
   item: SearchResultItem,
-  active: { physicalLine: number; rangeStart: number } | null | undefined,
+  active: { displayLine: number; rangeStart: number } | null | undefined,
 ): boolean {
   if (!active) return false;
   return (
-    item.physicalLine === active.physicalLine &&
+    item.displayLine === active.displayLine &&
     item.range.start === active.rangeStart
   );
 }
@@ -190,7 +190,7 @@ function buildSegmentsByRanges(text: string, ranges: SearchRange[]) {
             (i) => {
               const r = props.results[i];
               return r
-                ? `${r.physicalLine}-${r.range.start}-${r.range.end}`
+                ? `${r.displayLine}-${r.range.start}-${r.range.end}`
                 : String(i);
             }
           "
@@ -225,7 +225,7 @@ function buildSegmentsByRanges(text: string, ranges: SearchRange[]) {
                   <span v-else>{{ segment.text }}</span>
                 </template>
               </span>
-              <span class="searchResultLine">{{ props.results[index].physicalLine }} 行</span>
+              <span class="searchResultLine">{{ props.results[index].displayLine }} 行</span>
             </button>
           </template>
         </VirtualList>

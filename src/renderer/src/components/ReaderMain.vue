@@ -96,6 +96,7 @@ import {
 import {
   defaultChapterMinCharCount,
   defaultCompressBlankLines,
+  defaultLeadIndentFullWidth,
   defaultMonacoAdvancedWrapping,
   defaultMonacoCustomHighlight,
   defaultMonacoSmoothScrolling,
@@ -417,6 +418,12 @@ const props = withDefaults(
     smartFormatReviewSession?: SmartFormatReviewSession | null;
     /** 与 Monaco 阅读区一致的正文字体 */
     monacoFontFamily?: string;
+    /** 源文件物理行文本（标注 `text` 快照） */
+    getPhysicalLineContent?: (physicalLine: number) => string;
+    /** 当前展示层行文本（标注 `displayText` 快照） */
+    getDisplayLineContent?: (displayLine: number) => string;
+    /** 只读态行首全角缩进（标注列映射须与展示层一致） */
+    leadIndentFullWidth?: boolean;
   }>(),
   {
     monacoCustomHighlight: defaultMonacoCustomHighlight,
@@ -451,6 +458,9 @@ const props = withDefaults(
     canUseAiSmartFormat: false,
     smartFormatReviewSession: null,
     monacoFontFamily: READER_EDITOR_DEFAULT_FONT_FAMILY,
+    getPhysicalLineContent: undefined,
+    getDisplayLineContent: undefined,
+    leadIndentFullWidth: defaultLeadIndentFullWidth,
   },
 );
 
@@ -480,6 +490,7 @@ const emit = defineEmits<{
   aiSmartFormatSelection: [];
   smartFormatReviewApply: [];
   smartFormatReviewDiscard: [];
+  annotationQuotesChanged: [];
 }>();
 
 const smartFormatRunning = ref(false);
@@ -507,6 +518,10 @@ const readerAnn = useReaderAnnotations({
   emitAskAiWithQuote: (text) => emit("askAiWithQuote", text),
   ebookDisplayLineToPhysical: () => props.ebookDisplayLineToPhysical,
   ebookAnchorPhysicalToDisplay: () => props.ebookAnchorPhysicalToDisplay,
+  getPhysicalLineContent: (line) => props.getPhysicalLineContent?.(line) ?? "",
+  getDisplayLineContent: (line) => props.getDisplayLineContent?.(line) ?? "",
+  leadIndentFullWidth: () => props.leadIndentFullWidth === true,
+  onAnnotationIndexRebuilt: () => emit("annotationQuotesChanged"),
   annotationDecorationsCollection,
 });
 
@@ -537,6 +552,8 @@ const {
   onNotePanelConfirm,
   onNotePanelDelete,
   jumpToAnnotationRange,
+  getAnnotationDisplayQuote,
+  getAnnotationHitsByLine,
   rebuildAnnotationIndex,
   refreshAnnotationDecorations,
   bindAnnotationScrollSync,
@@ -2986,6 +3003,8 @@ defineExpose({
   getEbookLeadingLinkLabelsByDisplayLine,
   getReaderEditorDomNode: () => editor.value?.getDomNode() ?? null,
   jumpToAnnotationRange,
+  getAnnotationDisplayQuote,
+  getAnnotationHitsByLine,
   getModel: () => model.value,
   refreshReaderAnnotationDecorations: refreshAnnotationDecorations,
   suppressHighlightTipForProgrammaticSelection,

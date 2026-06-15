@@ -1,5 +1,13 @@
 import * as monaco from "monaco-editor";
 import type { Chapter } from "../chapter";
+import {
+  applyLeadIndentFullWidth,
+  detectChapterTitle,
+  displayColumnsToPhysicalSlice,
+  displayOffsetToPhysicalOffset,
+  physicalOffsetToDisplayOffset,
+} from "../chapter";
+import { visibleReaderLineFromPhysicalRaw } from "../ebook/ebookTitleMatch";
 import { parseLineationColorIndexRaw } from "../constants/annotationColors";
 import { pickActiveChapterIdx } from "../reader/chapterIndex";
 import type {
@@ -30,12 +38,61 @@ export type AnnotationListChapterGroup = {
 
 const ANNOTATION_UNGROUPED_CHAPTER_IDX = -1;
 
+/** 存盘区间：物理行 + 物理列（磁盘原文 1-based 列号） */
 export type AnnotationRange = {
   startPhysicalLine: number;
   startColumn: number;
   endPhysicalLine: number;
   endColumn: number;
 };
+
+/** 物理列 ↔ Monaco 展示列映射（须与 {@link useTxtStreamPipeline.physicalSearchRangeToDisplayColumns} 一致） */
+export type AnnotationColumnMapOptions = {
+  leadIndentFullWidth: boolean;
+};
+
+export function annotationColumnMapOptions(input: {
+  readerEditMode: boolean;
+  leadIndentFullWidth: boolean;
+}): AnnotationColumnMapOptions {
+  return {
+    leadIndentFullWidth: !input.readerEditMode && input.leadIndentFullWidth,
+  };
+}
+
+export function chapterTitleExemptForPhysicalLine(
+  physicalLine: string,
+): boolean {
+  return detectChapterTitle(physicalLine) != null;
+}
+
+export function physicalColumnToDisplayColumn(
+  physicalLine: string,
+  physicalColumn1Based: number,
+  columnMap: AnnotationColumnMapOptions,
+): number {
+  if (!columnMap.leadIndentFullWidth) return physicalColumn1Based;
+  const exempt = chapterTitleExemptForPhysicalLine(physicalLine);
+  return (
+    physicalOffsetToDisplayOffset(physicalLine, physicalColumn1Based - 1, {
+      exemptChapterTitle: exempt,
+    }) + 1
+  );
+}
+
+export function displayColumnToPhysicalColumn(
+  physicalLine: string,
+  displayColumn1Based: number,
+  columnMap: AnnotationColumnMapOptions,
+): number {
+  if (!columnMap.leadIndentFullWidth) return displayColumn1Based;
+  const exempt = chapterTitleExemptForPhysicalLine(physicalLine);
+  return (
+    displayOffsetToPhysicalOffset(physicalLine, displayColumn1Based - 1, {
+      exemptChapterTitle: exempt,
+    }) + 1
+  );
+}
 
 export function annotationPhysicalRange(
   ann: ReaderAnnotationRecord,
@@ -51,26 +108,50 @@ export function annotationPhysicalRange(
 export function physicalRangeToMonacoRange(
   range: AnnotationRange,
   physicalToDisplay: (physicalLine: number) => number,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  columnMap: AnnotationColumnMapOptions,
 ): monaco.IRange {
   const startLine = physicalToDisplay(range.startPhysicalLine);
   const endLine = physicalToDisplay(range.endPhysicalLine);
+  const startColumn = physicalColumnToDisplayColumn(
+    getPhysicalLineContent(range.startPhysicalLine),
+    range.startColumn,
+    columnMap,
+  );
+  const endColumn = physicalColumnToDisplayColumn(
+    getPhysicalLineContent(range.endPhysicalLine),
+    range.endColumn,
+    columnMap,
+  );
   return {
     startLineNumber: startLine,
-    startColumn: range.startColumn,
+    startColumn,
     endLineNumber: endLine,
-    endColumn: range.endColumn,
+    endColumn,
   };
 }
 
 export function monacoRangeToPhysicalRange(
   range: monaco.IRange,
   displayToPhysical: (displayLine: number) => number,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  columnMap: AnnotationColumnMapOptions,
 ): AnnotationRange {
+  const startPhysicalLine = displayToPhysical(range.startLineNumber);
+  const endPhysicalLine = displayToPhysical(range.endLineNumber);
   return {
-    startPhysicalLine: displayToPhysical(range.startLineNumber),
-    startColumn: range.startColumn,
-    endPhysicalLine: displayToPhysical(range.endLineNumber),
-    endColumn: range.endColumn,
+    startPhysicalLine,
+    startColumn: displayColumnToPhysicalColumn(
+      getPhysicalLineContent(startPhysicalLine),
+      range.startColumn,
+      columnMap,
+    ),
+    endPhysicalLine,
+    endColumn: displayColumnToPhysicalColumn(
+      getPhysicalLineContent(endPhysicalLine),
+      range.endColumn,
+      columnMap,
+    ),
   };
 }
 
@@ -151,8 +232,15 @@ export function findAnnotationMatchingExactSelection(
   annotations: readonly ReaderAnnotationRecord[],
   selection: monaco.IRange,
   displayToPhysical: (displayLine: number) => number,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  columnMap: AnnotationColumnMapOptions,
 ): ReaderAnnotationRecord | null {
-  const sel = monacoRangeToPhysicalRange(selection, displayToPhysical);
+  const sel = monacoRangeToPhysicalRange(
+    selection,
+    displayToPhysical,
+    getPhysicalLineContent,
+    columnMap,
+  );
   for (const ann of annotations) {
     if (ann.stale) continue;
     if (rangesEqual(annotationPhysicalRange(ann), sel)) return ann;
@@ -246,23 +334,558 @@ export function getTextInPhysicalRange(
   model: monaco.editor.ITextModel,
   range: AnnotationRange,
   physicalToDisplay: (physicalLine: number) => number,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  columnMap: AnnotationColumnMapOptions,
 ): string {
-  const mr = physicalRangeToMonacoRange(range, physicalToDisplay);
+  const mr = physicalRangeToMonacoRange(
+    range,
+    physicalToDisplay,
+    getPhysicalLineContent,
+    columnMap,
+  );
   return model.getValueInRange(mr);
 }
 
-export function validateAnnotationAgainstModel(
-  model: monaco.editor.ITextModel,
-  ann: ReaderAnnotationRecord,
-  physicalToDisplay: (physicalLine: number) => number,
-): { valid: boolean; stale: boolean } {
-  try {
-    const mr = physicalRangeToMonacoRange(ann, physicalToDisplay);
-    if (mr.startLineNumber < 1 || mr.endLineNumber > model.getLineCount()) {
-      return { valid: false, stale: true };
+/** 标注区间列号语义：默认 physical（磁盘原文列）；display 仅用于旧数据迁移 */
+export type AnnotationRangeColumnSpace = "display" | "physical";
+
+function displayLineLengthForPhysicalLine(
+  physicalLine: string,
+  columnMap: AnnotationColumnMapOptions,
+): number {
+  if (!columnMap.leadIndentFullWidth) return physicalLine.length;
+  const exemptChapterTitle = detectChapterTitle(physicalLine) != null;
+  return applyLeadIndentFullWidth(physicalLine, { exemptChapterTitle }).length;
+}
+
+function slicePhysicalLineByRangeColumns(
+  physicalLine: string,
+  startColumn: number,
+  endColumn: number,
+  columnSpace: AnnotationRangeColumnSpace,
+  columnMap: AnnotationColumnMapOptions,
+): string {
+  if (columnSpace === "physical") {
+    return physicalLine.slice(startColumn - 1, endColumn - 1);
+  }
+  if (!columnMap.leadIndentFullWidth) {
+    return physicalLine.slice(startColumn - 1, endColumn - 1);
+  }
+  const exemptChapterTitle = detectChapterTitle(physicalLine) != null;
+  const { start, end } = displayColumnsToPhysicalSlice(
+    physicalLine,
+    startColumn,
+    endColumn,
+    { exemptChapterTitle },
+  );
+  return physicalLine.slice(start, end);
+}
+
+/** 单行：展示层选区 → 源物理行 substring */
+function slicePhysicalFromDisplayColumns(
+  physicalLine: string,
+  displayLine: string,
+  startColumn: number,
+  endColumn: number,
+): string {
+  const selectedDisplay = displayLine.slice(startColumn - 1, endColumn - 1);
+  if (!selectedDisplay) return "";
+
+  const exemptChapterTitle = detectChapterTitle(physicalLine) != null;
+  const leadIndented = applyLeadIndentFullWidth(physicalLine, {
+    exemptChapterTitle,
+  });
+  if (displayLine === leadIndented) {
+    const { start, end } = displayColumnsToPhysicalSlice(
+      physicalLine,
+      startColumn,
+      endColumn,
+      { exemptChapterTitle },
+    );
+    return physicalLine.slice(start, end);
+  }
+
+  const idx = physicalLine.indexOf(selectedDisplay);
+  if (idx >= 0) {
+    return physicalLine.slice(idx, idx + selectedDisplay.length);
+  }
+
+  const visible = visibleReaderLineFromPhysicalRaw(physicalLine);
+  const visibleIdx = visible.indexOf(selectedDisplay);
+  if (visibleIdx >= 0) {
+    return visible.slice(visibleIdx, visibleIdx + selectedDisplay.length);
+  }
+
+  return slicePhysicalLineByRangeColumns(
+    physicalLine,
+    startColumn,
+    endColumn,
+    "display",
+    { leadIndentFullWidth: true },
+  );
+}
+
+/** 由展示层行号/列号截取源物理区间原文（旧数据迁移） */
+export function extractPhysicalTextFromDisplayRange(
+  getPhysicalLineContent: (physicalLine: number) => string,
+  getDisplayLineContent: (displayLine: number) => string,
+  displayToPhysical: (displayLine: number) => number,
+  range: AnnotationRange,
+  displayLineRange: { startDisplayLine: number; endDisplayLine: number },
+): string {
+  const { startDisplayLine, endDisplayLine } = displayLineRange;
+  if (startDisplayLine === endDisplayLine) {
+    const displayLine = getDisplayLineContent(startDisplayLine);
+    const physicalLine = getPhysicalLineContent(
+      displayToPhysical(startDisplayLine),
+    );
+    return slicePhysicalFromDisplayColumns(
+      physicalLine,
+      displayLine,
+      range.startColumn,
+      range.endColumn,
+    );
+  }
+  const parts: string[] = [];
+  for (let dl = startDisplayLine; dl <= endDisplayLine; dl += 1) {
+    const displayLine = getDisplayLineContent(dl);
+    const physicalLine = getPhysicalLineContent(displayToPhysical(dl));
+    const startCol = dl === startDisplayLine ? range.startColumn : 1;
+    const endCol =
+      dl === endDisplayLine ? range.endColumn : displayLine.length + 1;
+    parts.push(
+      slicePhysicalFromDisplayColumns(
+        physicalLine,
+        displayLine,
+        startCol,
+        endCol,
+      ),
+    );
+  }
+  return parts.join("\n");
+}
+
+function getTextInDisplayRangeFromDisplayLines(
+  getDisplayLineContent: (displayLine: number) => string,
+  startDisplayLine: number,
+  endDisplayLine: number,
+  startColumn: number,
+  endColumn: number,
+): string {
+  if (startDisplayLine === endDisplayLine) {
+    const line = getDisplayLineContent(startDisplayLine);
+    return line.slice(startColumn - 1, endColumn - 1);
+  }
+  const parts: string[] = [];
+  for (let dl = startDisplayLine; dl <= endDisplayLine; dl += 1) {
+    const line = getDisplayLineContent(dl);
+    if (dl === startDisplayLine) {
+      parts.push(line.slice(startColumn - 1));
+    } else if (dl === endDisplayLine) {
+      parts.push(line.slice(0, endColumn - 1));
+    } else {
+      parts.push(line);
     }
-    const atRange = model.getValueInRange(mr);
-    if (atRange === ann.text) {
+  }
+  return parts.join("\n");
+}
+
+/** 侧栏/导出：由物理区间映射到当前展示层并截取原文 */
+export function getTextInDisplayRangeFromStoredRange(
+  getDisplayLineContent: (displayLine: number) => string,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  range: AnnotationRange,
+  physicalToDisplay: (physicalLine: number) => number,
+  columnMap: AnnotationColumnMapOptions,
+): string {
+  const mr = physicalRangeToMonacoRange(
+    range,
+    physicalToDisplay,
+    getPhysicalLineContent,
+    columnMap,
+  );
+  return getTextInDisplayRangeFromDisplayLines(
+    getDisplayLineContent,
+    mr.startLineNumber,
+    mr.endLineNumber,
+    mr.startColumn,
+    mr.endColumn,
+  );
+}
+
+/** 从源文件物理行截取区间文本；默认列号为磁盘物理列 */
+export function getTextInPhysicalRangeFromLines(
+  getPhysicalLineContent: (physicalLine: number) => string,
+  range: AnnotationRange,
+  columnSpace: AnnotationRangeColumnSpace = "physical",
+  columnMap: AnnotationColumnMapOptions = { leadIndentFullWidth: false },
+): string {
+  const { startPhysicalLine, startColumn, endPhysicalLine, endColumn } = range;
+  if (startPhysicalLine === endPhysicalLine) {
+    const line = getPhysicalLineContent(startPhysicalLine);
+    return slicePhysicalLineByRangeColumns(
+      line,
+      startColumn,
+      endColumn,
+      columnSpace,
+      columnMap,
+    );
+  }
+  const parts: string[] = [];
+  for (let ln = startPhysicalLine; ln <= endPhysicalLine; ln++) {
+    const line = getPhysicalLineContent(ln);
+    if (ln === startPhysicalLine) {
+      parts.push(
+        slicePhysicalLineByRangeColumns(
+          line,
+          startColumn,
+          displayLineLengthForPhysicalLine(line, columnMap) + 1,
+          columnSpace,
+          columnMap,
+        ),
+      );
+    } else if (ln === endPhysicalLine) {
+      parts.push(
+        slicePhysicalLineByRangeColumns(line, 1, endColumn, columnSpace, columnMap),
+      );
+    } else {
+      parts.push(line);
+    }
+  }
+  return parts.join("\n");
+}
+
+/** 从内存中的展示层行数组截取原文 */
+export function getTextInDisplayRangeFromLines(
+  getDisplayLineContent: (displayLine: number) => string,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  range: AnnotationRange,
+  physicalToDisplay: (physicalLine: number) => number,
+  columnMap: AnnotationColumnMapOptions,
+): string {
+  return getTextInDisplayRangeFromStoredRange(
+    getDisplayLineContent,
+    getPhysicalLineContent,
+    range,
+    physicalToDisplay,
+    columnMap,
+  );
+}
+
+/** 侧栏/导出等展示的标注原文（用户笔记 `note.content` 不在此列） */
+export function annotationQuoteText(ann: ReaderAnnotationRecord): string {
+  return ann.displayText ?? ann.text;
+}
+
+/** 装饰命中表列信息（与 {@link buildAnnotationHitsByDisplayLine} 一致） */
+export type AnnotationQuoteHit = {
+  annotationId: string;
+  startColumn: number;
+  endColumnExclusive: number;
+};
+
+/** 与视口装饰同源：按 hits 列号从 Monaco 截取原文 */
+export function getAnnotationQuoteFromHits(
+  ann: ReaderAnnotationRecord,
+  model: monaco.editor.ITextModel,
+  physicalToDisplay: (physicalLine: number) => number,
+  hitsByLine: ReadonlyMap<number, readonly AnnotationQuoteHit[]>,
+): string | null {
+  if (ann.stale) return null;
+  const lineCount = model.getLineCount();
+  if (lineCount <= 0) return null;
+  const parts: string[] = [];
+  for (
+    let physicalLine = ann.startPhysicalLine;
+    physicalLine <= ann.endPhysicalLine;
+    physicalLine += 1
+  ) {
+    const displayLine = Math.max(1, Math.floor(physicalToDisplay(physicalLine)));
+    if (displayLine < 1 || displayLine > lineCount) return null;
+    const hits = hitsByLine.get(displayLine);
+    const hit = hits?.find((h) => h.annotationId === ann.id);
+    if (!hit) return null;
+    let line: string;
+    try {
+      line = model.getLineContent(displayLine);
+    } catch {
+      return null;
+    }
+    const maxCol = line.length + 1;
+    const startCol = Math.min(Math.max(1, hit.startColumn), maxCol);
+    const endCol = Math.min(
+      Math.max(startCol, hit.endColumnExclusive),
+      maxCol,
+    );
+    if (startCol >= endCol) return null;
+    parts.push(line.slice(startCol - 1, endCol - 1));
+  }
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
+export type AnnotationDisplayQuoteContext = {
+  readerEditMode: boolean;
+  getDisplayLineContent: (displayLine: number) => string;
+  getPhysicalLineContent: (physicalLine: number) => string;
+  physicalToDisplay: (physicalLine: number) => number;
+  columnMap: AnnotationColumnMapOptions;
+  monacoModel?: monaco.editor.ITextModel | null;
+  /** 传入时优先与阅读器装饰同源截取 */
+  hitsByLine?: ReadonlyMap<number, readonly AnnotationQuoteHit[]>;
+};
+
+/**
+ * 标注引用原文（侧栏 / 导出 / 存盘 displayText）。
+ * 优先级：hits 表 → Monaco 区间 → 展示行数组 → 物理 text。
+ */
+export function resolveAnnotationDisplayQuote(
+  ann: ReaderAnnotationRecord,
+  ctx: AnnotationDisplayQuoteContext,
+): string {
+  if (ctx.readerEditMode) {
+    return (
+      getTextInPhysicalRangeFromLines(
+        ctx.getPhysicalLineContent,
+        annotationPhysicalRange(ann),
+        "physical",
+      ).trim() || ann.text
+    );
+  }
+  if (ann.stale) return annotationQuoteText(ann);
+
+  const model = ctx.monacoModel;
+  const lineCount = model?.getLineCount() ?? 0;
+  if (model && lineCount > 0) {
+    try {
+      if (ctx.hitsByLine) {
+        const fromHits = getAnnotationQuoteFromHits(
+          ann,
+          model,
+          ctx.physicalToDisplay,
+          ctx.hitsByLine,
+        );
+        if (fromHits && fromHits.trim().length > 0) return fromHits.trim();
+      }
+      const fromRange = getTextInPhysicalRange(
+        model,
+        annotationPhysicalRange(ann),
+        ctx.physicalToDisplay,
+        ctx.getPhysicalLineContent,
+        ctx.columnMap,
+      ).trim();
+      if (fromRange.length > 0) return fromRange;
+    } catch {
+      /* Monaco 尚未就绪或行号越界 */
+    }
+  }
+
+  try {
+    const live = getTextInDisplayRangeFromLines(
+      ctx.getDisplayLineContent,
+      ctx.getPhysicalLineContent,
+      annotationPhysicalRange(ann),
+      ctx.physicalToDisplay,
+      ctx.columnMap,
+    ).trim();
+    if (live.length > 0) return live;
+  } catch {
+    /* fall through */
+  }
+  return ann.text;
+}
+
+function compactDisplayTextField(
+  text: string,
+  displayText: string,
+): string | undefined {
+  return displayText === text ? undefined : displayText;
+}
+
+/** 展示层正文或转换切换后，批量刷新未失效标注的 `displayText` */
+export function refreshAnnotationDisplayTexts(
+  annotations: readonly ReaderAnnotationRecord[],
+  ctx: AnnotationDisplayQuoteContext,
+): ReaderAnnotationRecord[] {
+  return annotations.map((ann) => {
+    if (ann.stale) return ann;
+    try {
+      const displayText = resolveAnnotationDisplayQuote(ann, ctx);
+      const nextDisplay = compactDisplayTextField(ann.text, displayText);
+      if (nextDisplay === ann.displayText) return ann;
+      if (nextDisplay === undefined) {
+        if (ann.displayText === undefined) return ann;
+        const { displayText: _omit, ...rest } = ann;
+        return rest;
+      }
+      return { ...ann, displayText: nextDisplay };
+    } catch {
+      return ann;
+    }
+  });
+}
+
+function stripLegacyDisplayLineFields(
+  ann: ReaderAnnotationRecord,
+): ReaderAnnotationRecord {
+  if (ann.startDisplayLine == null && ann.endDisplayLine == null) return ann;
+  const { startDisplayLine: _s, endDisplayLine: _e, ...rest } = ann;
+  return rest;
+}
+
+function locatePhysicalRangeForStoredText(
+  ann: ReaderAnnotationRecord,
+  getPhysicalLineContent: (physicalLine: number) => string,
+): AnnotationRange | null {
+  const needle = ann.text;
+  if (!needle) return null;
+  const startLine = ann.startPhysicalLine;
+  const endLine = ann.endPhysicalLine;
+  if (startLine === endLine) {
+    const line = getPhysicalLineContent(startLine);
+    const idx = line.indexOf(needle);
+    if (idx < 0) return null;
+    return {
+      startPhysicalLine: startLine,
+      startColumn: idx + 1,
+      endPhysicalLine: endLine,
+      endColumn: idx + 1 + needle.length,
+    };
+  }
+  const parts: string[] = [];
+  for (let ln = startLine; ln <= endLine; ln += 1) {
+    parts.push(getPhysicalLineContent(ln));
+  }
+  const joined = parts.join("\n");
+  const idx = joined.indexOf(needle);
+  if (idx < 0) return null;
+  let offset = 0;
+  for (let ln = startLine; ln <= endLine; ln += 1) {
+    const line = parts[ln - startLine] ?? "";
+    const lineEnd = offset + line.length;
+    if (idx >= offset && idx < lineEnd) {
+      const startColumn = idx - offset + 1;
+      const endOffset = idx + needle.length;
+      if (endOffset <= lineEnd) {
+        return {
+          startPhysicalLine: ln,
+          startColumn,
+          endPhysicalLine: ln,
+          endColumn: startColumn + needle.length,
+        };
+      }
+      let endPhysicalLine = ln;
+      let endColumn = line.length + 1;
+      let scan = lineEnd + 1;
+      for (let next = ln + 1; next <= endLine; next += 1) {
+        const nextLine = parts[next - startLine] ?? "";
+        const nextEnd = scan + nextLine.length;
+        if (endOffset <= nextEnd) {
+          endPhysicalLine = next;
+          endColumn = endOffset - scan + 1;
+          break;
+        }
+        scan = nextEnd + 1;
+      }
+      return {
+        startPhysicalLine: ln,
+        startColumn,
+        endPhysicalLine,
+        endColumn,
+      };
+    }
+    offset = lineEnd + 1;
+  }
+  return null;
+}
+
+/** 旧版存盘为展示列时，一次性改写为物理列 */
+export function migrateLegacyAnnotationToPhysicalColumns(
+  ann: ReaderAnnotationRecord,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  getDisplayLineContent: (displayLine: number) => string,
+  displayToPhysical: (displayLine: number) => number,
+  physicalToDisplay: (physicalLine: number) => number,
+): ReaderAnnotationRecord | null {
+  const range = annotationPhysicalRange(ann);
+  const physicalText = getTextInPhysicalRangeFromLines(
+    getPhysicalLineContent,
+    range,
+    "physical",
+  );
+  if (physicalText === ann.text) {
+    return stripLegacyDisplayLineFields(ann);
+  }
+
+  const legacyStartDisplay =
+    ann.startDisplayLine ?? physicalToDisplay(ann.startPhysicalLine);
+  const legacyEndDisplay =
+    ann.endDisplayLine ?? physicalToDisplay(ann.endPhysicalLine);
+  const legacyText = extractPhysicalTextFromDisplayRange(
+    getPhysicalLineContent,
+    getDisplayLineContent,
+    displayToPhysical,
+    range,
+    {
+      startDisplayLine: legacyStartDisplay,
+      endDisplayLine: legacyEndDisplay,
+    },
+  );
+  if (legacyText === ann.text) {
+    for (const leadIndentFullWidth of [true, false] as const) {
+      const migrated = monacoRangeToPhysicalRange(
+        {
+          startLineNumber: legacyStartDisplay,
+          startColumn: ann.startColumn,
+          endLineNumber: legacyEndDisplay,
+          endColumn: ann.endColumn,
+        },
+        displayToPhysical,
+        getPhysicalLineContent,
+        { leadIndentFullWidth },
+      );
+      const migratedText = getTextInPhysicalRangeFromLines(
+        getPhysicalLineContent,
+        migrated,
+        "physical",
+      );
+      if (migratedText === ann.text) {
+        const { startDisplayLine: _s, endDisplayLine: _e, ...base } = ann;
+        return { ...base, ...migrated };
+      }
+    }
+  }
+
+  const located = locatePhysicalRangeForStoredText(ann, getPhysicalLineContent);
+  if (!located) return null;
+  const locatedText = getTextInPhysicalRangeFromLines(
+    getPhysicalLineContent,
+    located,
+    "physical",
+  );
+  if (locatedText !== ann.text) return null;
+  const { startDisplayLine: _s, endDisplayLine: _e, ...base } = ann;
+  return { ...base, ...located };
+}
+
+export function validateAnnotationAgainstPhysicalSource(
+  getPhysicalLineContent: (physicalLine: number) => string,
+  getPhysicalLineCount: () => number,
+  ann: ReaderAnnotationRecord,
+): { valid: boolean; stale: boolean } {
+  const range = annotationPhysicalRange(ann);
+  if (
+    range.startPhysicalLine < 1 ||
+    range.endPhysicalLine > getPhysicalLineCount()
+  ) {
+    return { valid: false, stale: true };
+  }
+  try {
+    const physicalText = getTextInPhysicalRangeFromLines(
+      getPhysicalLineContent,
+      range,
+      "physical",
+    );
+    if (physicalText === ann.text) {
       return { valid: true, stale: false };
     }
     return { valid: false, stale: true };
@@ -272,30 +895,51 @@ export function validateAnnotationAgainstModel(
 }
 
 export function revalidateAnnotations(
-  model: monaco.editor.ITextModel,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  getPhysicalLineCount: () => number,
   annotations: ReaderAnnotationRecord[],
-  physicalToDisplay: (physicalLine: number) => number,
+  options?: {
+    getDisplayLineContent?: (displayLine: number) => string;
+    displayToPhysical?: (displayLine: number) => number;
+    physicalToDisplay?: (physicalLine: number) => number;
+  },
 ): ReaderAnnotationRecord[] {
   return annotations.map((ann) => {
-    const { stale } = validateAnnotationAgainstModel(
-      model,
-      ann,
-      physicalToDisplay,
+    let current = ann;
+    if (
+      options?.getDisplayLineContent &&
+      options.displayToPhysical &&
+      options.physicalToDisplay
+    ) {
+      const migrated = migrateLegacyAnnotationToPhysicalColumns(
+        ann,
+        getPhysicalLineContent,
+        options.getDisplayLineContent,
+        options.displayToPhysical,
+        options.physicalToDisplay,
+      );
+      if (migrated) current = migrated;
+    }
+    const { stale } = validateAnnotationAgainstPhysicalSource(
+      getPhysicalLineContent,
+      getPhysicalLineCount,
+      current,
     );
-    if (!!ann.stale === stale) return ann;
-    return { ...ann, stale: stale || undefined };
+    if (!!current.stale === stale && current === ann) return ann;
+    return { ...current, stale: stale || undefined };
   });
 }
 
 export function buildAnnotationListRows(
   annotations: readonly ReaderAnnotationRecord[],
+  resolveQuoteText?: (ann: ReaderAnnotationRecord) => string,
 ): AnnotationListRow[] {
   const rows: AnnotationListRow[] = annotations.map((ann) => {
     const hasNote = !!ann.note?.content?.trim();
     return {
       id: ann.id,
       kind: hasNote ? "note" : "lineation",
-      text: ann.text,
+      text: resolveQuoteText?.(ann) ?? annotationQuoteText(ann),
       lineationType: ann.lineation?.type,
       colorIndex: ann.lineation?.colorIndex,
       noteContent: ann.note?.content,
@@ -434,8 +1078,22 @@ export function normalizeReaderAnnotation(
     Math.floor(Number(o.endPhysicalLine)),
   );
   const endColumn = Math.max(1, Math.floor(Number(o.endColumn)));
+  const startDisplayLineRaw = Number(o.startDisplayLine);
+  const endDisplayLineRaw = Number(o.endDisplayLine);
+  const startDisplayLine =
+    Number.isFinite(startDisplayLineRaw) && startDisplayLineRaw >= 1
+      ? Math.floor(startDisplayLineRaw)
+      : undefined;
+  const endDisplayLine =
+    Number.isFinite(endDisplayLineRaw) && endDisplayLineRaw >= 1
+      ? Math.floor(endDisplayLineRaw)
+      : undefined;
   const text = typeof o.text === "string" ? o.text : "";
   if (!text) return null;
+  const displayTextRaw =
+    typeof o.displayText === "string" ? o.displayText : undefined;
+  const displayText =
+    displayTextRaw && displayTextRaw !== text ? displayTextRaw : undefined;
   const lineation = normalizeLineation(o.lineation);
   const note = normalizeNote(o.note);
   if (!lineation && !note) return null;
@@ -455,7 +1113,11 @@ export function normalizeReaderAnnotation(
     startColumn,
     endPhysicalLine,
     endColumn,
+    ...(startDisplayLine != null && endDisplayLine != null
+      ? { startDisplayLine, endDisplayLine }
+      : {}),
     text,
+    ...(displayText ? { displayText } : {}),
     lineation,
     note,
     createdAt,
@@ -480,14 +1142,19 @@ export function createAnnotationFromRange(
   range: AnnotationRange,
   text: string,
   partial?: Partial<
-    Pick<ReaderAnnotationRecord, "lineation" | "note" | "id">
+    Pick<ReaderAnnotationRecord, "lineation" | "note" | "id" | "displayText">
   >,
 ): ReaderAnnotationRecord {
   const now = Date.now();
+  const displayText =
+    partial?.displayText && partial.displayText !== text
+      ? partial.displayText
+      : undefined;
   return {
     id: partial?.id ?? crypto.randomUUID(),
     ...range,
     text,
+    ...(displayText ? { displayText } : {}),
     lineation: partial?.lineation,
     note: partial?.note,
     createdAt: now,

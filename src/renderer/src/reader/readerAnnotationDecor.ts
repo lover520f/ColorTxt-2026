@@ -5,7 +5,9 @@ import {
 } from "../constants/annotationColors";
 import {
   annotationPhysicalRange,
+  physicalColumnToDisplayColumn,
   physicalRangeToMonacoRange,
+  type AnnotationColumnMapOptions,
 } from "../utils/readerAnnotations";
 import type {
   ReaderAnnotationRecord,
@@ -28,19 +30,37 @@ export const ANNOTATION_VIEWPORT_SYNC_MS = 48;
 export function buildAnnotationHitsByDisplayLine(
   annotations: readonly ReaderAnnotationRecord[],
   physicalToDisplay: (physicalLine: number) => number,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  columnMap: AnnotationColumnMapOptions,
   lineationColorCount?: number,
 ): Map<number, AnnotationCompactHit[]> {
   const map = new Map<number, AnnotationCompactHit[]>();
   for (const ann of annotations) {
     if (ann.stale) continue;
-    const startDisplay = physicalToDisplay(ann.startPhysicalLine);
-    const endDisplay = physicalToDisplay(ann.endPhysicalLine);
-    for (let line = startDisplay; line <= endDisplay; line++) {
+    for (
+      let physicalLine = ann.startPhysicalLine;
+      physicalLine <= ann.endPhysicalLine;
+      physicalLine += 1
+    ) {
+      const displayLine = physicalToDisplay(physicalLine);
+      const rawLine = getPhysicalLineContent(physicalLine);
       let startColumn = 1;
       let endColumnExclusive = Number.MAX_SAFE_INTEGER;
-      if (line === startDisplay) startColumn = ann.startColumn;
-      if (line === endDisplay) endColumnExclusive = ann.endColumn;
-      const hits = map.get(line) ?? [];
+      if (physicalLine === ann.startPhysicalLine) {
+        startColumn = physicalColumnToDisplayColumn(
+          rawLine,
+          ann.startColumn,
+          columnMap,
+        );
+      }
+      if (physicalLine === ann.endPhysicalLine) {
+        endColumnExclusive = physicalColumnToDisplayColumn(
+          rawLine,
+          ann.endColumn,
+          columnMap,
+        );
+      }
+      const hits = map.get(displayLine) ?? [];
       const rawColorIndex = ann.lineation?.colorIndex;
       hits.push({
         annotationId: ann.id,
@@ -54,7 +74,7 @@ export function buildAnnotationHitsByDisplayLine(
         hasNote: !!ann.note?.content?.trim(),
         noteContent: ann.note?.content,
       });
-      map.set(line, hits);
+      map.set(displayLine, hits);
     }
   }
   return map;
@@ -140,9 +160,13 @@ export function annotationMarkerCssRules(
 export function monacoRangeFromAnnotation(
   ann: ReaderAnnotationRecord,
   physicalToDisplay: (n: number) => number,
+  getPhysicalLineContent: (physicalLine: number) => string,
+  columnMap: AnnotationColumnMapOptions,
 ): monaco.IRange {
   return physicalRangeToMonacoRange(
     annotationPhysicalRange(ann),
     physicalToDisplay,
+    getPhysicalLineContent,
+    columnMap,
   );
 }

@@ -1,7 +1,10 @@
 import type { HighlightWordsByIndex } from "../stores/fileMetaStore";
 
 export type HighlightListTerm = {
+  /** 侧栏展示与正文查找（只读转换后可能与 `storedText` 不同） */
   text: string;
+  /** 持久化词表中的原文（删除/收藏等操作用） */
+  storedText: string;
   color: string;
   colorIndex: number;
   /** 已收藏 = 全局词表；未收藏 = 当前文件词表 */
@@ -120,6 +123,7 @@ function expandHighlightMapToListTerms(
   scope: "global" | "book",
   colors: readonly string[],
   bodyText: string,
+  toDisplayText?: (storedText: string) => string,
 ): HighlightListTerm[] {
   if (!map) return [];
   const isFavorited = scope === "global";
@@ -128,9 +132,10 @@ function expandHighlightMapToListTerms(
     const idx = Number.parseInt(idxKey, 10);
     if (!Number.isFinite(idx) || idx < 0) continue;
     const color = idx < colors.length ? colors[idx]! : bodyText;
-    for (const text of terms) {
-      if (!text) continue;
-      out.push({ text, color, colorIndex: idx, scope, isFavorited });
+    for (const storedText of terms) {
+      if (!storedText) continue;
+      const text = toDisplayText?.(storedText) ?? storedText;
+      out.push({ text, storedText, color, colorIndex: idx, scope, isFavorited });
     }
   }
   return out;
@@ -142,9 +147,22 @@ export function buildHighlightListTerms(
   book: HighlightWordsByIndex | undefined,
   colors: readonly string[],
   bodyText: string,
+  toDisplayText?: (storedText: string) => string,
 ): HighlightListTerm[] {
   return [
-    ...expandHighlightMapToListTerms(global, "global", colors, bodyText),
-    ...expandHighlightMapToListTerms(book, "book", colors, bodyText),
+    ...expandHighlightMapToListTerms(
+      global,
+      "global",
+      colors,
+      bodyText,
+      toDisplayText,
+    ),
+    ...expandHighlightMapToListTerms(
+      book,
+      "book",
+      colors,
+      bodyText,
+      toDisplayText,
+    ),
   ];
 }

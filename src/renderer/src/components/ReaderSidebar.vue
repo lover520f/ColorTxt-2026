@@ -87,7 +87,7 @@ const props = withDefaults(
     searchMatchCase?: boolean;
     searchWholeWord?: boolean;
     searchUseRegex?: boolean;
-    activeSearchResult?: { physicalLine: number; rangeStart: number } | null;
+    activeSearchResult?: { displayLine: number; rangeStart: number } | null;
     hasInlineSearchHighlight?: boolean;
     highlightPreviewBg?: string;
     monacoFontFamily?: string;

@@ -16,17 +16,23 @@ import type {
 } from "../stores/fileMetaStore";
 import {
   annotationPhysicalRange,
+  annotationColumnMapOptions,
   collapseAnnotationQuoteText,
   createAnnotationFromRange,
+  displayColumnToPhysicalColumn,
   findAnnotationAtPoint,
   findAnnotationContainingRange,
   findAnnotationMatchingExactSelection,
   findAnnotationsIntersectingRange,
-  getTextInPhysicalRange,
+  getTextInDisplayRangeFromStoredRange,
+  getTextInPhysicalRangeFromLines,
   monacoRangeToPhysicalRange,
   physicalRangeToMonacoRange,
+  resolveAnnotationDisplayQuote,
   rangesEqual,
   unionPhysicalRanges,
+  type AnnotationColumnMapOptions,
+  type AnnotationDisplayQuoteContext,
   type AnnotationRange,
 } from "../utils/readerAnnotations";
 import { getRangeViewportAnchor, computeFloatPlacement } from "../reader/readerHighlightGeometry";
@@ -65,6 +71,13 @@ export function useReaderAnnotations(opts: {
   ebookAnchorPhysicalToDisplay: () =>
     | ((physicalLine: number) => number)
     | undefined;
+  /** 源文件物理行文本（标注 `text` 快照） */
+  getPhysicalLineContent: (physicalLine: number) => string;
+  /** 当前展示层行文本（标注 `displayText` 快照） */
+  getDisplayLineContent: (displayLine: number) => string;
+  /** 只读态是否启用行首全角缩进（列映射须与展示层一致） */
+  leadIndentFullWidth: () => boolean;
+  onAnnotationIndexRebuilt?: () => void;
   annotationDecorationsCollection: ShallowRef<monaco.editor.IEditorDecorationsCollection | null>;
 }) {
   const toolbarVisible = ref(false);
@@ -154,6 +167,96 @@ export function useReaderAnnotations(opts: {
   function displayToPhysical(n: number): number {
     const fn = opts.ebookDisplayLineToPhysical();
     return typeof fn === "function" ? fn(n) : n;
+  }
+
+  function columnMap(): AnnotationColumnMapOptions {
+    return annotationColumnMapOptions({
+      readerEditMode: opts.readerEditMode(),
+      leadIndentFullWidth: opts.leadIndentFullWidth(),
+    });
+  }
+
+  function annotationDisplayQuoteContext(): AnnotationDisplayQuoteContext {
+    return {
+      readerEditMode: opts.readerEditMode(),
+      getDisplayLineContent: opts.getDisplayLineContent,
+      getPhysicalLineContent: opts.getPhysicalLineContent,
+      physicalToDisplay,
+      columnMap: columnMap(),
+      monacoModel: opts.model.value,
+      hitsByLine: annotationHitsByLine.value,
+    };
+  }
+
+  function sourceTextInPhysicalRange(range: AnnotationRange): string {
+    return getTextInPhysicalRangeFromLines(
+      opts.getPhysicalLineContent,
+      range,
+      "physical",
+    ).trim();
+  }
+
+  /** 高亮词持久化：只读存物理原文，编辑态与 Monaco 一致 */
+  function highlightTermTextForStorage(): string {
+    const display = draftText.value.trim();
+    if (!display) return "";
+    if (opts.readerEditMode()) return display;
+    const range = draftPhysicalRange.value;
+    if (!range) return display;
+    return sourceTextInPhysicalRange(range) || display;
+  }
+
+  function displayTextInPhysicalRange(range: AnnotationRange): string {
+    return getTextInDisplayRangeFromStoredRange(
+      opts.getDisplayLineContent,
+      opts.getPhysicalLineContent,
+      range,
+      physicalToDisplay,
+      columnMap(),
+    ).trim();
+  }
+
+  function createAnnotationTextsFromRange(range: AnnotationRange): {
+    text: string;
+    displayText?: string;
+  } {
+    const text = getTextInPhysicalRangeFromLines(
+      opts.getPhysicalLineContent,
+      range,
+      "physical",
+    ).trim();
+    const m = opts.model.value;
+    let displayText = "";
+    if (m && !opts.readerEditMode()) {
+      displayText = m
+        .getValueInRange(
+          physicalRangeToMonacoRange(
+            range,
+            physicalToDisplay,
+            opts.getPhysicalLineContent,
+            columnMap(),
+          ),
+        )
+        .trim();
+    } else {
+      displayText = getTextInDisplayRangeFromStoredRange(
+        opts.getDisplayLineContent,
+        opts.getPhysicalLineContent,
+        range,
+        physicalToDisplay,
+        columnMap(),
+      ).trim();
+    }
+    return displayText === text ? { text } : { text, displayText };
+  }
+
+  /** 侧栏/导出：与阅读器装饰同源的展示层原文 */
+  function getAnnotationDisplayQuote(ann: ReaderAnnotationRecord): string {
+    return resolveAnnotationDisplayQuote(ann, annotationDisplayQuoteContext());
+  }
+
+  function displayTextForAnnotation(ann: ReaderAnnotationRecord): string {
+    return getAnnotationDisplayQuote(ann);
   }
 
   function shouldSuppressToolbar(): boolean {
@@ -321,7 +424,9 @@ export function useReaderAnnotations(opts: {
     const range = notePanelPhysicalRange.value;
     const text = notePanelSourceText.value.trim();
     if (!range || !text) return null;
-    return createAnnotationFromRange(range, text);
+    const { text: physicalText, displayText } =
+      createAnnotationTextsFromRange(range);
+    return createAnnotationFromRange(range, physicalText, { displayText });
   }
 
   function resolveNotePanelSourceText(): string {
@@ -337,13 +442,11 @@ export function useReaderAnnotations(opts: {
     const fromDraft = collapseAnnotationQuoteText(draftText.value);
     if (fromDraft) return fromDraft;
     const ann = activeAnnotation();
-    const fromAnn = ann ? collapseAnnotationQuoteText(ann.text) : "";
+    const fromAnn = ann ? collapseAnnotationQuoteText(displayTextForAnnotation(ann)) : "";
     if (fromAnn) return fromAnn;
     const range = draftPhysicalRange.value;
-    if (range && m) {
-      return collapseAnnotationQuoteText(
-        getTextInPhysicalRange(m, range, physicalToDisplay),
-      );
+    if (range) {
+      return collapseAnnotationQuoteText(displayTextInPhysicalRange(range));
     }
     return "";
   }
@@ -367,10 +470,19 @@ export function useReaderAnnotations(opts: {
       return physicalRangeToMonacoRange(
         draftPhysicalRange.value,
         physicalToDisplay,
+        opts.getPhysicalLineContent,
+        columnMap(),
       );
     }
     const ann = activeAnnotation();
-    if (ann) return monacoRangeFromAnnotation(ann, physicalToDisplay);
+    if (ann) {
+      return monacoRangeFromAnnotation(
+        ann,
+        physicalToDisplay,
+        opts.getPhysicalLineContent,
+        columnMap(),
+      );
+    }
     return null;
   }
 
@@ -471,7 +583,7 @@ export function useReaderAnnotations(opts: {
 
   function bindDraftFromAnnotation(ann: ReaderAnnotationRecord) {
     activeAnnotationId.value = ann.id;
-    draftText.value = ann.text;
+    draftText.value = displayTextForAnnotation(ann);
     draftPhysicalRange.value = annotationPhysicalRange(ann);
   }
 
@@ -483,11 +595,18 @@ export function useReaderAnnotations(opts: {
     if (!sel || sel.isEmpty()) return false;
     const text = m.getValueInRange(sel).trim();
     if (!text) return false;
-    const phys = monacoRangeToPhysicalRange(sel, displayToPhysical);
+    const phys = monacoRangeToPhysicalRange(
+      sel,
+      displayToPhysical,
+      opts.getPhysicalLineContent,
+      columnMap(),
+    );
     const exact = findAnnotationMatchingExactSelection(
       opts.readerAnnotations(),
       sel,
       displayToPhysical,
+      opts.getPhysicalLineContent,
+      columnMap(),
     );
     const containedIn = findAnnotationContainingRange(
       opts.readerAnnotations(),
@@ -571,10 +690,16 @@ export function useReaderAnnotations(opts: {
         if (ann && !ann.stale) return ann;
       }
     }
+    const physicalLine = displayToPhysical(pos.lineNumber);
+    const physicalColumn = displayColumnToPhysicalColumn(
+      opts.getPhysicalLineContent(physicalLine),
+      pos.column,
+      columnMap(),
+    );
     return findAnnotationAtPoint(
       opts.readerAnnotations(),
-      displayToPhysical(pos.lineNumber),
-      pos.column,
+      physicalLine,
+      physicalColumn,
     );
   }
 
@@ -585,7 +710,12 @@ export function useReaderAnnotations(opts: {
     const m = opts.model.value;
     if (!ed || !m || ann.stale) return false;
     bindDraftFromAnnotation(ann);
-    const range = monacoRangeFromAnnotation(ann, physicalToDisplay);
+    const range = monacoRangeFromAnnotation(
+      ann,
+      physicalToDisplay,
+      opts.getPhysicalLineContent,
+      columnMap(),
+    );
     const anchor = getRangeViewportAnchor(ed, m, range);
     if (!anchor) return false;
     applyFloatPlacement(anchor);
@@ -604,19 +734,42 @@ export function useReaderAnnotations(opts: {
     return showToolbarForAnnotationClick(ann);
   }
 
+  function clearAnnotationViewportDecorations() {
+    if (annotationViewportSyncTimer) {
+      clearTimeout(annotationViewportSyncTimer);
+      annotationViewportSyncTimer = null;
+    }
+    annotationViewportDecorLastKey = "";
+    annotationViewportDecorLastCount = 0;
+    annotationViewportSyncRetry = 0;
+    annotationHitsByLine.value = new Map();
+    opts.annotationDecorationsCollection.value?.clear();
+  }
+
   function rebuildAnnotationIndex() {
     const list = opts.readerAnnotations().filter((a) => !a.stale);
     const idMap = new Map<string, ReaderAnnotationRecord>();
     for (const a of list) idMap.set(a.id, a);
     annotationsById.value = idMap;
+
+    if (opts.readerEditMode()) {
+      clearAnnotationViewportDecorations();
+      closeToolbarUi();
+      opts.onAnnotationIndexRebuilt?.();
+      return;
+    }
+
     annotationHitsByLine.value = buildAnnotationHitsByDisplayLine(
       list,
       physicalToDisplay,
+      opts.getPhysicalLineContent,
+      columnMap(),
       opts.lineationColorsLength(),
     );
     annotationViewportDecorLastKey = "";
     annotationViewportSyncRetry = 0;
     scheduleAnnotationViewportSync(true);
+    opts.onAnnotationIndexRebuilt?.();
   }
 
   async function waitForEditorLayoutReady(): Promise<boolean> {
@@ -666,6 +819,12 @@ export function useReaderAnnotations(opts: {
     const m = opts.model.value;
     const collection = opts.annotationDecorationsCollection.value;
     if (!ed || !m || !collection) return;
+    if (opts.readerEditMode()) {
+      collection.clear();
+      annotationViewportDecorLastKey = "";
+      annotationViewportDecorLastCount = 0;
+      return;
+    }
     if (annotationHitsByLine.value.size === 0) {
       collection.clear();
       annotationViewportDecorLastKey = "";
@@ -719,6 +878,10 @@ export function useReaderAnnotations(opts: {
   }
 
   function scheduleAnnotationViewportSync(force = false) {
+    if (opts.readerEditMode()) {
+      if (force) syncAnnotationViewportDecorationsNow();
+      return;
+    }
     if (force) {
       if (annotationViewportSyncTimer) {
         clearTimeout(annotationViewportSyncTimer);
@@ -744,17 +907,10 @@ export function useReaderAnnotations(opts: {
 
   function disposeAnnotationDecorations() {
     cancelSelectionPointerInteraction();
-    opts.annotationDecorationsCollection.value?.clear();
-    annotationHitsByLine.value = new Map();
+    clearAnnotationViewportDecorations();
     annotationsById.value = new Map();
-    annotationViewportDecorLastKey = "";
-    annotationViewportDecorLastCount = 0;
     annotationScrollDisposable?.dispose();
     annotationScrollDisposable = null;
-    if (annotationViewportSyncTimer) {
-      clearTimeout(annotationViewportSyncTimer);
-      annotationViewportSyncTimer = null;
-    }
   }
 
   function prepareLineationTargetAnnotation(): ReaderAnnotationRecord | null {
@@ -781,17 +937,16 @@ export function useReaderAnnotations(opts: {
       range,
       ...overlaps.map((ann) => annotationPhysicalRange(ann)),
     ]);
-    const mergedText = getTextInPhysicalRange(
-      m,
-      mergedRange,
-      physicalToDisplay,
-    ).trim();
+    const { text: mergedText, displayText } =
+      createAnnotationTextsFromRange(mergedRange);
     if (!mergedText) return null;
 
-    const ann = createAnnotationFromRange(mergedRange, mergedText);
+    const ann = createAnnotationFromRange(mergedRange, mergedText, {
+      displayText,
+    });
     activeAnnotationId.value = ann.id;
     draftPhysicalRange.value = mergedRange;
-    draftText.value = mergedText;
+    draftText.value = displayText ?? mergedText;
     return ann;
   }
 
@@ -889,7 +1044,12 @@ export function useReaderAnnotations(opts: {
   ) {
     const ed = opts.editor.value;
     if (!ed) return;
-    const range = monacoRangeFromAnnotation(ann, physicalToDisplay);
+    const range = monacoRangeFromAnnotation(
+      ann,
+      physicalToDisplay,
+      opts.getPhysicalLineContent,
+      columnMap(),
+    );
     ed.revealRangeInCenter(
       range,
       options?.smooth
@@ -902,6 +1062,11 @@ export function useReaderAnnotations(opts: {
   }
 
   watch(() => opts.readerAnnotations(), rebuildAnnotationIndex, { deep: true });
+
+  watch(
+    () => [opts.leadIndentFullWidth(), opts.readerEditMode()] as const,
+    rebuildAnnotationIndex,
+  );
 
   watch(() => opts.lineationColorsLength(), () => {
     rebuildAnnotationIndex();
@@ -983,12 +1148,12 @@ export function useReaderAnnotations(opts: {
     onSelectionChangedDuringInteraction,
     onToolbarAction,
     onHighlightPickConfirm: (colorIndex: number) => {
-      const t = draftText.value.trim();
+      const t = highlightTermTextForStorage();
       if (!t || colorIndex < 0 || colorIndex >= opts.highlightColorsLength()) return;
       opts.emitAddHighlightTerm({ text: t, colorIndex });
     },
     onHighlightPickRemove: () => {
-      const t = draftText.value.trim();
+      const t = highlightTermTextForStorage();
       if (t) opts.emitRemoveHighlightTerm({ text: t });
     },
     onLineationPickConfirm: (colorIndex: number) => {
@@ -1033,6 +1198,8 @@ export function useReaderAnnotations(opts: {
     cancelSelectionPointerInteraction,
     tryShowToolbarFromAnnotationPoint,
     jumpToAnnotationRange,
+    getAnnotationDisplayQuote,
+    getAnnotationHitsByLine: () => annotationHitsByLine.value,
     rebuildAnnotationIndex,
     refreshAnnotationDecorations,
     bindAnnotationScrollSync,

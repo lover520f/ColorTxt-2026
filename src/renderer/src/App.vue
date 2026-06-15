@@ -86,11 +86,15 @@ import {
   type ReaderLineationType,
 } from "./stores/fileMetaStore";
 import {
+  annotationColumnMapOptions,
   buildAnnotationListRows,
   groupAnnotationListRowsByChapter,
   mergeImportedAnnotations,
   normalizeReaderAnnotations,
   revalidateAnnotations,
+  refreshAnnotationDisplayTexts,
+  resolveAnnotationDisplayQuote,
+  type AnnotationDisplayQuoteContext,
 } from "./utils/readerAnnotations";
 import {
   assignHighlightTermToColorMap,
@@ -98,6 +102,7 @@ import {
   mergeHighlightWordsByIndex,
   removeHighlightTermFromMap,
   termExistsInHighlightMap,
+  type HighlightListTerm,
 } from "./utils/highlightWords";
 import {
   applyReaderSurfaceToDocument,
@@ -148,10 +153,12 @@ import {
   SIDEBAR_ACTIVITY_BAR_WIDTH,
   type ReaderSurfacePalette,
 } from "./constants/appUi";
-import type {
-  TextConvertWidthMode,
-  TextConvertZhMode,
+import {
+  isTextConvertDisplayActive,
+  type TextConvertWidthMode,
+  type TextConvertZhMode,
 } from "@shared/textConvertTypes";
+import { applyTextDisplayConverts } from "./services/textConvertApply";
 import { mergeVoiceReadSettings, type VoiceReadSettings } from "./constants/voiceRead";
 import {
   DEFAULT_HIGHLIGHT_COLORS_DARK,
@@ -381,10 +388,10 @@ type SidebarSearchResult = {
 
 function isSameSidebarSearchResult(
   item: SidebarSearchResult,
-  active: { physicalLine: number; rangeStart: number },
+  active: { displayLine: number; rangeStart: number },
 ): boolean {
   return (
-    item.physicalLine === active.physicalLine &&
+    item.displayLine === active.displayLine &&
     item.range.start === active.rangeStart
   );
 }
@@ -392,7 +399,7 @@ const searchQuery = ref("");
 const searchResults = ref<SidebarSearchResult[]>([]);
 const searchInProgress = ref(false);
 const activeSearchResult = ref<{
-  physicalLine: number;
+  displayLine: number;
   rangeStart: number;
 } | null>(null);
 const hasInlineSearchHighlight = ref(false);
@@ -587,15 +594,46 @@ const currentFileAnnotations = computed(
   () => currentFileMetaRecord.value?.readerAnnotations ?? [],
 );
 
-const annotationListRows = computed(() =>
-  buildAnnotationListRows(currentFileAnnotations.value),
-);
-
 function physicalLineToDisplayForAnnotation(physicalLine: number): number {
   return readerEditMode.value
     ? Math.max(1, Math.floor(physicalLine))
     : stream.physicalLineToDisplayForReader(physicalLine);
 }
+
+function annotationDisplayQuoteContextForUi(): AnnotationDisplayQuoteContext {
+  return {
+    readerEditMode: readerEditMode.value,
+    getDisplayLineContent: (line) => stream.getDisplayLineContent(line),
+    getPhysicalLineContent: (line) => stream.getPhysicalLineContent(line),
+    physicalToDisplay: physicalLineToDisplayForAnnotation,
+    columnMap: annotationColumnMapOptions({
+      readerEditMode: readerEditMode.value,
+      leadIndentFullWidth: leadIndentFullWidth.value,
+    }),
+    monacoModel: readerEditMode.value
+      ? null
+      : (readerRef.value?.getModel?.() ?? null),
+    hitsByLine: readerRef.value?.getAnnotationHitsByLine?.(),
+  };
+}
+
+function resolveAnnotationQuoteForUi(ann: ReaderAnnotationRecord): string {
+  return resolveAnnotationDisplayQuote(ann, annotationDisplayQuoteContextForUi());
+}
+
+const annotationDisplayEpoch = ref(0);
+
+function bumpAnnotationDisplayEpoch() {
+  annotationDisplayEpoch.value += 1;
+}
+
+const annotationListRows = computed(() => {
+  void annotationDisplayEpoch.value;
+  return buildAnnotationListRows(
+    currentFileAnnotations.value,
+    resolveAnnotationQuoteForUi,
+  );
+});
 
 const annotationListGroups = computed(() =>
   groupAnnotationListRowsByChapter(
@@ -633,19 +671,98 @@ const mergedHighlightWordsForReader = computed(() =>
   ),
 );
 
-const currentFileHighlightTerms = computed(() => {
+/** 只读展示层转换后的高亮词（Monaco 上色 / 侧栏列表 / 查找） */
+const readerDisplayHighlightWordsByIndex = ref<
+  HighlightWordsByIndex | undefined
+>(undefined);
+const readerDisplayHighlightWordsBookOnly = ref<
+  HighlightWordsByIndex | undefined
+>(undefined);
+const currentFileHighlightTerms = ref<HighlightListTerm[]>([]);
+
+let refreshHighlightDisplayGen = 0;
+
+function highlightListBodyTextColor(): string {
+  return currentTheme.value === "vs"
+    ? readerSurfaceLight.value.bodyText
+    : readerSurfaceDark.value.bodyText;
+}
+
+async function refreshReaderHighlightDisplayLayer() {
+  const gen = ++refreshHighlightDisplayGen;
+  const global = highlightWordsByIndexGlobal.value;
+  const book = currentFileHighlightWords.value;
   const colors = highlightColorsForReader.value;
-  const bodyText =
-    currentTheme.value === "vs"
-      ? readerSurfaceLight.value.bodyText
-      : readerSurfaceDark.value.bodyText;
-  return buildHighlightListTerms(
-    highlightWordsByIndexGlobal.value,
-    currentFileHighlightWords.value,
+  const bodyText = highlightListBodyTextColor();
+  const convertOpts = {
+    zh: textConvertZh.value,
+    letter: textConvertLetter.value,
+    digit: textConvertDigit.value,
+  };
+  const applyConvert =
+    !readerEditMode.value &&
+    isTextConvertDisplayActive(
+      convertOpts.zh,
+      convertOpts.letter,
+      convertOpts.digit,
+    );
+
+  if (!applyConvert) {
+    if (gen !== refreshHighlightDisplayGen) return;
+    readerDisplayHighlightWordsByIndex.value =
+      mergedHighlightWordsForReader.value;
+    readerDisplayHighlightWordsBookOnly.value = book;
+    currentFileHighlightTerms.value = buildHighlightListTerms(
+      global,
+      book,
+      colors,
+      bodyText,
+    );
+    return;
+  }
+
+  const displayByStored = new Map<string, string>();
+
+  async function convertMapWithLookup(
+    map: HighlightWordsByIndex | undefined,
+  ): Promise<HighlightWordsByIndex | undefined> {
+    if (!map) return undefined;
+    const out: HighlightWordsByIndex = {};
+    for (const [key, words] of Object.entries(map)) {
+      const converted: string[] = [];
+      for (const stored of words) {
+        if (!stored) continue;
+        let display = displayByStored.get(stored);
+        if (display == null) {
+          display = await applyTextDisplayConverts(stored, convertOpts);
+          displayByStored.set(stored, display);
+        }
+        converted.push(display);
+      }
+      if (converted.length > 0) out[key] = converted;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+
+  const [globalDisplay, bookDisplay] = await Promise.all([
+    convertMapWithLookup(global),
+    convertMapWithLookup(book),
+  ]);
+  if (gen !== refreshHighlightDisplayGen) return;
+
+  readerDisplayHighlightWordsByIndex.value = mergeHighlightWordsByIndex(
+    globalDisplay,
+    bookDisplay,
+  );
+  readerDisplayHighlightWordsBookOnly.value = bookDisplay;
+  currentFileHighlightTerms.value = buildHighlightListTerms(
+    global,
+    book,
     colors,
     bodyText,
+    (stored) => displayByStored.get(stored) ?? stored,
   );
-});
+}
 
 const readerPaneWrapRef = useTemplateRef<HTMLElement>("readerPaneWrapRef");
 const {
@@ -704,6 +821,35 @@ const readingProgressSynced = ref(true);
 
 const readerEditMode = ref(false);
 const readerEditorDirty = ref(false);
+
+watch(
+  [
+    () => textConvertZh.value,
+    () => textConvertLetter.value,
+    () => textConvertDigit.value,
+    compressBlankLines,
+    leadIndentFullWidth,
+    readerEditMode,
+  ],
+  bumpAnnotationDisplayEpoch,
+);
+
+watch(
+  [
+    mergedHighlightWordsForReader,
+    () => textConvertZh.value,
+    () => textConvertLetter.value,
+    () => textConvertDigit.value,
+    readerEditMode,
+    highlightColorsForReader,
+    currentTheme,
+  ],
+  () => {
+    void refreshReaderHighlightDisplayLayer();
+  },
+  { deep: true, immediate: true },
+);
+
 const readerSaveEncoding = ref("utf8");
 
 type ReaderEditCursorStatus = {
@@ -1256,6 +1402,11 @@ const {
   removeBookmark,
   clearBookmarks,
   chapters,
+  textConvertZh,
+  textConvertLetter,
+  textConvertDigit,
+  compressBlankLines,
+  leadIndentFullWidth,
 });
 
 provide(bookmarkNoteInputRefKey, bookmarkNoteInputRef);
@@ -1406,8 +1557,31 @@ afterStreamFullTextInstalled = async () => {
   }
   stream.resyncMirrorFromReader();
   revalidateCurrentFileAnnotations();
+  refreshCurrentFileAnnotationDisplayTexts();
+  bumpAnnotationDisplayEpoch();
   readerRef.value?.refreshReaderAnnotationDecorations?.();
 };
+
+function refreshCurrentFileAnnotationDisplayTexts() {
+  const path = currentFile.value;
+  if (!path || readerEditMode.value) return;
+  const anns = currentFileAnnotations.value;
+  if (anns.length === 0) return;
+  const refreshed = refreshAnnotationDisplayTexts(
+    anns,
+    annotationDisplayQuoteContextForUi(),
+  );
+  const changed = refreshed.some(
+    (a, i) => a.displayText !== anns[i]?.displayText,
+  );
+  if (!changed) return;
+  fileMetaRecords.value = setReaderAnnotationsForFile(
+    fileMetaRecords.value,
+    path,
+    refreshed,
+  );
+  persistFileMeta();
+}
 
 /** 视口已按物理行恢复且 probe 已更新后：重算章节并居中侧栏（加载结束等） */
 async function syncChaptersAfterViewportSettled() {
@@ -1918,10 +2092,11 @@ function onRemoveHighlightTerm(payload: {
   text: string;
   scope?: "global" | "book";
 }) {
+  const term = payload.text;
   if (payload.scope === "global") {
     highlightWordsByIndexGlobal.value = removeHighlightTermFromMap(
       highlightWordsByIndexGlobal.value,
-      payload.text,
+      term,
     );
     persistSettings();
     return;
@@ -1931,7 +2106,7 @@ function onRemoveHighlightTerm(payload: {
   fileMetaRecords.value = removeHighlightTermFromFile(
     fileMetaRecords.value,
     path,
-    payload.text,
+    term,
   );
   persistFileMeta();
 }
@@ -2111,6 +2286,9 @@ async function onExportAnnotationsMd() {
     {
       chapters: chapters.value,
       physicalLineToDisplayLine: physicalLineToDisplayForAnnotation,
+      resolveQuoteText: readerEditMode.value
+        ? undefined
+        : resolveAnnotationQuoteForUi,
     },
   );
   const r = await saveAnnotationExportFile(name, data, "md");
@@ -2164,19 +2342,24 @@ async function onImportAnnotationsJson() {
     currentFileAnnotations.value,
     imported,
   );
-  const model = readerRef.value?.getModel?.();
-  const physicalToDisplay = (n: number) =>
-    stream.physicalLineToDisplayForReader(n);
-  const validated = model
-    ? revalidateAnnotations(model, merged, physicalToDisplay)
-    : merged;
+  const validated = revalidateAnnotations(
+    (line) => stream.getPhysicalLineContent(line),
+    () => stream.getPhysicalLineCount(),
+    merged,
+    annotationDisplayLayerOptions(),
+  );
+  const refreshed = refreshAnnotationDisplayTexts(
+    validated,
+    annotationDisplayQuoteContextForUi(),
+  );
+  bumpAnnotationDisplayEpoch();
   fileMetaRecords.value = setReaderAnnotationsForFile(
     fileMetaRecords.value,
     path,
-    validated,
+    refreshed,
   );
   persistFileMeta();
-  const staleN = validated.filter((a) => a.stale).length;
+  const staleN = refreshed.filter((a) => a.stale).length;
   appToast(
     `导入 ${imported.length} 条${staleN > 0 ? `，${staleN} 条已失效` : ""}`,
     { kind: "success" },
@@ -2191,17 +2374,45 @@ function onAskAiWithQuote(text: string) {
   });
 }
 
+function annotationDisplayLayerOptions():
+  | {
+      getDisplayLineContent: (displayLine: number) => string;
+      displayToPhysical: (displayLine: number) => number;
+      physicalToDisplay: (physicalLine: number) => number;
+    }
+  | undefined {
+  if (readerEditMode.value) return undefined;
+  return {
+    getDisplayLineContent: (line) => stream.getDisplayLineContent(line),
+    displayToPhysical: (line) => stream.viewportDisplayLineToPhysicalLine(line),
+    physicalToDisplay: (n) => stream.physicalLineToDisplayForReader(n),
+  };
+}
+
 function revalidateCurrentFileAnnotations() {
   const path = currentFile.value;
   if (!path) return;
   const anns = currentFileAnnotations.value;
   if (anns.length === 0) return;
-  const model = readerRef.value?.getModel?.();
-  if (!model) return;
-  const physicalToDisplay = (n: number) =>
-    stream.physicalLineToDisplayForReader(n);
-  const validated = revalidateAnnotations(model, anns, physicalToDisplay);
-  const changed = validated.some((a, i) => !!a.stale !== !!anns[i]?.stale);
+  const validated = revalidateAnnotations(
+    (line) => stream.getPhysicalLineContent(line),
+    () => stream.getPhysicalLineCount(),
+    anns,
+    annotationDisplayLayerOptions(),
+  );
+  const changed = validated.some((a, i) => {
+    const prev = anns[i];
+    if (!prev) return true;
+    return (
+      !!a.stale !== !!prev.stale ||
+      a.startColumn !== prev.startColumn ||
+      a.endColumn !== prev.endColumn ||
+      a.startPhysicalLine !== prev.startPhysicalLine ||
+      a.endPhysicalLine !== prev.endPhysicalLine ||
+      a.startDisplayLine !== prev.startDisplayLine ||
+      a.endDisplayLine !== prev.endDisplayLine
+    );
+  });
   if (!changed) return;
   fileMetaRecords.value = setReaderAnnotationsForFile(
     fileMetaRecords.value,
@@ -2310,10 +2521,15 @@ function runSidebarSearch(token: number) {
   const caseSensitive = searchMatchCase.value;
   const wholeWord = searchWholeWord.value;
   const useRegex = searchUseRegex.value;
-  const maxLine = stream.getPhysicalLineCount();
+  const editMode = readerEditMode.value;
+  const maxLine = editMode
+    ? stream.getPhysicalLineCount()
+    : stream.getLineCount();
   const next: SidebarSearchResult[] = [];
   for (let line = 1; line <= maxLine; line += 1) {
-    const text = stream.getPhysicalLineContent(line);
+    const text = editMode
+      ? stream.getPhysicalLineContent(line)
+      : stream.getDisplayLineContent(line);
     const ranges = useRegex
       ? collectRegexRanges(text, q, caseSensitive, wholeWord)
       : collectPlainRanges(text, q, caseSensitive, wholeWord);
@@ -2324,12 +2540,13 @@ function runSidebarSearch(token: number) {
       return;
     }
     if (ranges.length === 0) continue;
-    const displayLine = readerEditMode.value
+    const displayLine = line;
+    const physicalLine = editMode
       ? line
-      : stream.physicalLineToDisplayForReader(line);
+      : stream.viewportDisplayLineToPhysicalLine(line);
     for (const range of ranges) {
       next.push({
-        physicalLine: line,
+        physicalLine,
         displayLine,
         text,
         range,
@@ -2392,6 +2609,20 @@ watch(totalLineCount, () => {
   scheduleSidebarSearch();
 });
 
+watch(
+  [
+    () => textConvertZh.value,
+    () => textConvertLetter.value,
+    () => textConvertDigit.value,
+    compressBlankLines,
+    leadIndentFullWidth,
+  ],
+  () => {
+    if (!searchQuery.value.trim() || readerEditMode.value) return;
+    scheduleSidebarSearch();
+  },
+);
+
 watch(readerEditMode, (edit) => {
   if (!edit) {
     clearChapterRefreshDebounce();
@@ -2411,15 +2642,13 @@ watch(currentFile, (next, prev) => {
 function onJumpToSearchResult(item: SidebarSearchResult) {
   if (!currentFile.value || loading.value || totalLineCount.value <= 0) return;
   activeSearchResult.value = {
-    physicalLine: item.physicalLine,
+    displayLine: item.displayLine,
     rangeStart: item.range.start,
   };
   ensurePinBeforeRevealFindWidget();
   const displayLine = item.displayLine;
-  const { startColumn, endColumn } = stream.physicalSearchRangeToDisplayColumns(
-    item.physicalLine,
-    item.range,
-  );
+  const startColumn = item.range.start + 1;
+  const endColumn = Math.max(item.range.start + 2, item.range.end + 1);
   readerRef.value?.setInlineSearchState?.(
     searchQuery.value,
     {
@@ -2956,6 +3185,7 @@ useAppShellThemeWatch({
           :monaco-custom-highlight="monacoCustomHighlight"
           :txtr-delimited-match-cross-line="txtrDelimitedMatchCrossLine"
           :compress-blank-lines="compressBlankLines"
+          :lead-indent-full-width="leadIndentFullWidth"
           :chapter-min-char-count="chapterMinCharCount"
           :monaco-advanced-wrapping="monacoAdvancedWrapping"
           :monaco-smooth-scrolling="monacoSmoothScrolling"
@@ -2966,8 +3196,8 @@ useAppShellThemeWatch({
           :reader-surface-dark="readerSurfaceDark"
           :highlight-colors="highlightColorsForReader"
           :lineation-colors="lineationColorsForReader"
-          :highlight-words-by-index="mergedHighlightWordsForReader"
-          :highlight-words-by-index-book-only="currentFileHighlightWords"
+          :highlight-words-by-index="readerDisplayHighlightWordsByIndex"
+          :highlight-words-by-index-book-only="readerDisplayHighlightWordsBookOnly"
           :reader-annotations="currentFileAnnotations"
           :lineation-last-colors="lineationLastColors"
           :reader-file-path="currentFile"
@@ -2987,6 +3217,8 @@ useAppShellThemeWatch({
           :can-use-ai-smart-format="canUseAiSmartFormat"
           :smart-format-review-session="aiSmartFormatReviewSession"
           :monaco-font-family="monacoFontFamily"
+          :get-physical-line-content="stream.getPhysicalLineContent"
+          :get-display-line-content="stream.getDisplayLineContent"
           @ai-smart-format-full="onAiSmartFormatFull"
           @ai-smart-format-selection="onAiSmartFormatSelection"
           @smart-format-review-apply="applySmartFormatReview()"
@@ -2999,6 +3231,7 @@ useAppShellThemeWatch({
           @remove-highlight-term="onRemoveHighlightTerm"
           @upsert-reader-annotation="onUpsertReaderAnnotation"
           @remove-reader-annotation="onRemoveReaderAnnotation"
+          @annotation-quotes-changed="bumpAnnotationDisplayEpoch"
           @update-lineation-last-color="onUpdateLineationLastColor"
           @ask-ai-with-quote="onAskAiWithQuote"
           @reader-edit-dirty-change="onReaderEditDirtyChange"

@@ -51,7 +51,7 @@ function onRemoveHighlightTermClick(
 ) {
   ev.preventDefault();
   ev.stopPropagation();
-  emit("removeHighlightTerm", { text: item.text, scope: item.scope });
+  emit("removeHighlightTerm", { text: item.storedText, scope: item.scope });
 }
 
 function onFavoriteClick(ev: MouseEvent, item: HighlightListTerm) {
@@ -59,12 +59,12 @@ function onFavoriteClick(ev: MouseEvent, item: HighlightListTerm) {
   ev.stopPropagation();
   if (item.isFavorited) {
     emit("unfavoriteHighlightTerm", {
-      text: item.text,
+      text: item.storedText,
       colorIndex: item.colorIndex,
     });
   } else {
     emit("favoriteHighlightTerm", {
-      text: item.text,
+      text: item.storedText,
       colorIndex: item.colorIndex,
     });
   }

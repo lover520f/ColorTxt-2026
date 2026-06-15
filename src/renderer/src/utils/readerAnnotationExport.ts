@@ -84,18 +84,19 @@ function blockquoteLines(text: string): string[] {
 function appendAnnotationMarkdownLines(
   lines: string[],
   ann: ReaderAnnotationRecord,
+  quoteText: string,
 ): void {
   const stale = ann.stale ? "[已失效] " : "";
   const noteContent = ann.note?.content?.trim();
   if (noteContent) {
     lines.push(prefixFirstLine(`${stale}💡 `, noteContent));
     lines.push("");
-    lines.push(...blockquoteLines(ann.text));
+    lines.push(...blockquoteLines(quoteText));
     lines.push("");
     return;
   }
   if (ann.lineation) {
-    lines.push(`${stale}✨ ${ann.text}`);
+    lines.push(`${stale}✨ ${quoteText}`);
     lines.push("");
   }
 }
@@ -106,12 +107,13 @@ export function buildReaderAnnotationsExportMarkdown(
   options?: {
     chapters?: readonly Chapter[];
     physicalLineToDisplayLine?: (physicalLine: number) => number;
+    resolveQuoteText?: (ann: ReaderAnnotationRecord) => string;
   },
 ): string {
   const title = bookTitleForExport(bookName);
   const lines: string[] = [`# 《${title}》阅读笔记`, ""];
 
-  const rows = buildAnnotationListRows(annotations);
+  const rows = buildAnnotationListRows(annotations, options?.resolveQuoteText);
   const groups = groupAnnotationListRowsByChapter(
     rows,
     options?.chapters ?? [],
@@ -124,7 +126,7 @@ export function buildReaderAnnotationsExportMarkdown(
       lines.push("");
     }
     for (const row of group.rows) {
-      appendAnnotationMarkdownLines(lines, row.record);
+      appendAnnotationMarkdownLines(lines, row.record, row.text);
     }
   }
 
