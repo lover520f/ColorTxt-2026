@@ -105,6 +105,19 @@ export function voiceReadEngineSupportsEmotion(
   return EMOTION_ENGINE_SUPPORT.has(engine);
 }
 
+/** 用户开启且当前引擎/模型支持情绪参数 */
+export function voiceReadEmotionActive(settings: {
+  engine: VoiceReadEngineId;
+  engineConfig?: VoiceReadEngineConfig;
+  emotionEnabled?: boolean;
+}): boolean {
+  if (settings.emotionEnabled === false) return false;
+  return voiceReadEngineSupportsEmotion(
+    settings.engine,
+    settings.engineConfig,
+  );
+}
+
 const DASHSCOPE_EMOTION_INSTRUCTIONS: Record<VoiceReadEmotionLabel, string> = {
   happy: "语气开心、轻松愉快，富有感染力。",
   sad: "语气悲伤、低沉，带有压抑感。",

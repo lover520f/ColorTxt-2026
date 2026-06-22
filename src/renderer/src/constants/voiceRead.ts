@@ -1,5 +1,5 @@
 import type { VoiceReadEdgeTtsRequest } from "@shared/voiceReadEdgeIpc";
-import { voiceReadEngineSupportsEmotion } from "@shared/voiceReadEmotion";
+import { voiceReadEngineSupportsEmotion, voiceReadEmotionActive } from "@shared/voiceReadEmotion";
 import {
   defaultVoiceReadEngineConfig,
   mergeVoiceReadEngineConfig,
@@ -164,18 +164,18 @@ export function voiceReadAiSpeakerRecognitionActive(
   );
 }
 
-export { voiceReadEngineSupportsEmotion };
+export { voiceReadEngineSupportsEmotion, voiceReadEmotionActive };
 
 export function voiceReadAiEmotionRecognitionActive(
   settings: Pick<
     VoiceReadSettings,
-    "scheme" | "multi" | "engine" | "engineConfig"
+    "scheme" | "multi" | "engine" | "engineConfig" | "emotionEnabled"
   >,
   globalAiEnabled: boolean,
 ): boolean {
   return (
-    voiceReadAiSpeakerRecognitionActive(settings, globalAiEnabled) &&
-    voiceReadEngineSupportsEmotion(settings.engine, settings.engineConfig)
+    voiceReadEmotionActive(settings) &&
+    voiceReadAiSpeakerRecognitionActive(settings, globalAiEnabled)
   );
 }
 

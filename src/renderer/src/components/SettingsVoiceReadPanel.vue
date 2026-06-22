@@ -14,6 +14,7 @@ import {
   VOICE_READ_DIALOGUE_QUOTE_OPTIONS,
   voiceReadAiSpeakerRecognitionActive,
   voiceReadEngineRequiresCredentials,
+  voiceReadEngineSupportsEmotion,
   voiceReadEngineSupportsMultiVoiceScheme,
   voiceReadEngineSupportsPitch,
   voiceReadEngineSupportsRate,
@@ -701,6 +702,7 @@ watch(
       draft.value.dashscopeApiKey,
       draft.value.rate,
       draft.value.pitch,
+      draft.value.emotionEnabled,
       previewText.value,
     ] as const,
   () => {
@@ -718,6 +720,22 @@ const rateDisabled = computed(
 const showPitchControl = computed(() =>
   voiceReadEngineSupportsPitch(draft.value.engine),
 );
+
+const showEmotionToggle = computed(
+  () =>
+    showDialogueGenderVoices.value &&
+    voiceReadEngineSupportsEmotion(
+      draft.value.engine,
+      draft.value.engineConfig,
+    ),
+);
+
+const emotionEnabledModel = computed({
+  get: () => draft.value.emotionEnabled !== false,
+  set: (value: boolean) => {
+    patchDraft({ emotionEnabled: value });
+  },
+});
 
 const voiceReadProfileToolbarProfiles = computed(
   () => voiceReadProfileDraft.profileSelectItems.value,
@@ -1123,9 +1141,22 @@ onUnmounted(() => {
           />
         </div>
         <p v-if="showDialogueGenderVoices" class="settingsHint">
-          朗读时根据性别自动选用男声/女声，并标注语气情绪；可在「角色卡」中为角色设置专属音色。<br />
+          朗读时根据性别自动选用男声/女声；可在「角色卡」中为角色设置专属音色。<br />
           {{ voiceReadAiTokenUsageLine }}
           <button class="link warning voiceReadAiToken__clear" href="#" @click.prevent="onClearVoiceReadAiTokenUsage">清零</button>
+        </p>
+        <div
+          v-if="showEmotionToggle"
+          class="settingsRowMain settingsRowMain--baseline"
+        >
+          <span class="settingsLabel short">情绪标注</span>
+          <SwitchToggle
+            v-model="emotionEnabledModel"
+            aria-label="情绪标注"
+          />
+        </div>
+        <p v-if="showEmotionToggle" class="settingsHint">
+          开启后由 AI 标注语气情绪并传给引擎；关闭时仅区分说话人与男女声。
         </p>
 
         <template v-if="showDialogueGenderVoices">

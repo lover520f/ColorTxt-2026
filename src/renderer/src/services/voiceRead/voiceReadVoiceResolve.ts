@@ -1,7 +1,10 @@
 import type { CharacterRosterEntry } from "@shared/characterTypes";
 import { parseCharacterAliasesInput } from "@shared/characterAliases";
-import type { VoiceReadEmotionId } from "@shared/voiceReadEmotion";
-import { VOICE_READ_EMOTION_AUTO } from "@shared/voiceReadEmotion";
+import {
+  voiceReadEmotionActive,
+  type VoiceReadEmotionId,
+  VOICE_READ_EMOTION_AUTO,
+} from "@shared/voiceReadEmotion";
 import type { VoiceReadQuoteAttribution } from "@shared/voiceReadSpeakerIpc";
 import type { VoiceReadSettings } from "../../constants/voiceRead";
 import {
@@ -95,9 +98,9 @@ function resolveChunkEmotion(
   segment: Pick<VoiceReadTextSegment, "kind">,
   quoteEmotion: VoiceReadEmotionId | undefined,
   narrationEmotion: VoiceReadEmotionId | undefined,
-  aiFeaturesEnabled: boolean,
+  emotionActive: boolean,
 ): VoiceReadEmotionId | undefined {
-  if (!aiFeaturesEnabled) return undefined;
+  if (!emotionActive) return undefined;
   if (segment.kind === "narration") {
     const e = narrationEmotion ?? VOICE_READ_EMOTION_AUTO;
     return e === VOICE_READ_EMOTION_AUTO ? undefined : e;
@@ -114,6 +117,8 @@ export function resolveSpeakChunk(
   aiFeaturesEnabled = false,
   narrationEmotion?: VoiceReadEmotionId,
 ): VoiceReadSpeakChunk {
+  const emotionActive =
+    voiceReadEmotionActive(settings) && aiFeaturesEnabled;
   return {
     text: segment.text,
     voiceId: resolveSegmentVoiceId(
@@ -127,7 +132,7 @@ export function resolveSpeakChunk(
       segment,
       quoteAttr?.emotion,
       narrationEmotion,
-      aiFeaturesEnabled,
+      emotionActive,
     ),
   };
 }

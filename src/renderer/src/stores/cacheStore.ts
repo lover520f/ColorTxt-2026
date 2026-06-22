@@ -450,6 +450,8 @@ export function loadPersistedSettingsData(
           : undefined,
       rate: typeof vr.rate === "number" ? vr.rate : undefined,
       pitch: typeof vr.pitch === "number" ? vr.pitch : undefined,
+      emotionEnabled:
+        typeof vr.emotionEnabled === "boolean" ? vr.emotionEnabled : undefined,
       dashscopeApiKey:
         typeof vr.dashscopeApiKey === "string" ? vr.dashscopeApiKey : undefined,
       engineConfig:

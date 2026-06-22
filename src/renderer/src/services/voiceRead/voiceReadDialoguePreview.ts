@@ -1,7 +1,7 @@
 import type { VoiceReadEmotionId } from "@shared/voiceReadEmotion";
 import type { CharacterGender, CharacterRosterEntry } from "@shared/characterTypes";
 import type { VoiceReadQuoteAttribution } from "@shared/voiceReadSpeakerIpc";
-import { voiceReadEngineSupportsEmotion } from "@shared/voiceReadEmotion";
+import { voiceReadEmotionActive } from "@shared/voiceReadEmotion";
 import type { VoiceReadSettings } from "../../constants/voiceRead";
 import { hasVoiceReadSpeakableText } from "./voiceReadTextChunks";
 import type { VoiceReadQuoteCarry } from "./voiceReadSegments";
@@ -206,10 +206,7 @@ export async function buildDialogueAiPreviewSpeakChunks(
 
   const roster = mergeRosterForVoiceReadPreview(bookRoster);
   const useDefaultQuotes = isDefaultVoiceReadDialoguePreviewText(fullText);
-  const includeEmotion = voiceReadEngineSupportsEmotion(
-    settings.engine,
-    settings.engineConfig,
-  );
+  const includeEmotion = voiceReadEmotionActive(settings);
   const quoteStylesKey = settings.multi.dialogueQuoteStyles.join(",");
   const lines = fullText.split("\n").filter((l) => l.trim());
 
