@@ -26,9 +26,6 @@ import {
   type VoiceReadSettings,
 } from "../constants/voiceRead";
 import {
-  DASHSCOPE_API_KEY_CONSOLE_URL,
-} from "@shared/apiEndpointPresets";
-import {
   getVoiceReadEngineMeta,
   VOICE_READ_ENGINE_REGISTRY,
 } from "@shared/voiceReadEngines";
@@ -221,10 +218,6 @@ const engineDisplayLabel = computed(() => {
   const hit = engineOptions.find((o) => o.id === draft.value.engine);
   return hit?.label ?? draft.value.engine;
 });
-
-function openDashScopeApiKeyPage() {
-  void window.colorTxt.openExternal(DASHSCOPE_API_KEY_CONSOLE_URL);
-}
 
 async function runDashscopeConnectionTest(): Promise<ConnectionTestResult | null> {
   const key =
