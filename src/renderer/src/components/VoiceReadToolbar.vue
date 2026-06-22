@@ -10,8 +10,9 @@ import refreshSvg from "../assets/refresh.svg?raw";
 import stopSvg from "../assets/stop.svg?raw";
 import speedSvg from "../assets/speed.svg?raw";
 import {
-  voiceReadEngineSupportsPitch,
   voiceReadEngineSupportsRate,
+  voiceReadVolumeMax,
+  voiceReadVolumeMin,
   type VoiceReadEngineId,
 } from "../constants/voiceRead";
 import { icons } from "../icons";
@@ -24,7 +25,7 @@ const props = defineProps<{
   synthesizing?: boolean;
   synthesizingPhase?: "ai" | "tts" | null;
   toolbarRate: number;
-  toolbarPitch: number;
+  toolbarVolume: number;
   engine: VoiceReadEngineId;
   canPrevLine?: boolean;
   canNextLine?: boolean;
@@ -32,7 +33,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:toolbarRate": [v: number];
-  "update:toolbarPitch": [v: number];
+  "update:toolbarVolume": [v: number];
   togglePlayPause: [];
   prevLine: [];
   nextLine: [];
@@ -43,8 +44,9 @@ const emit = defineEmits<{
 const toolbarLayer = ref<ToolbarLayer>("playback");
 
 const rateDisabled = computed(() => !voiceReadEngineSupportsRate(props.engine));
-const pitchDisabled = computed(
-  () => !voiceReadEngineSupportsPitch(props.engine),
+
+const volumePercentLabel = computed(() =>
+  Math.round(props.toolbarVolume * 100).toString(),
 );
 
 const toolbarLocked = computed(() => Boolean(props.synthesizing));
@@ -151,17 +153,17 @@ function toggleToolbarLayer() {
                 </div>
                 <div class="playSpacer" aria-hidden="true" />
                 <div class="side side--stagger">
-                  <span class="lbl">音调</span>
+                  <span class="lbl">音量</span>
                   <RangeSlider
-                    class="pitchSlider"
-                    :model-value="toolbarPitch"
-                    :min="0.5"
-                    :max="2"
+                    class="volumeSlider"
+                    :model-value="toolbarVolume"
+                    :min="voiceReadVolumeMin"
+                    :max="voiceReadVolumeMax"
                     :step="0.05"
-                    :disabled="toolbarLocked || pitchDisabled"
+                    :disabled="toolbarLocked"
                     :show-percent="false"
-                    aria-label="音调"
-                    @update:model-value="emit('update:toolbarPitch', $event)"
+                    :aria-label="`音量 ${volumePercentLabel}%`"
+                    @update:model-value="emit('update:toolbarVolume', $event)"
                   />
                 </div>
               </div>
@@ -540,7 +542,7 @@ function toggleToolbarLayer() {
 }
 
 .rateSlider,
-.pitchSlider {
+.volumeSlider {
   width: 50px;
 }
 </style>

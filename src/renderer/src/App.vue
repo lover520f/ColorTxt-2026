@@ -1634,7 +1634,8 @@ const {
   isSynthesizing: voiceReadSynthesizing,
   synthesizingPhase: voiceReadSynthesizingPhase,
   toolbarRate: voiceReadToolbarRate,
-  toolbarPitch: voiceReadToolbarPitch,
+  toolbarVolume: voiceReadToolbarVolume,
+  setToolbarVolume: setVoiceReadToolbarVolume,
   canStartVoiceRead: canVoiceRead,
   isVoiceReadActive,
   isVoiceReadScrollLocked,
@@ -1652,6 +1653,8 @@ const {
 } = useAppVoiceRead({
   readerRef,
   voiceReadSettings,
+  voiceReadProfiles,
+  activeVoiceReadProfileId,
   currentFile,
   loading,
   readerEditMode,
@@ -3273,12 +3276,12 @@ useAppShellThemeWatch({
           :synthesizing="voiceReadSynthesizing"
           :synthesizing-phase="voiceReadSynthesizingPhase"
           :toolbar-rate="voiceReadToolbarRate"
-          :toolbar-pitch="voiceReadToolbarPitch"
+          :toolbar-volume="voiceReadToolbarVolume"
           :engine="voiceReadSettings.engine"
           :can-prev-line="voiceReadCanPlayPrevLine"
           :can-next-line="voiceReadCanPlayNextLine"
           @update:toolbar-rate="voiceReadToolbarRate = $event"
-          @update:toolbar-pitch="voiceReadToolbarPitch = $event"
+          @update:toolbar-volume="setVoiceReadToolbarVolume($event)"
           @toggle-play-pause="voiceReadTogglePlayPause"
           @prev-line="voiceReadPlayPrevLine"
           @next-line="voiceReadPlayNextLine"

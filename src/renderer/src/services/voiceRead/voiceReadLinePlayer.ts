@@ -7,7 +7,10 @@
 
 import type { VoiceReadEmotionId } from "@shared/voiceReadEmotion";
 import type { VoiceReadSettings } from "../../constants/voiceRead";
-import { voiceReadSingleVoiceId } from "../../constants/voiceRead";
+import {
+  clampVoiceReadVolume,
+  voiceReadSingleVoiceId,
+} from "../../constants/voiceRead";
 import type { VoiceReadSpeakChunk } from "./voiceReadVoiceResolve";
 import {
   voiceReadChunkCacheKey,
@@ -66,6 +69,14 @@ function isDecodeAudioDataEncodingError(err: unknown): boolean {
 
 function normalizeLineText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+function applyGainPlaybackVolume(
+  gain: GainNode | null,
+  volume: number,
+): void {
+  if (!gain) return;
+  gain.gain.value = clampVoiceReadVolume(volume);
 }
 
 function chunkCacheKey(
@@ -247,6 +258,14 @@ export class VoiceReadLinePlayer {
   private dashChunkStartTimers = new Set<ReturnType<typeof setTimeout>>();
   private dashPausedAt = 0;
   private dashSessionSettings: VoiceReadSettings | null = null;
+  /** 播放中临时音量（优先于 settings.volume） */
+  private playbackVolumeOverride: number | null = null;
+
+  private resolvePlaybackVolume(settings: VoiceReadSettings): number {
+    return clampVoiceReadVolume(
+      this.playbackVolumeOverride ?? settings.volume,
+    );
+  }
 
   isPaused(): boolean {
     if (this.edgeAudioCtx) return this.edgeAudioCtx.state === "suspended";
@@ -255,6 +274,14 @@ export class VoiceReadLinePlayer {
       return true;
     }
     return false;
+  }
+
+  /** 播放中调节音量（不影响 TTS 合成缓存） */
+  setPlaybackVolume(volume: number): void {
+    const v = clampVoiceReadVolume(volume);
+    this.playbackVolumeOverride = v;
+    applyGainPlaybackVolume(this.edgeGain, v);
+    applyGainPlaybackVolume(this.dashGain, v);
   }
 
   pause(): void {
@@ -950,6 +977,7 @@ export class VoiceReadLinePlayer {
     this.edgeChunks = [];
     this.edgeSettings = null;
     this.dashSessionSettings = null;
+    this.playbackVolumeOverride = null;
 
     if (typeof window !== "undefined" && window.speechSynthesis) {
       window.speechSynthesis.cancel();
@@ -1025,6 +1053,7 @@ export class VoiceReadLinePlayer {
       const u = new SpeechSynthesisUtterance(text);
       u.rate = settings.rate;
       u.pitch = settings.pitch;
+      u.volume = this.resolvePlaybackVolume(settings);
       const vid = voiceId.trim() || voiceReadSingleVoiceId(settings);
       if (vid) {
         const v = window.speechSynthesis
@@ -1072,6 +1101,7 @@ export class VoiceReadLinePlayer {
     this.edgeAudioCtx = new AudioContext();
     this.edgeGain = this.edgeAudioCtx.createGain();
     this.edgeGain.connect(this.edgeAudioCtx.destination);
+    applyGainPlaybackVolume(this.edgeGain, this.resolvePlaybackVolume(settings));
     this.edgeScheduledEnd = 0;
 
     if (this.edgeAudioCtx.state === "suspended") {
@@ -1408,6 +1438,7 @@ export class VoiceReadLinePlayer {
     this.dashAudioCtx = new AudioContext();
     this.dashGain = this.dashAudioCtx.createGain();
     this.dashGain.connect(this.dashAudioCtx.destination);
+    applyGainPlaybackVolume(this.dashGain, this.resolvePlaybackVolume(settings));
     this.dashScheduledEnd = 0;
 
     if (this.dashAudioCtx.state === "suspended") {
@@ -1684,6 +1715,7 @@ export class VoiceReadLinePlayer {
     this.dashAudioCtx = new AudioContext();
     this.dashGain = this.dashAudioCtx.createGain();
     this.dashGain.connect(this.dashAudioCtx.destination);
+    applyGainPlaybackVolume(this.dashGain, this.resolvePlaybackVolume(settings));
     this.dashScheduledEnd = 0;
 
     if (this.dashAudioCtx.state === "suspended") {

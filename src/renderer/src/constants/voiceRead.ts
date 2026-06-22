@@ -2,6 +2,7 @@ import type { VoiceReadEdgeTtsRequest } from "@shared/voiceReadEdgeIpc";
 import { voiceReadEngineSupportsEmotion, voiceReadEmotionActive } from "@shared/voiceReadEmotion";
 import {
   defaultVoiceReadEngineConfig,
+  engineConfigFingerprint,
   mergeVoiceReadEngineConfig,
   type VoiceReadEngineConfig,
 } from "@shared/voiceReadEngineConfig";
@@ -53,6 +54,8 @@ export const voiceReadRateMin = 0.5;
 export const voiceReadRateMax = 2;
 export const voiceReadPitchMin = 0.5;
 export const voiceReadPitchMax = 2;
+export const voiceReadVolumeMin = 0;
+export const voiceReadVolumeMax = 1;
 
 export { DASHSCOPE_TTS_VOICES } from "@shared/voiceReadDashscopeVoices";
 
@@ -64,6 +67,27 @@ export function clampVoiceReadRate(v: number): number {
 export function clampVoiceReadPitch(v: number): number {
   if (!Number.isFinite(v)) return defaultVoiceReadSettings.pitch;
   return Math.max(voiceReadPitchMin, Math.min(voiceReadPitchMax, v));
+}
+
+export function clampVoiceReadVolume(v: number): number {
+  if (!Number.isFinite(v)) return defaultVoiceReadSettings.volume;
+  return Math.max(voiceReadVolumeMin, Math.min(voiceReadVolumeMax, v));
+}
+
+/** 变更时不应使 TTS 合成缓存失效的字段（如 volume）除外 */
+export function voiceReadSettingsSynthesisFingerprint(
+  settings: VoiceReadSettings,
+): string {
+  return [
+    settings.engine,
+    settings.scheme,
+    JSON.stringify(settings.single),
+    JSON.stringify(settings.multi),
+    settings.rate,
+    settings.pitch,
+    settings.emotionEnabled !== false ? "1" : "0",
+    engineConfigFingerprint(settings.engineConfig),
+  ].join("\u0001");
 }
 
 function syncEngineConfigDashscopeKey(
@@ -99,6 +123,7 @@ export function mergeVoiceReadSettings(
     engine,
     rate: clampVoiceReadRate(merged.rate),
     pitch: clampVoiceReadPitch(merged.pitch),
+    volume: clampVoiceReadVolume(merged.volume),
     dashscopeApiKey,
     engineConfig: syncEngineConfigDashscopeKey(engineConfig, dashscopeApiKey),
   };

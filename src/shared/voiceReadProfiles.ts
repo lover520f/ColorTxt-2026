@@ -137,6 +137,8 @@ export type VoiceReadProfileSettings = {
   engine: VoiceReadEngineId;
   rate: number;
   pitch: number;
+  /** 播放音量，0～1；不参与 TTS 合成与音频缓存键 */
+  volume: number;
   /** 为 false 时不向支持情绪的引擎传递语气/情绪参数 */
   emotionEnabled: boolean;
   /** 磁盘快照不含明文密钥 */
@@ -369,6 +371,7 @@ export function normalizeVoiceReadProfileSettingsFromPartial(
     multi: mergeVoiceReadMultiVoiceSettings(src.multi),
     rate: typeof src.rate === "number" ? src.rate : 1,
     pitch: typeof src.pitch === "number" ? src.pitch : 1,
+    volume: typeof src.volume === "number" ? src.volume : 1,
     emotionEnabled: src.emotionEnabled !== false,
     dashscopeApiKey: engineConfig.dashscopeApiKey?.trim() ?? legacyDash.trim(),
     engineConfig,

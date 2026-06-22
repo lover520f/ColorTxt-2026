@@ -10,6 +10,7 @@ import RangeSlider from "./RangeSlider.vue";
 import SwitchToggle from "./SwitchToggle.vue";
 import { icons } from "../icons";
 import {
+  clampVoiceReadVolume,
   mergeVoiceReadSettings,
   VOICE_READ_DIALOGUE_QUOTE_OPTIONS,
   voiceReadAiSpeakerRecognitionActive,
@@ -18,6 +19,7 @@ import {
   voiceReadEngineSupportsMultiVoiceScheme,
   voiceReadEngineSupportsPitch,
   voiceReadEngineSupportsRate,
+  voiceReadSettingsSynthesisFingerprint,
   type VoiceReadDialogueQuoteStyle,
   type VoiceReadEngineId,
   type VoiceReadMultiVoiceSettings,
@@ -462,6 +464,22 @@ function patchDraft(p: Partial<VoiceReadSettings>) {
   settings.value = mergeVoiceReadSettings({ ...draft.value, ...p });
 }
 
+/** 仅改音量：不替换 settings 根对象，避免误触发「合成参数变更 → 停止试听」 */
+function patchVolume(volume: number) {
+  const v = clampVoiceReadVolume(volume);
+  if (Math.abs(draft.value.volume - v) < 1e-9) {
+    applyPreviewPlaybackVolume(v);
+    return;
+  }
+  draft.value.volume = v;
+  applyPreviewPlaybackVolume(v);
+}
+
+function applyPreviewPlaybackVolume(volume: number) {
+  if (!isPreviewBusy()) return;
+  previewPlayer.setPlaybackVolume(volume);
+}
+
 watch(supportsMultiVoiceScheme, (supported) => {
   if (!supported && draft.value.scheme === "multi") {
     patchDraft({ scheme: "single" });
@@ -681,23 +699,18 @@ function onPreviewButtonClick() {
 }
 
 watch(
-  () =>
-    [
-      draft.value.scheme,
-      draft.value.engine,
-      draft.value.single.voiceId,
-      draft.value.multi.narrationVoiceId,
-      draft.value.multi.dialogueVoiceId,
-      draft.value.multi.dialogueMaleVoiceId,
-      draft.value.multi.dialogueFemaleVoiceId,
-      draft.value.multi.aiSpeakerRecognitionEnabled,
-      draft.value.multi.dialogueQuoteStyles.join(","),
-      draft.value.dashscopeApiKey,
-      draft.value.rate,
-      draft.value.pitch,
-      draft.value.emotionEnabled,
-      previewText.value,
-    ] as const,
+  () => voiceReadSettingsSynthesisFingerprint(draft.value),
+  () => {
+    if (isPreviewBusy()) cancelPreview();
+    else {
+      previewError.value = "";
+      clearPreviewDownload();
+    }
+  },
+);
+
+watch(
+  () => previewText.value,
   () => {
     if (isPreviewBusy()) cancelPreview();
     else {
@@ -744,6 +757,7 @@ const voiceReadProfileToolbarPlaceholder = computed(
 );
 
 function onVoiceReadProfileEditingIdChange(id: string) {
+  if (id === voiceReadProfileDraft.editingId.value) return;
   if (isPreviewBusy()) cancelPreview();
   voiceReadProfileDraft.selectEditingProfile(id);
 }
@@ -1033,6 +1047,21 @@ onUnmounted(() => {
         </div>
       </div>
       <p v-if="rateDisabled" class="settingsHint">当前服务商不支持调节语速。</p>
+
+      <div class="settingsRowMain">
+        <span class="settingsLabel short">音量（{{ Math.round(draft.volume * 100) }}%）</span>
+        <div class="settingsRowField">
+          <RangeSlider
+            :model-value="draft.volume"
+            :min="0"
+            :max="1"
+            :step="0.05"
+            :show-percent="false"
+            aria-label="音量"
+            @update:model-value="patchVolume($event)"
+          />
+        </div>
+      </div>
 
       <div v-if="showPitchControl" class="settingsRowMain">
         <span class="settingsLabel short">音调（{{ draft.pitch.toFixed(2) }}）</span>

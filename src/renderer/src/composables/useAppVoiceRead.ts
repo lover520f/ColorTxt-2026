@@ -1,10 +1,12 @@
 import { computed, nextTick, ref, watch, type Ref } from "vue";
 import type { CharacterRosterEntry } from "@shared/characterTypes";
 import type ReaderMain from "../components/ReaderMain.vue";
+import type { VoiceReadProfile } from "@shared/voiceReadProfiles";
 import {
-  clampVoiceReadPitch,
   clampVoiceReadRate,
+  clampVoiceReadVolume,
   mergeVoiceReadSettings,
+  voiceReadSettingsSynthesisFingerprint,
   voiceReadAiEmotionRecognitionActive,
   voiceReadAiSpeakerRecognitionActive,
   type VoiceReadSettings,
@@ -34,6 +36,8 @@ const VOICE_READ_BATCH_LINES = 28;
 export function useAppVoiceRead(deps: {
   readerRef: Ref<InstanceType<typeof ReaderMain> | null>;
   voiceReadSettings: Ref<VoiceReadSettings>;
+  voiceReadProfiles: Ref<VoiceReadProfile[]>;
+  activeVoiceReadProfileId: Ref<string>;
   currentFile: Ref<string | null>;
   loading: Ref<boolean>;
   readerEditMode: Ref<boolean>;
@@ -45,7 +49,7 @@ export function useAppVoiceRead(deps: {
   const isSynthesizing = ref(false);
   const synthesizingPhase = ref<VoiceReadSynthesizingPhase | null>(null);
   const toolbarRate = ref(1);
-  const toolbarPitch = ref(1);
+  const toolbarVolume = ref(1);
   const player = new VoiceReadLinePlayer();
   /** 批次构建（含 AI 引号分类）进行中的深度 */
   let prepareSynthesisDepth = 0;
@@ -254,8 +258,34 @@ export function useAppVoiceRead(deps: {
     return mergeVoiceReadSettings({
       ...base,
       rate: clampVoiceReadRate(toolbarRate.value),
-      pitch: clampVoiceReadPitch(toolbarPitch.value),
+      volume: clampVoiceReadVolume(toolbarVolume.value),
     });
+  }
+
+  function syncVolumeToActiveProfile(volume: number) {
+    const profileId = deps.activeVoiceReadProfileId.value.trim();
+    const idx = deps.voiceReadProfiles.value.findIndex((p) => p.id === profileId);
+    if (idx < 0) return;
+    const current = deps.voiceReadProfiles.value[idx]!;
+    if (clampVoiceReadVolume(current.settings.volume) === volume) return;
+    const profiles = [...deps.voiceReadProfiles.value];
+    profiles[idx] = {
+      ...current,
+      settings: mergeVoiceReadSettings({ ...current.settings, volume }),
+    };
+    deps.voiceReadProfiles.value = profiles;
+  }
+
+  function setToolbarVolume(v: number) {
+    const volume = clampVoiceReadVolume(v);
+    toolbarVolume.value = volume;
+    player.setPlaybackVolume(volume);
+    if (deps.voiceReadSettings.value.volume === volume) return;
+    deps.voiceReadSettings.value = mergeVoiceReadSettings({
+      ...deps.voiceReadSettings.value,
+      volume,
+    });
+    syncVolumeToActiveProfile(volume);
   }
 
   function clearActiveBatch() {
@@ -307,7 +337,7 @@ export function useAppVoiceRead(deps: {
   function syncToolbarFromPersisted() {
     const s = deps.voiceReadSettings.value;
     toolbarRate.value = s.rate;
-    toolbarPitch.value = s.pitch;
+    toolbarVolume.value = s.volume;
   }
 
   function applyPlaybackLineHighlight(ln: number) {
@@ -762,9 +792,19 @@ export function useAppVoiceRead(deps: {
     exitVoiceRead();
   });
 
+  let lastVoiceReadSynthesisFingerprint = "";
+
   watch(
     () => deps.voiceReadSettings.value,
-    () => {
+    (s) => {
+      const fingerprint = voiceReadSettingsSynthesisFingerprint(s);
+      if (fingerprint === lastVoiceReadSynthesisFingerprint) {
+        toolbarVolume.value = s.volume;
+        player.setPlaybackVolume(s.volume);
+        return;
+      }
+      lastVoiceReadSynthesisFingerprint = fingerprint;
+      syncToolbarFromPersisted();
       player.clearSynthesisCache();
       clearVoiceReadSpeakerCache();
     },
@@ -796,7 +836,8 @@ export function useAppVoiceRead(deps: {
     isSynthesizing,
     synthesizingPhase,
     toolbarRate,
-    toolbarPitch,
+    toolbarVolume,
+    setToolbarVolume,
     canStartVoiceRead,
     isVoiceReadActive,
     isVoiceReadScrollLocked,
