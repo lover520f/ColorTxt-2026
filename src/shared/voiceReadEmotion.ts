@@ -89,6 +89,7 @@ export function isVoiceReadEmotionLabel(
 const EMOTION_ENGINE_SUPPORT = new Set<VoiceReadEngineId>([
   "minimax",
   "dashscope",
+  "mimo",
 ]);
 
 export function voiceReadEngineSupportsEmotion(
@@ -142,6 +143,13 @@ export function mapEmotionForMiniMax(
     if (emotion === "whisper") return undefined;
   }
   return emotion;
+}
+
+/** MiMo 通过 user 消息传递自然语言风格指令 */
+export function mapEmotionForMimo(
+  emotion: VoiceReadEmotionId | undefined,
+): string | undefined {
+  return mapEmotionForDashScope(emotion);
 }
 
 export function voiceReadEmotionCacheToken(

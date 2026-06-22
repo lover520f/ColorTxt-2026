@@ -11,6 +11,7 @@ import {
   voiceReadMultiNarrationVoiceId,
   voiceReadSingleVoiceId,
 } from "../../constants/voiceRead";
+import { voiceReadEngineSupportsMultiVoiceScheme } from "@shared/voiceReadEngines";
 import type { VoiceReadTextSegment } from "./voiceReadSegments";
 
 export type VoiceReadSpeakChunk = {
@@ -58,7 +59,13 @@ export function resolveSegmentVoiceId(
   quoteAttr?: VoiceReadQuoteAttribution | null,
   aiFeaturesEnabled = false,
 ): string {
-  if (settings.scheme === "single") {
+  if (
+    settings.scheme === "single" ||
+    !voiceReadEngineSupportsMultiVoiceScheme(
+      settings.engine,
+      settings.engineConfig,
+    )
+  ) {
     return voiceReadSingleVoiceId(settings);
   }
   if (segment.kind === "narration") {

@@ -31,6 +31,15 @@ export const MINIMAX_IMAGE_API_ROOT = "https://api.minimaxi.com";
 export const MINIMAX_API_KEY_CONSOLE_URL =
   "https://platform.minimaxi.com/user-center/basic-information/interface-key";
 
+/** 小米 MiMo 平台统一品牌名（语音朗读 TTS） */
+export const MIMO_PLATFORM_LABEL = "小米 MiMo";
+
+/** 小米 MiMo 官方 OpenAI 兼容 API Base URL */
+export const MIMO_API_BASE_URL = "https://api.xiaomimimo.com/v1";
+
+/** 小米 MiMo 官方开放平台控制台 */
+export const MIMO_API_KEY_CONSOLE_URL = "https://platform.xiaomimimo.com/";
+
 /** 对话 API 推荐服务商（OpenAI 兼容 /chat/completions） */
 export type ChatApiProviderPreset = {
   id: string;

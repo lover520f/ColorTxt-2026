@@ -13,6 +13,7 @@ import {
   VoiceReadLinePlayer,
   type VoiceReadSpeakChunk,
 } from "../services/voiceRead/voiceReadLinePlayer";
+import { voiceReadRequiresSerialChunkFetch } from "../services/voiceRead/voiceReadEngineRouting";
 import { hasVoiceReadSpeakableText } from "../services/voiceRead/voiceReadTextChunks";
 import { buildLineSpeakChunks } from "../services/voiceRead/voiceReadLineBuild";
 import type { VoiceReadQuoteCarry } from "../services/voiceRead/voiceReadSegments";
@@ -77,12 +78,6 @@ export function useAppVoiceRead(deps: {
     syncSynthesizingState();
   }
 
-  /** 批次 AI 识别结束、尚未排播首段时保持「合成中」，首段开播或中止时清除 */
-  function clearTtsBridgeIfIdle() {
-    if (playerSynthesisActive) return;
-    endTtsBridge();
-  }
-
   function endTtsBridge() {
     if (!ttsBridgeActive) return;
     ttsBridgeActive = false;
@@ -99,8 +94,6 @@ export function useAppVoiceRead(deps: {
 
   player.onSynthesizingChange = (active) => {
     playerSynthesisActive = active;
-    if (active) endTtsBridge();
-    else clearTtsBridgeIfIdle();
     syncSynthesizingState();
   };
   let currentLine = 1;
@@ -346,11 +339,21 @@ export function useAppVoiceRead(deps: {
     fallbackLine: number,
     baseChunkIndex = 0,
   ) {
+    /** 已反映到 UI 的段索引；首段必须是 batch 第 0 段，其后只允许 +1 推进 */
+    let lastAppliedChunkIndex = -1;
     player.onChunkChange = (relIdx) => {
-      endTtsBridge();
       if (!isPlaybackAlive(gen, mode.value)) return;
       const absIdx = baseChunkIndex + relIdx;
       if (absIdx < 0 || absIdx >= chunkToModelLine.length) return;
+      if (lastAppliedChunkIndex < 0) {
+        if (absIdx !== baseChunkIndex) return;
+        lastAppliedChunkIndex = absIdx;
+        endTtsBridge();
+        currentChunkIndex = absIdx;
+        return;
+      }
+      if (absIdx !== lastAppliedChunkIndex + 1) return;
+      lastAppliedChunkIndex = absIdx;
       currentChunkIndex = absIdx;
       const hl = chunkToModelLine[absIdx] ?? fallbackLine;
       if (hl === currentLine) return;
@@ -369,6 +372,7 @@ export function useAppVoiceRead(deps: {
     quoteCarry: VoiceReadQuoteCarry,
     gen: number,
   ) {
+    if (voiceReadRequiresSerialChunkFetch(settings)) return;
     const reader = deps.readerRef.value;
     const mCount = reader?.getModelLineCount?.() ?? 0;
     if (!reader || batchEnd >= mCount) return;
@@ -411,8 +415,9 @@ export function useAppVoiceRead(deps: {
 
   /** 预生成锚点行上下各一行，手动上一行/下一行命中缓存 */
   function warmAdjacentSpeakableLines(anchorLine: number) {
-    if (deps.voiceReadSettings.value.engine === "dashscope") return;
     const settings = effectiveSettingsForSpeak();
+    if (voiceReadRequiresSerialChunkFetch(settings)) return;
+    if (settings.engine === "dashscope") return;
     const prev = findAdjacentSpeakableLine(anchorLine, -1);
     const next = findAdjacentSpeakableLine(anchorLine, 1);
     const mCount = deps.readerRef.value?.getModelLineCount?.() ?? 0;

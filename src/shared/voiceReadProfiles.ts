@@ -14,6 +14,7 @@ import {
   defaultMultiVoiceIdsForEngine,
   defaultSingleVoiceIdForEngine,
   normalizeVoiceReadEngineId,
+  voiceReadEngineSupportsMultiVoiceScheme,
   type VoiceReadEngineId,
 } from "./voiceReadEngines";
 
@@ -318,6 +319,7 @@ export function stripVoiceReadProfileApiKeysForDisk(
         ...p.settings.engineConfig,
         dashscopeApiKey: undefined,
         minimaxApiKey: undefined,
+        mimoApiKey: undefined,
       },
     },
   }));
@@ -352,8 +354,14 @@ export function normalizeVoiceReadProfileSettingsFromPartial(
   const engineConfig = mergeVoiceReadEngineConfig(src.engineConfig, legacyDash);
   const engine = normalizeVoiceReadEngineId(src.engine, "edge");
   const engineDefaultVoiceId = defaultSingleVoiceIdForEngine(engine);
+  const schemeRaw = src.scheme === "multi" ? "multi" : "single";
+  const scheme =
+    schemeRaw === "multi" &&
+    voiceReadEngineSupportsMultiVoiceScheme(engine, engineConfig)
+      ? "multi"
+      : "single";
   return {
-    scheme: src.scheme === "multi" ? "multi" : "single",
+    scheme,
     engine,
     single: mergeVoiceReadSingleVoiceSettings(src.single, engineDefaultVoiceId),
     multi: mergeVoiceReadMultiVoiceSettings(src.multi),

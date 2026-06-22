@@ -1,7 +1,14 @@
 /** 语音朗读引擎注册表（主进程 / preload / renderer 对齐） */
 
-import { DASHSCOPE_PLATFORM_LABEL } from "./apiEndpointPresets";
+import {
+  DASHSCOPE_PLATFORM_LABEL,
+  MIMO_PLATFORM_LABEL,
+} from "./apiEndpointPresets";
 import type { VoiceReadEngineConfig } from "./voiceReadEngineConfig";
+import {
+  isMimoTtsPresetModel,
+  normalizeMimoTtsModel,
+} from "./voiceReadMimoModels";
 import { defaultVoiceIdForEngine } from "./voiceReadEngineDefaults";
 
 export {
@@ -9,6 +16,7 @@ export {
   defaultSingleVoiceIdForEngine,
   defaultVoiceIdForEngine,
   DEFAULT_DASHSCOPE_TTS_MODEL,
+  DEFAULT_MIMO_TTS_MODEL,
   DEFAULT_MINIMAX_TTS_MODEL,
   VOICE_READ_ENGINE_DEFAULTS,
 } from "./voiceReadEngineDefaults";
@@ -17,7 +25,8 @@ export type VoiceReadEngineId =
   | "system"
   | "edge"
   | "dashscope"
-  | "minimax";
+  | "minimax"
+  | "mimo";
 
 export type VoiceReadEngineKind = "browser" | "ipc";
 export type VoiceReadEngineAuth = "none" | "apiKey";
@@ -90,6 +99,18 @@ const ENGINE_LIST_BASE: VoiceReadEngineMetaBase[] = [
     audioFormat: "mp3",
     shortChunks: false,
   },
+  {
+    id: "mimo",
+    label: MIMO_PLATFORM_LABEL,
+    description: "云端 TTS，支持音色定制、音色克隆，需要 API 密钥",
+    kind: "ipc",
+    auth: "apiKey",
+    supportsRate: true,
+    supportsPitch: false,
+    voiceSource: "static",
+    audioFormat: "wav",
+    shortChunks: false,
+  },
 ];
 
 const ENGINE_LIST: VoiceReadEngineMeta[] = ENGINE_LIST_BASE.map((meta) => ({
@@ -157,6 +178,7 @@ export function voiceReadEngineRequiresApiKey(
   if (meta.auth !== "apiKey") return false;
   if (engine === "dashscope") return !config.dashscopeApiKey?.trim();
   if (engine === "minimax") return !config.minimaxApiKey?.trim();
+  if (engine === "mimo") return !config.mimoApiKey?.trim();
   return false;
 }
 
@@ -165,6 +187,15 @@ export function voiceReadEngineIsConfigured(
   config: VoiceReadEngineConfig,
 ): boolean {
   return !voiceReadEngineRequiresApiKey(engine, config);
+}
+
+/** MiMo VoiceDesign / VoiceClone 无预置音色列表，仅固定单音色 */
+export function voiceReadEngineSupportsMultiVoiceScheme(
+  engine: VoiceReadEngineId,
+  config: VoiceReadEngineConfig,
+): boolean {
+  if (engine !== "mimo") return true;
+  return isMimoTtsPresetModel(normalizeMimoTtsModel(config.mimoModel));
 }
 
 export function normalizeVoiceReadEngineId(

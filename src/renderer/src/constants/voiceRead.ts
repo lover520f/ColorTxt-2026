@@ -10,6 +10,7 @@ import {
   normalizeVoiceReadEngineId,
   voiceReadEngineIsConfigured,
   voiceReadEngineRequiresApiKey,
+  voiceReadEngineSupportsMultiVoiceScheme,
   type VoiceReadEngineId,
 } from "@shared/voiceReadEngines";
 import {
@@ -146,10 +147,17 @@ export function voiceReadMultiDialogueFemaleVoiceId(
 }
 
 export function voiceReadAiSpeakerRecognitionActive(
-  settings: Pick<VoiceReadSettings, "scheme" | "multi">,
+  settings: Pick<
+    VoiceReadSettings,
+    "scheme" | "multi" | "engine" | "engineConfig"
+  >,
   globalAiEnabled: boolean,
 ): boolean {
   return (
+    voiceReadEngineSupportsMultiVoiceScheme(
+      settings.engine,
+      settings.engineConfig,
+    ) &&
     settings.scheme === "multi" &&
     settings.multi.aiSpeakerRecognitionEnabled !== false &&
     globalAiEnabled
@@ -238,6 +246,7 @@ export function effectiveVoiceReadVoiceId(
 export {
   defaultSingleVoiceIdForEngine,
   defaultVoiceIdForEngine,
+  voiceReadEngineSupportsMultiVoiceScheme,
 } from "@shared/voiceReadEngines";
 
 export { defaultVoiceReadEngineConfig };

@@ -4,6 +4,7 @@ import AppCheckbox from "./AppCheckbox.vue";
 import ApiEndpointInput from "./ApiEndpointInput.vue";
 import AppCustomSelect, { type CustomSelectItem } from "./AppCustomSelect.vue";
 import AppConnectionTestButton from "./AppConnectionTestButton.vue";
+import PathPickerInput from "./PathPickerInput.vue";
 import IconButton from "./IconButton.vue";
 import RangeSlider from "./RangeSlider.vue";
 import SwitchToggle from "./SwitchToggle.vue";
@@ -13,6 +14,7 @@ import {
   VOICE_READ_DIALOGUE_QUOTE_OPTIONS,
   voiceReadAiSpeakerRecognitionActive,
   voiceReadEngineRequiresCredentials,
+  voiceReadEngineSupportsMultiVoiceScheme,
   voiceReadEngineSupportsPitch,
   voiceReadEngineSupportsRate,
   type VoiceReadDialogueQuoteStyle,
@@ -37,6 +39,14 @@ import {
   DEFAULT_MINIMAX_TTS_MODEL,
   getMinimaxTtsModelSuggestions,
 } from "@shared/voiceReadMinimaxModels";
+import {
+  DEFAULT_MIMO_TTS_MODEL,
+  getMimoTtsModelSuggestions,
+  isMimoTtsPresetModel,
+  isMimoTtsVoiceCloneModel,
+  isMimoTtsVoiceDesignModel,
+  normalizeMimoTtsModel,
+} from "@shared/voiceReadMimoModels";
 import { healthCheckVoiceReadViaIpc } from "../services/voiceRead/voiceReadSynthesisClient";
 import {
   fetchMinimaxVoiceCatalog,
@@ -127,12 +137,29 @@ const schemeScrollItems: CustomSelectItem[] = schemeOptions.map((o) => ({
   description: o.description,
 }));
 
+const supportsMultiVoiceScheme = computed(() =>
+  voiceReadEngineSupportsMultiVoiceScheme(
+    draft.value.engine,
+    draft.value.engineConfig,
+  ),
+);
+
+const schemeScrollItemsForDraft = computed(() =>
+  supportsMultiVoiceScheme.value
+    ? schemeScrollItems
+    : schemeScrollItems.filter(
+        (item) => item.kind === "item" && item.id === "single",
+      ),
+);
+
 const schemeDisplayLabel = computed(() => {
   const hit = schemeOptions.find((o) => o.id === draft.value.scheme);
   return hit?.label ?? draft.value.scheme;
 });
 
-const isMultiScheme = computed(() => draft.value.scheme === "multi");
+const isMultiScheme = computed(
+  () => draft.value.scheme === "multi" && supportsMultiVoiceScheme.value,
+);
 
 const showAiSpeakerRecognitionToggle = computed(
   () => isMultiScheme.value && props.aiEnabled === true,
@@ -158,6 +185,29 @@ const showApiKeyFields = computed(() => engineMeta.value.auth === "apiKey");
 const showDashScopeModel = computed(() => draft.value.engine === "dashscope");
 
 const showMiniMaxModel = computed(() => draft.value.engine === "minimax");
+
+const showMimoModel = computed(() => draft.value.engine === "mimo");
+
+const mimoTtsModel = computed(() =>
+  normalizeMimoTtsModel(draft.value.engineConfig.mimoModel),
+);
+
+const showMimoVoiceDescription = computed(
+  () =>
+    draft.value.engine === "mimo" &&
+    isMimoTtsVoiceDesignModel(mimoTtsModel.value),
+);
+
+const showMimoReferenceAudio = computed(
+  () =>
+    draft.value.engine === "mimo" &&
+    isMimoTtsVoiceCloneModel(mimoTtsModel.value),
+);
+
+const showMimoPresetVoicePicker = computed(() => {
+  if (draft.value.engine !== "mimo") return true;
+  return isMimoTtsPresetModel(mimoTtsModel.value);
+});
 
 const engineScrollItems: CustomSelectItem[] = engineOptions.map((o) => ({
   kind: "item",
@@ -209,6 +259,18 @@ async function runMinimaxConnectionTest(): Promise<ConnectionTestResult | null> 
     : { ok: false, error: r.result.message ?? "连接失败" };
 }
 
+async function runMimoConnectionTest(): Promise<ConnectionTestResult | null> {
+  if (!draft.value.engineConfig.mimoApiKey?.trim()) {
+    await appAlert("请先填写 MiMo API 密钥");
+    return null;
+  }
+  const r = await healthCheckVoiceReadViaIpc("mimo", draft.value.engineConfig);
+  if (!r.ok) return { ok: false, error: r.error };
+  return r.result.ok
+    ? { ok: true }
+    : { ok: false, error: r.result.message ?? "连接失败" };
+}
+
 const previewText = ref(VOICE_READ_DIALOGUE_GENDER_PREVIEW_DEFAULT);
 
 type PreviewPhase = "idle" | "ai" | "synthesizing" | "playing";
@@ -218,9 +280,13 @@ const previewDownload = ref<VoiceReadPreviewDownload | null>(null);
 
 const showDashScopeKey = ref(false);
 const showMiniMaxKey = ref(false);
+const showMimoKey = ref(false);
 
 const minimaxConnectionFingerprint = computed(
   () => draft.value.engineConfig.minimaxApiKey?.trim() ?? "",
+);
+const mimoConnectionFingerprint = computed(
+  () => draft.value.engineConfig.mimoApiKey?.trim() ?? "",
 );
 const dashscopeConnectionFingerprint = computed(
   () =>
@@ -402,6 +468,12 @@ function patchDraft(p: Partial<VoiceReadSettings>) {
   settings.value = mergeVoiceReadSettings({ ...draft.value, ...p });
 }
 
+watch(supportsMultiVoiceScheme, (supported) => {
+  if (!supported && draft.value.scheme === "multi") {
+    patchDraft({ scheme: "single" });
+  }
+});
+
 function patchSingleVoice(p: Partial<VoiceReadSingleVoiceSettings>) {
   patchDraft({ single: { ...draft.value.single, ...p } });
 }
@@ -432,6 +504,34 @@ const minimaxApiKeyModel = computed({
   get: () => draft.value.engineConfig.minimaxApiKey ?? "",
   set: (value: string) => {
     patchEngineConfig({ minimaxApiKey: value });
+  },
+});
+
+const mimoApiKeyModel = computed({
+  get: () => draft.value.engineConfig.mimoApiKey ?? "",
+  set: (value: string) => {
+    patchEngineConfig({ mimoApiKey: value });
+  },
+});
+
+const mimoVoiceDescriptionModel = computed({
+  get: () => draft.value.engineConfig.mimoVoiceDescription ?? "",
+  set: (value: string) => {
+    patchEngineConfig({ mimoVoiceDescription: value });
+  },
+});
+
+const mimoOptimizeTextPreviewModel = computed({
+  get: () => draft.value.engineConfig.mimoOptimizeTextPreview === true,
+  set: (value: boolean) => {
+    patchEngineConfig({ mimoOptimizeTextPreview: value });
+  },
+});
+
+const mimoReferenceAudioPathModel = computed({
+  get: () => draft.value.engineConfig.mimoReferenceAudioPath ?? "",
+  set: (value: string) => {
+    patchEngineConfig({ mimoReferenceAudioPath: value });
   },
 });
 
@@ -800,6 +900,105 @@ defineExpose({
             音色同步失败：{{ minimaxVoiceCatalogError }}（将使用本地预设音色）
           </p>
         </div>
+        <div v-if="draft.engine === 'mimo'" class="settingsRow">
+          <div class="settingsRowMain settingsRowMain--baseline">
+            <span class="settingsLabel short">API 密钥</span>
+            <div class="aiRowField">
+              <div class="settingsPasswordRow aiPasswordRow">
+                <input
+                  class="settingsStretchInput settingsPasswordRow__input"
+                  :type="showMimoKey ? 'text' : 'password'"
+                  autocomplete="off"
+                  spellcheck="false"
+                  v-model="mimoApiKeyModel"
+                />
+                <button
+                  type="button"
+                  class="btn iconOnly"
+                  :title="showMimoKey ? '隐藏' : '显示'"
+                  :aria-label="
+                    showMimoKey ? '隐藏 API 密钥' : '显示 API 密钥'
+                  "
+                  @click="showMimoKey = !showMimoKey"
+                >
+                  <span
+                    class="iconSvg"
+                    v-html="showMimoKey ? icons.view : icons.viewOff"
+                  />
+                </button>
+                <AppConnectionTestButton
+                  :fingerprint="mimoConnectionFingerprint"
+                  :on-test="runMimoConnectionTest"
+                  title="仅校验 API 密钥有效性，不进行语音合成"
+                />
+              </div>
+            </div>
+          </div>
+          <p class="settingsHint">{{ secretStorageHint }}</p>
+        </div>
+        <div v-if="showMimoModel" class="settingsRow">
+          <div class="settingsRowMain settingsRowMain--baseline">
+            <span class="settingsLabel short">模型</span>
+            <div class="aiRowField">
+              <ApiEndpointInput
+                :model-value="
+                  draft.engineConfig.mimoModel ?? DEFAULT_MIMO_TTS_MODEL
+                "
+                :suggestions="getMimoTtsModelSuggestions()"
+                placeholder="输入模型 ID…"
+                input-class="settingsStretchInput"
+                aria-label="MiMo 语音模型"
+                :scroll-max-height="160"
+                @update:model-value="patchEngineConfig({ mimoModel: $event })"
+              />
+            </div>
+          </div>
+          <p class="settingsHint">
+            VoiceDesign 可定制音色，需填写声音描述；VoiceClone 可克隆音色，需选择参考音频（mp3/wav）。
+          </p>
+        </div>
+        <div v-if="showMimoVoiceDescription" class="settingsRow">
+          <div class="settingsRowMain settingsRowMain--baseline">
+            <span class="settingsLabel short">声音描述</span>
+            <div class="aiRowField">
+              <textarea
+                v-model="mimoVoiceDescriptionModel"
+                class="settingsStretchTextarea settingsStretchTextarea--multiline"
+                rows="3"
+                placeholder="例如：年轻男声，语速适中，语气自然亲切"
+                aria-label="MiMo 声音描述"
+              />
+            </div>
+          </div>
+        </div>
+        <div v-if="showMimoVoiceDescription" class="settingsRow">
+          <div class="settingsRowMain">
+            <span class="settingsLabel">智能润色</span>
+            <SwitchToggle
+              v-model="mimoOptimizeTextPreviewModel"
+              aria-label="MiMo VoiceDesign 智能润色"
+            />
+          </div>
+          <p class="settingsHint">
+            开启后由模型改写为更适合口播的相近表达；关闭时严格朗读原文。
+          </p>
+        </div>
+        <div v-if="showMimoReferenceAudio" class="settingsRow">
+          <div class="settingsRowMain settingsRowMain--baseline">
+            <span class="settingsLabel short">参考音频</span>
+            <div class="aiRowField">
+              <PathPickerInput
+                v-model="mimoReferenceAudioPathModel"
+                :is-directory="false"
+                placeholder="选择 mp3 或 wav 参考音频"
+                aria-label="MiMo 参考音频"
+              />
+            </div>
+          </div>
+          <p class="settingsHint">
+            每次合成都会上传参考音频，长文连读可能较慢。
+          </p>
+        </div>
       </template>
 
       <div class="settingsRowMain">
@@ -834,14 +1033,14 @@ defineExpose({
         </div>
       </div>
 
-      <div class="settingsRowMain settingsRowMain--baseline">
+      <div v-if="supportsMultiVoiceScheme" class="settingsRowMain settingsRowMain--baseline">
         <span class="settingsLabel short settingsLabel--strong">朗读方案</span>
         <AppCustomSelect
           class="settingsRowControl"
           :model-value="draft.scheme"
           :display-label="schemeDisplayLabel"
           :fixed-top-items="selectListsEmpty"
-          :scroll-items="schemeScrollItems"
+          :scroll-items="schemeScrollItemsForDraft"
           :fixed-bottom-items="selectListsEmpty"
           :scroll-max-height="200"
           ariaLabel="朗读方案"
@@ -867,7 +1066,10 @@ defineExpose({
           </div>
         </div>
 
-        <div class="settingsRowMain settingsRowMain--baseline">
+        <div
+          v-if="showMimoPresetVoicePicker"
+          class="settingsRowMain settingsRowMain--baseline"
+        >
           <span class="settingsLabel short">旁白</span>
           <AppCustomSelect
             class="settingsRowControl"
@@ -883,7 +1085,10 @@ defineExpose({
           />
         </div>
 
-        <div class="settingsRowMain settingsRowMain--baseline">
+        <div
+          v-if="showMimoPresetVoicePicker"
+          class="settingsRowMain settingsRowMain--baseline"
+        >
           <span class="settingsLabel short">对白</span>
           <AppCustomSelect
             class="settingsRowControl"
@@ -919,7 +1124,10 @@ defineExpose({
         </p>
 
         <template v-if="showDialogueGenderVoices">
-          <div class="settingsRowMain settingsRowMain--baseline">
+          <div
+            v-if="showMimoPresetVoicePicker"
+            class="settingsRowMain settingsRowMain--baseline"
+          >
             <span class="settingsLabel short">男声</span>
             <AppCustomSelect
               class="settingsRowControl"
@@ -934,7 +1142,10 @@ defineExpose({
               @update:model-value="patchMultiVoice({ dialogueMaleVoiceId: $event })"
             />
           </div>
-          <div class="settingsRowMain settingsRowMain--baseline">
+          <div
+            v-if="showMimoPresetVoicePicker"
+            class="settingsRowMain settingsRowMain--baseline"
+          >
             <span class="settingsLabel short">女声</span>
             <AppCustomSelect
               class="settingsRowControl"
@@ -955,7 +1166,7 @@ defineExpose({
       </template>
 
       <div
-        v-else
+        v-else-if="showMimoPresetVoicePicker"
         class="settingsRowMain settingsRowMain--baseline"
       >
         <span class="settingsLabel short">音色</span>

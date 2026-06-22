@@ -27,8 +27,13 @@ import {
   minimaxFlatVoiceOptionsToSelectItems,
   minimaxVoiceGroupsToSelectItems,
 } from "./voiceReadMinimaxVoiceSelect";
+import { mimoVoiceGroupsToSelectItems } from "./voiceReadMimoVoiceSelect";
 import { MINIMAX_TTS_VOICES } from "../constants/voiceReadMinimax";
 import { minimaxVoiceCatalog } from "../services/voiceRead/minimaxVoiceCatalog";
+import {
+  findMimoTtsVoice,
+  MIMO_TTS_VOICES,
+} from "@shared/voiceReadMimoVoices";
 
 export type VoiceSelectOption = { id: string; label: string };
 
@@ -278,6 +283,8 @@ export function listVoiceOptionsForEngine(
       return DASHSCOPE_TTS_VOICES.map((v) => ({ id: v.id, label: v.label }));
     case "minimax":
       return minimaxVoiceOptions();
+    case "mimo":
+      return MIMO_TTS_VOICES.map((v) => ({ id: v.id, label: v.label }));
     default:
       return [];
   }
@@ -371,6 +378,9 @@ export function voiceSelectItemsForEngine(
   if (engine === "dashscope") {
     return dashscopeVoiceGroupsToSelectItems();
   }
+  if (engine === "mimo") {
+    return mimoVoiceGroupsToSelectItems();
+  }
   if (engine === "edge") {
     return edgeVoiceGroupsToSelectItems(
       groupEdgeTtsVoicesRaw(),
@@ -450,6 +460,9 @@ export function resolveVoiceReadDisplayLabel(
   if (engine === "minimax") {
     const hit = minimaxVoiceOptions().find((v) => v.id === id);
     return hit?.label ?? id;
+  }
+  if (engine === "mimo") {
+    return findMimoTtsVoice(id)?.label ?? id;
   }
   const flat = listVoiceOptionsForEngine(engine, systemVoices);
   const hit = flat.find((v) => v.id === id);

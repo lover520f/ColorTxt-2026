@@ -1,6 +1,7 @@
 import type { CharacterRosterEntry } from "@shared/characterTypes";
 import type { VoiceReadEmotionId } from "@shared/voiceReadEmotion";
 import type { VoiceReadQuoteAttribution } from "@shared/voiceReadSpeakerIpc";
+import { voiceReadEngineSupportsMultiVoiceScheme } from "@shared/voiceReadEngines";
 import type { VoiceReadSettings } from "../../constants/voiceRead";
 import { voiceReadSingleVoiceId } from "../../constants/voiceRead";
 import { voiceReadChunkUnitsForEngine } from "./voiceReadEngineRouting";
@@ -124,7 +125,13 @@ export function buildLineSpeakChunks(
     return { chunks: [], carry: opts.carry ?? null, dialogueSegments: [] };
   }
 
-  if (settings.scheme === "single") {
+  if (
+    settings.scheme === "single" ||
+    !voiceReadEngineSupportsMultiVoiceScheme(
+      settings.engine,
+      settings.engineConfig,
+    )
+  ) {
     const units = chunkUnitsForEngine(settings.engine);
     const parts = splitVoiceReadChunks(raw, units);
     const texts = parts.length > 0 ? parts : [raw];

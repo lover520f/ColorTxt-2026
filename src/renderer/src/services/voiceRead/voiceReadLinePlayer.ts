@@ -18,7 +18,9 @@ import {
 } from "./voiceReadSynthesisClient";
 import {
   voiceReadChunkUnitsForEngine,
+  voiceReadEdgeFetchBufferSize,
   voiceReadPlaybackKind,
+  voiceReadRequiresSerialChunkFetch,
 } from "./voiceReadEngineRouting";
 import {
   hasVoiceReadSpeakableText,
@@ -31,6 +33,8 @@ const DASH_PCM_SAMPLE_RATE = 24000;
 /** 已合成段保留在内存，跳转不重拉 */
 const EDGE_MP3_CACHE_LIMIT = 64;
 const DASH_PCM_CACHE_LIMIT = 48;
+/** 解码后短于该时长视为无效，避免零时长段连排导致高亮连跳 */
+const MIN_DECODED_CHUNK_DURATION_SEC = 0.05;
 
 function sleepMs(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -214,6 +218,7 @@ export class VoiceReadLinePlayer {
 
   /** Edge 会话 */
   private edgeFetchBuffer = new Map<number, Promise<ArrayBuffer>>();
+  private edgeFetchBufferLimit = VoiceReadLinePlayer.EDGE_BUFFER_SIZE;
   private edgeProducerIndex = 0;
   private edgeProducerWake: (() => void) | null = null;
   private edgeChunks: VoiceReadSpeakChunk[] = [];
@@ -227,6 +232,9 @@ export class VoiceReadLinePlayer {
   private edgePlayingNotified = false;
   private edgeChunkStartTimers = new Set<ReturnType<typeof setTimeout>>();
   private edgePausedAt = 0;
+  /** 按排程顺序依次触发 onChunkChange，防止多段同时 notify 高亮连跳 */
+  private timelineScheduleOrdinal = 0;
+  private timelineNotifyThroughOrdinal = -1;
 
   /** DashScope 会话 */
   private dashAudioCtx: AudioContext | null = null;
@@ -654,6 +662,12 @@ export class VoiceReadLinePlayer {
     chunks: VoiceReadSpeakChunk[],
   ): void {
     if (settings.engine === "system") return;
+    if (
+      this.activeEdgeSessionId > 0 &&
+      voiceReadRequiresSerialChunkFetch(settings)
+    ) {
+      return;
+    }
     const use = normalizeSpeakChunks(chunks);
     if (use.length === 0) return;
     if (voiceReadPlaybackKind(settings.engine) === "pcm") {
@@ -1042,13 +1056,16 @@ export class VoiceReadLinePlayer {
     const sessionId = this.bumpPlaybackSession();
     this.activeEdgeSessionId = sessionId;
     this.edgeTimelineSessionId = sessionId;
-    const BUFFER = VoiceReadLinePlayer.EDGE_BUFFER_SIZE;
+    const BUFFER = voiceReadEdgeFetchBufferSize(settings);
+    this.edgeFetchBufferLimit = BUFFER;
     this.edgeChunks = chunks;
     this.edgeSettings = settings;
     this.edgeAllChunksDone = false;
     this.edgeHasAudioData = false;
     this.edgePlayingNotified = false;
     this.edgePausedAt = 0;
+    this.timelineScheduleOrdinal = 0;
+    this.timelineNotifyThroughOrdinal = -1;
     this.edgeFetchBuffer.clear();
     this.edgeProducerIndex = 0;
 
@@ -1091,7 +1108,7 @@ export class VoiceReadLinePlayer {
       const settings = this.edgeSettings;
       const ch = chunks[i];
       if (!settings || !ch) break;
-      if (i > 0) {
+      if (i > 0 && this.edgeHasAudioData) {
         await this.awaitEdgePlaybackCaughtUp(sessionId);
       }
       try {
@@ -1156,7 +1173,7 @@ export class VoiceReadLinePlayer {
     settings: VoiceReadSettings,
     chunks: VoiceReadSpeakChunk[],
   ): Promise<void> {
-    const BUFFER = VoiceReadLinePlayer.EDGE_BUFFER_SIZE;
+    const BUFFER = this.edgeFetchBufferLimit;
     while (this.edgeProducerIndex < chunks.length) {
       if (!this.isPlaybackSessionCurrent(sessionId) || this.stopped) return;
       while (this.edgeFetchBuffer.size >= BUFFER) {
@@ -1264,7 +1281,10 @@ export class VoiceReadLinePlayer {
         await this.edgeDecodeAndSchedule(sessionId, buf, index, total);
         return;
       } catch (e) {
-        if (isDecodeAudioDataEncodingError(e) && attempt < maxAttempts - 1) {
+        const msg = (e as Error)?.message ?? "";
+        const retryable =
+          isDecodeAudioDataEncodingError(e) || /音频过短/.test(msg);
+        if (retryable && attempt < maxAttempts - 1) {
           this.invalidateEdgeChunkCache(
             settings,
             chunk.text,
@@ -1309,6 +1329,9 @@ export class VoiceReadLinePlayer {
     ) {
       throw new Error("aborted");
     }
+    if (audioBuffer.duration < MIN_DECODED_CHUNK_DURATION_SEC) {
+      throw new Error("语音合成音频过短");
+    }
 
     const ctx = this.edgeAudioCtx;
     const gain = this.edgeGain;
@@ -1317,24 +1340,19 @@ export class VoiceReadLinePlayer {
     src.connect(gain);
 
     const startAt = Math.max(ctx.currentTime, this.edgeScheduledEnd);
-    const notify = () => {
-      if (this.stopped || !this.isPlaybackSessionCurrent(sessionId)) return;
-      this.onChunkChange?.(index, total);
-    };
-    const delayMs = Math.max(0, (startAt - ctx.currentTime) * 1000);
-    if (delayMs <= 16) {
-      notify();
-    } else {
-      const timer = setTimeout(() => {
-        this.edgeChunkStartTimers.delete(timer);
-        notify();
-      }, delayMs);
-      this.edgeChunkStartTimers.add(timer);
-    }
     if (!this.isPlaybackSessionCurrent(sessionId)) {
       throw new Error("aborted");
     }
     src.start(startAt);
+    const scheduleOrdinal = this.timelineScheduleOrdinal++;
+    await this.scheduleEdgeChunkNotify(
+      sessionId,
+      index,
+      total,
+      startAt,
+      ctx,
+      scheduleOrdinal,
+    );
     if (sessionId !== this.edgeTimelineSessionId) {
       throw new Error("aborted");
     }
@@ -1363,6 +1381,8 @@ export class VoiceReadLinePlayer {
     }
     this.edgeGain = null;
     this.edgeScheduledEnd = 0;
+    this.timelineScheduleOrdinal = 0;
+    this.timelineNotifyThroughOrdinal = -1;
     this.edgeFetchBuffer.clear();
     this.edgeProducerWake?.();
     this.edgeProducerWake = null;
@@ -1382,6 +1402,8 @@ export class VoiceReadLinePlayer {
     const sessionSignal = this.dashAbort.signal;
     this.dashAllChunksDone = false;
     this.dashHasAudioData = false;
+    this.timelineScheduleOrdinal = 0;
+    this.timelineNotifyThroughOrdinal = -1;
 
     this.dashAudioCtx = new AudioContext();
     this.dashGain = this.dashAudioCtx.createGain();
@@ -1516,6 +1538,26 @@ export class VoiceReadLinePlayer {
     }
   }
 
+  /** 按 AudioContext 时间线在 startAt 触发 onChunkChange（不用墙钟 setTimeout，避免 suspend 时高亮抢跑） */
+  private scheduleEdgeChunkNotify(
+    sessionId: number,
+    index: number,
+    total: number,
+    startAt: number,
+    ctx: AudioContext,
+    scheduleOrdinal: number,
+  ): Promise<void> {
+    return this.runTimelineChunkNotify(
+      sessionId,
+      index,
+      total,
+      startAt,
+      ctx,
+      () => this.ensureEdgeAudioRunning(),
+      scheduleOrdinal,
+    );
+  }
+
   /** 与 Edge 一致：在排播时间线 startAt 触发 onChunkChange，而非合成开始时 */
   private scheduleDashChunkNotify(
     sessionId: number,
@@ -1523,21 +1565,44 @@ export class VoiceReadLinePlayer {
     total: number,
     startAt: number,
     ctx: AudioContext,
+    scheduleOrdinal: number,
   ): void {
-    const notify = () => {
+    void this.runTimelineChunkNotify(
+      sessionId,
+      index,
+      total,
+      startAt,
+      ctx,
+      () => this.ensureDashAudioRunning(),
+      scheduleOrdinal,
+    );
+  }
+
+  private async runTimelineChunkNotify(
+    sessionId: number,
+    index: number,
+    total: number,
+    startAt: number,
+    ctx: AudioContext,
+    ensureRunning: () => Promise<void>,
+    scheduleOrdinal: number,
+  ): Promise<void> {
+    for (;;) {
       if (this.stopped || !this.isPlaybackSessionCurrent(sessionId)) return;
-      this.onChunkChange?.(index, total);
-    };
-    const delayMs = Math.max(0, (startAt - ctx.currentTime) * 1000);
-    if (delayMs <= 16) {
-      notify();
-      return;
+      if (ctx.state === "closed") return;
+      while (scheduleOrdinal > this.timelineNotifyThroughOrdinal + 1) {
+        if (this.stopped || !this.isPlaybackSessionCurrent(sessionId)) return;
+        await sleepMs(20);
+      }
+      await ensureRunning();
+      if (ctx.currentTime >= startAt - 0.02) {
+        if (this.stopped || !this.isPlaybackSessionCurrent(sessionId)) return;
+        this.onChunkChange?.(index, total);
+        this.timelineNotifyThroughOrdinal = scheduleOrdinal;
+        return;
+      }
+      await sleepMs(20);
     }
-    const timer = setTimeout(() => {
-      this.dashChunkStartTimers.delete(timer);
-      notify();
-    }, delayMs);
-    this.dashChunkStartTimers.add(timer);
   }
 
   private scheduleDashChunkPlayback(
@@ -1574,9 +1639,17 @@ export class VoiceReadLinePlayer {
     src.connect(gain);
 
     const startAt = Math.max(ctx.currentTime, this.dashScheduledEnd);
-    this.scheduleDashChunkNotify(sessionId, index, total, startAt, ctx);
+    const scheduleOrdinal = this.timelineScheduleOrdinal++;
     if (!this.isPlaybackSessionCurrent(sessionId)) return;
     src.start(startAt);
+    this.scheduleDashChunkNotify(
+      sessionId,
+      index,
+      total,
+      startAt,
+      ctx,
+      scheduleOrdinal,
+    );
     this.dashScheduledEnd =
       startAt + audioBuffer.duration / src.playbackRate.value;
     this.dashHasAudioData = true;
@@ -1644,12 +1717,20 @@ export class VoiceReadLinePlayer {
       };
       try {
         const startAt = Math.max(ctx.currentTime, this.dashScheduledEnd);
-        this.scheduleDashChunkNotify(sessionId, 0, 1, startAt, ctx);
+        const scheduleOrdinal = this.timelineScheduleOrdinal++;
         if (!this.isPlaybackSessionCurrent(sessionId)) {
           resolve();
           return;
         }
         src.start(startAt);
+        this.scheduleDashChunkNotify(
+          sessionId,
+          0,
+          1,
+          startAt,
+          ctx,
+          scheduleOrdinal,
+        );
         this.dashScheduledEnd =
           startAt + audioBuffer.duration / src.playbackRate.value;
       } catch (e) {

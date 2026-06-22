@@ -61,6 +61,17 @@ export const VOICE_READ_ENGINE_DEFAULTS: Record<
       dialogueFemaleVoiceId: "danya_xuejie",
     },
   },
+  mimo: {
+    voiceId: "冰糖",
+    model: "mimo-v2.5-tts",
+    singleVoiceId: "冰糖",
+    multi: {
+      narrationVoiceId: "冰糖",
+      dialogueVoiceId: "苏打",
+      dialogueMaleVoiceId: "苏打",
+      dialogueFemaleVoiceId: "茉莉",
+    },
+  },
 };
 
 export const DEFAULT_DASHSCOPE_TTS_MODEL =
@@ -68,6 +79,9 @@ export const DEFAULT_DASHSCOPE_TTS_MODEL =
 
 export const DEFAULT_MINIMAX_TTS_MODEL =
   VOICE_READ_ENGINE_DEFAULTS.minimax.model!;
+
+export const DEFAULT_MIMO_TTS_MODEL =
+  VOICE_READ_ENGINE_DEFAULTS.mimo.model!;
 
 function readEngineDefaults(engine: VoiceReadEngineId): VoiceReadEngineDefaults {
   return VOICE_READ_ENGINE_DEFAULTS[engine];
