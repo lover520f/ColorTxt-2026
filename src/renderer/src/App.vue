@@ -63,6 +63,7 @@ import { useAppWindowBindings } from "./composables/useAppWindowBindings";
 import { useAiChapterPlainTextBridge } from "./composables/useAiChapterPlainTextBridge";
 import { isEbookFilePath, isMarkdownFilePath } from "./ebook/ebookFormat";
 import { useAppVoiceRead } from "./composables/useAppVoiceRead";
+import { useAppTimedScroll } from "./composables/useAppTimedScroll";
 import { useTxtStreamPipeline } from "./composables/useTxtStreamPipeline";
 import { fileHistoryKey } from "./stores/recentHistoryStore";
 import {
@@ -164,6 +165,10 @@ import {
 } from "@shared/textConvertTypes";
 import { applyTextDisplayConverts } from "./services/textConvertApply";
 import { mergeVoiceReadSettings, type VoiceReadSettings } from "./constants/voiceRead";
+import {
+  mergeTimedScrollSettings,
+  type TimedScrollSettings,
+} from "./constants/timedScroll";
 import { migrateVoiceReadFromPersisted, cloneVoiceReadProfiles } from "./services/voiceRead/voiceReadProfileState";
 import {
   voiceReadAiSpeakerTokenUsage,
@@ -522,6 +527,9 @@ const canUseAiSmartFormat = computed(() =>
 );
 /** 全屏时阅读区域宽度（百分比） */
 const fullscreenReaderWidthPercent = ref(defaultFullscreenReaderWidthPercent);
+const timedScrollSettings = ref<TimedScrollSettings>(
+  mergeTimedScrollSettings(undefined),
+);
 /** 电子书转换缓存目录；默认 userData/ConvertedTxt；设置里清空则为与源文件同目录 */
 const ebookConvertOutputDir = ref(
   (() => {
@@ -1111,6 +1119,7 @@ const persistence = useAppPersistence({
   editAutoRefreshChapterList,
   aiSmartFormat,
   fullscreenReaderWidthPercent,
+  timedScrollSettings,
   fileMetaRecords,
   shortcutBindings,
   defaultShortcutBindings,
@@ -1175,6 +1184,11 @@ watch(wordcloudFontFamily, () => persistSettings());
 watch(characterCardTextureEffect, () => persistSettings());
 watch(
   voiceReadSettings,
+  () => persistSettings(),
+  { deep: true },
+);
+watch(
+  timedScrollSettings,
   () => persistSettings(),
   { deep: true },
 );
@@ -1700,6 +1714,25 @@ const {
   aiFeaturesEnabled,
   characterRoster: currentFileCharacterRoster,
 });
+
+const {
+  isTimedScrollActive,
+  canStartTimedScroll,
+  toggleTimedScroll,
+} = useAppTimedScroll({
+  readerRef,
+  timedScrollSettings,
+  currentFile,
+  loading,
+  readerEditMode,
+  viewportAtBottom,
+  isVoiceReadActive,
+});
+
+function onVoiceReadToggle() {
+  if (!isVoiceReadActive.value && isTimedScrollActive.value) return;
+  toggleVoiceReadToolbar();
+}
 
 function guardReaderNavigation(action: () => void): void {
   if (isVoiceReadNavigationBlocked.value) return;
@@ -2759,6 +2792,7 @@ async function applySettings(payload: SettingsApplyPayload) {
   const prevCompressBlankKeepOneBlank = compressBlankKeepOneBlank.value;
   const prevChapterMinCharCount = chapterMinCharCount.value;
   monacoSmoothScrolling.value = payload.monacoSmoothScrolling;
+  timedScrollSettings.value = mergeTimedScrollSettings(payload.timedScroll);
   readerEditShowLineNumbers.value = payload.readerEditShowLineNumbers;
   readerEditMinimap.value = payload.readerEditMinimap;
   editAutoRefreshChapterList.value = payload.editAutoRefreshChapterList;
@@ -3007,6 +3041,8 @@ useAppShellThemeWatch({
         :can-bookmark="canBookmark"
         :voice-read-active="isVoiceReadActive"
         :can-voice-read="canVoiceRead"
+        :timed-scroll-active="isTimedScrollActive"
+        :can-timed-scroll="canStartTimedScroll"
         :voice-read-header-locked="isVoiceReadHeaderLocked"
         :current-theme="currentTheme"
         :show-sidebar="showSidebar"
@@ -3079,7 +3115,8 @@ useAppShellThemeWatch({
         :ai-smart-format-running="aiSmartFormatRunning"
         :smart-format-review-active="aiSmartFormatReviewSession != null"
         @ai-smart-format-full="onAiSmartFormatFull"
-        @voice-read-toggle="toggleVoiceReadToolbar"
+        @voice-read-toggle="onVoiceReadToggle"
+        @timed-scroll-toggle="toggleTimedScroll"
       />
     </div>
 
@@ -3432,6 +3469,7 @@ useAppShellThemeWatch({
       :reader-line-height-multiple="readerLineHeightMultiple"
       :compress-blank-keep-one-blank="compressBlankKeepOneBlank"
       :monaco-smooth-scrolling="monacoSmoothScrolling"
+      :timed-scroll-settings="timedScrollSettings"
       :reader-edit-show-line-numbers="readerEditShowLineNumbers"
       :reader-edit-minimap="readerEditMinimap"
       :edit-auto-refresh-chapter-list="editAutoRefreshChapterList"

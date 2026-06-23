@@ -821,7 +821,6 @@ defineExpose({
                 :min="64"
                 :max="2048"
                 integer
-                class="numCompact"
                 aria-label="文生图宽度"
               />
             </div>
@@ -836,7 +835,6 @@ defineExpose({
                 :min="64"
                 :max="2048"
                 integer
-                class="numCompact"
                 aria-label="文生图高度"
               />
             </div>
@@ -852,7 +850,6 @@ defineExpose({
               :min="1"
               :max="150"
               integer
-              class="numCompact"
               aria-label="采样步数"
             />
           </div>
@@ -866,7 +863,6 @@ defineExpose({
               v-model="modelValue.txt2img.cfgScale"
               :min="1"
               :max="30"
-              class="numCompact"
               aria-label="提示词相关性"
             />
           </div>
@@ -907,7 +903,6 @@ defineExpose({
               :min="-1"
               :max="2_147_483_647"
               integer
-              class="numCompact"
               aria-label="随机种子"
             />
           </div>
@@ -961,7 +956,6 @@ defineExpose({
                 v-model="modelValue.txt2img.hiresScale"
                 :min="1"
                 :max="8"
-                class="numCompact"
                 aria-label="高分辨率放大倍数"
               />
             </div>
@@ -978,7 +972,6 @@ defineExpose({
                 :min="0"
                 :max="150"
                 integer
-                class="numCompact"
                 aria-label="高分迭代步数"
               />
             </div>
@@ -996,7 +989,6 @@ defineExpose({
                 :min="0"
                 :max="1"
                 :step="0.01"
-                class="numCompact"
                 aria-label="高分辨率重绘幅度"
               />
             </div>
@@ -1011,7 +1003,6 @@ defineExpose({
                 :min="0"
                 :max="8192"
                 integer
-                class="numCompact"
                 aria-label="高分辨率目标宽度"
               />
             </div>
@@ -1027,7 +1018,6 @@ defineExpose({
                 :min="0"
                 :max="8192"
                 integer
-                class="numCompact"
                 aria-label="高分辨率目标高度"
               />
             </div>
@@ -1187,11 +1177,6 @@ defineExpose({
   font-family: inherit;
   line-height: 1.45;
 }
-
-.numCompact {
-  width: 120px;
-}
-
 .txt2imgBackendSelect,
 .txt2imgQualitySelect,
 .txt2imgCloudSizeSelect {

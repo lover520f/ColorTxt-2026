@@ -10,6 +10,7 @@ import {
 import type { ChapterMatchRule } from "../chapter";
 import type { AiCustomSkill, AiSkillUserOverride } from "@shared/aiSkills";
 import type { VoiceReadSettings } from "../constants/voiceRead";
+import type { TimedScrollSettings } from "../constants/timedScroll";
 import type { VoiceReadProfile } from "@shared/voiceReadProfiles";
 import type { CharacterRosterEntry } from "@shared/characterTypes";
 import { bookmarkNoteInputRefKey } from "../injectionKeys";
@@ -44,6 +45,7 @@ const props = defineProps<{
   compressBlankKeepOneBlank: boolean;
   monacoCustomHighlight: boolean;
   txtrDelimitedMatchCrossLine: boolean;
+  timedScrollSettings: TimedScrollSettings;
   chapterRules: ChapterMatchRule[];
   chapterRuleErrorText: string;
   editingBookmarkLine: number | null;
@@ -208,6 +210,7 @@ onBeforeUnmount(() => {
     :compress-blank-keep-one-blank="compressBlankKeepOneBlank"
     :monaco-custom-highlight="monacoCustomHighlight"
     :txtr-delimited-match-cross-line="txtrDelimitedMatchCrossLine"
+    :timed-scroll-settings="timedScrollSettings"
     :ebook-convert-output-dir="ebookConvertOutputDir"
     :character-portrait-cache-dir="characterPortraitCacheDir"
     :ai-skills-enabled="aiSkillsEnabled"

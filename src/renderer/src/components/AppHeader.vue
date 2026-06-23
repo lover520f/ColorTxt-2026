@@ -6,6 +6,7 @@ import MoreMenu from "./MoreMenu.vue";
 import ConvertMenu from "./ConvertMenu.vue";
 import { icons } from "../icons";
 import readingSvg from "../assets/reading.svg?raw";
+import playSvg from "../assets/play.svg?raw";
 import type { ShortcutBindingMap } from "../services/shortcutRegistry";
 import type {
   TextConvertWidthMode,
@@ -51,6 +52,9 @@ const props = withDefaults(
     /** 语音朗读模式已开启 */
     voiceReadActive?: boolean;
     canVoiceRead?: boolean;
+    /** 定时滚动已开启 */
+    timedScrollActive?: boolean;
+    canTimedScroll?: boolean;
     /** 朗读模式中：禁用编辑/字体/行高/压缩空行/缩进/高级换行 */
     voiceReadHeaderLocked?: boolean;
     /** 阅读器是否处于可编辑模式 */
@@ -76,6 +80,8 @@ const props = withDefaults(
     canBookmark: true,
     voiceReadActive: false,
     canVoiceRead: true,
+    timedScrollActive: false,
+    canTimedScroll: true,
     voiceReadHeaderLocked: false,
     readerEditMode: false,
     canEnterReaderEditMode: false,
@@ -135,6 +141,7 @@ const emit = defineEmits<{
   saveReaderFile: [];
   aiSmartFormatFull: [];
   voiceReadToggle: [];
+  timedScrollToggle: [];
 }>();
 
 const vrFormatLock = computed(() => props.voiceReadHeaderLocked);
@@ -211,13 +218,23 @@ const vrFormatLock = computed(() => props.voiceReadHeaderLocked);
         />
         <span class="toolbarDivider" aria-hidden="true"></span>
         <IconButton
+          class="timedScrollBtn"
+          :icon-html="playSvg"
+          :active="timedScrollActive"
+          :pressed="timedScrollActive"
+          title="定时滚动"
+          aria-label="定时滚动"
+          :disabled="!timedScrollActive && !canTimedScroll"
+          @click="emit('timedScrollToggle')"
+        />
+        <IconButton
           class="voiceReadBtn"
           :icon-html="readingSvg"
           :active="voiceReadActive"
           :pressed="voiceReadActive"
           title="语音朗读"
           aria-label="语音朗读"
-          :disabled="!voiceReadActive && !canVoiceRead"
+          :disabled="!voiceReadActive && (!canVoiceRead || timedScrollActive)"
           @click="emit('voiceReadToggle')"
         />
         <span class="toolbarDivider" aria-hidden="true"></span>
@@ -436,15 +453,18 @@ const vrFormatLock = computed(() => props.voiceReadHeaderLocked);
   gap: 8px;
 }
 
-.voiceReadBtn.iconBtn.active {
+.voiceReadBtn.iconBtn.active,
+.timedScrollBtn.iconBtn.active {
   background: var(--primary);
 }
 
-.voiceReadBtn.iconBtn.active:hover {
+.voiceReadBtn.iconBtn.active:hover,
+.timedScrollBtn.iconBtn.active:hover {
   background: var(--primary-hover);
 }
 
-.voiceReadBtn.iconBtn.active :deep(.icon) {
+.voiceReadBtn.iconBtn.active :deep(.icon),
+.timedScrollBtn.iconBtn.active :deep(.icon) {
   color: #ffffff;
 }
 </style>

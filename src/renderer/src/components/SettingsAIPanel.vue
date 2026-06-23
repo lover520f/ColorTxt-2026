@@ -476,7 +476,6 @@ defineExpose({
               :min="256"
               :max="128000"
               integer
-              class="numCompact"
             />
           </div>
           <p class="settingsHint">
@@ -493,7 +492,6 @@ defineExpose({
               :min="1"
               :max="64"
               integer
-              class="numCompact"
             />
           </div>
           <p class="settingsHint">
@@ -510,7 +508,6 @@ defineExpose({
               :min="MAX_TOOL_ROUNDS_MIN"
               :max="MAX_TOOL_ROUNDS_MAX"
               integer
-              class="numCompact"
             />
           </div>
           <p class="settingsHint">
@@ -579,7 +576,6 @@ defineExpose({
                 v-model="modelValue.chat.tokenPricePerMillion.inputCacheHit"
                 :min="0"
                 :step="0.01"
-                class="numCompact"
                 aria-label="输入缓存命中每百万 Token 价格"
               />
             </div>
@@ -591,7 +587,6 @@ defineExpose({
                 v-model="modelValue.chat.tokenPricePerMillion.inputCacheMiss"
                 :min="0"
                 :step="0.01"
-                class="numCompact"
                 aria-label="输入缓存未命中每百万 Token 价格"
               />
             </div>
@@ -603,7 +598,6 @@ defineExpose({
                 v-model="modelValue.chat.tokenPricePerMillion.output"
                 :min="0"
                 :step="0.01"
-                class="numCompact"
                 aria-label="输出每百万 Token 价格"
               />
             </div>
@@ -657,7 +651,6 @@ defineExpose({
               :min="WORDCLOUD_MAX_WORDS_MIN"
               :max="WORDCLOUD_MAX_WORDS_MAX"
               integer
-              class="numCompact"
             />
           </div>
         </div>
@@ -954,12 +947,6 @@ defineExpose({
 .temperatureSlider {
   width: 150px;
 }
-
-.numCompact {
-  width: 120px;
-  flex: 0 0 120px;
-}
-
 .quickQRow {
   display: flex;
   align-items: stretch;

@@ -49,6 +49,12 @@ import {
   skipUnloadPersistenceSessionKey,
   APP_DISPLAY_NAME,
 } from "../constants/appUi";
+import {
+  defaultTimedScrollIntervalMs,
+  defaultTimedScrollRange,
+  mergeTimedScrollSettings,
+  type TimedScrollSettings,
+} from "../constants/timedScroll";
 import { appAlert } from "../services/appDialog";
 import { getBuiltinEmbeddingBlockMessage } from "../ai/embeddingReady";
 import { icons } from "../icons";
@@ -101,6 +107,7 @@ export type SettingsApplyPayload = {
   lineHeightMultiple: number;
   compressBlankKeepOneBlank: boolean;
   txtrDelimitedMatchCrossLine: boolean;
+  timedScroll: TimedScrollSettings;
   ebookConvertOutputDir: string;
   characterPortraitCacheDir: string;
   aiSkillsEnabled: Record<string, boolean>;
@@ -129,6 +136,7 @@ const props = defineProps<{
   compressBlankKeepOneBlank: boolean;
   monacoCustomHighlight: boolean;
   txtrDelimitedMatchCrossLine: boolean;
+  timedScrollSettings: TimedScrollSettings;
   ebookConvertOutputDir: string;
   characterPortraitCacheDir: string;
   aiSkillsEnabled: Record<string, boolean>;
@@ -180,6 +188,8 @@ const draftCompressBlankKeepOneBlank = ref(false);
 const draftTxtrDelimitedMatchCrossLine = ref(
   defaultTxtrDelimitedMatchCrossLine,
 );
+const draftTimedScrollRange = ref(defaultTimedScrollRange);
+const draftTimedScrollIntervalMs = ref(defaultTimedScrollIntervalMs);
 const draftEbookConvertOutputDir = ref("");
 const draftCharacterPortraitCacheDir = ref("");
 
@@ -224,6 +234,9 @@ function syncDraftFromProps() {
   draftAiSmartFormat.value = mergeAiSmartFormatSettings(props.aiSmartFormat);
   draftCompressBlankKeepOneBlank.value = props.compressBlankKeepOneBlank;
   draftTxtrDelimitedMatchCrossLine.value = props.txtrDelimitedMatchCrossLine;
+  const timedScrollMerged = mergeTimedScrollSettings(props.timedScrollSettings);
+  draftTimedScrollRange.value = timedScrollMerged.range;
+  draftTimedScrollIntervalMs.value = timedScrollMerged.intervalMs;
   draftEbookConvertOutputDir.value = props.ebookConvertOutputDir;
   draftCharacterPortraitCacheDir.value = props.characterPortraitCacheDir;
   draftAiSkillOverrides.value = mergeAiSkillOverrides(props.aiSkillOverrides);
@@ -327,6 +340,8 @@ function resetReadingDraft() {
   draftCompressBlankKeepOneBlank.value = defaultCompressBlankKeepOneBlank;
   draftTxtrDelimitedMatchCrossLine.value = defaultTxtrDelimitedMatchCrossLine;
   draftFullscreenReaderWidthPercent.value = defaultFullscreenReaderWidthPercent;
+  draftTimedScrollRange.value = defaultTimedScrollRange;
+  draftTimedScrollIntervalMs.value = defaultTimedScrollIntervalMs;
 }
 
 function resetEditDraft() {
@@ -511,6 +526,10 @@ async function onConfirm() {
     lineHeightMultiple: draftLineHeightMultiple.value,
     compressBlankKeepOneBlank: draftCompressBlankKeepOneBlank.value,
     txtrDelimitedMatchCrossLine: draftTxtrDelimitedMatchCrossLine.value,
+    timedScroll: mergeTimedScrollSettings({
+      range: draftTimedScrollRange.value,
+      intervalMs: draftTimedScrollIntervalMs.value,
+    }),
     ebookConvertOutputDir: draftEbookConvertOutputDir.value.trim(),
     characterPortraitCacheDir: draftCharacterPortraitCacheDir.value.trim(),
     aiSkillsEnabled: mergeAiSkillsEnabled(
@@ -598,6 +617,10 @@ async function onClearCache() {
               "
               v-model:draft-fullscreen-reader-width-percent="
                 draftFullscreenReaderWidthPercent
+              "
+              v-model:draft-timed-scroll-range="draftTimedScrollRange"
+              v-model:draft-timed-scroll-interval-ms="
+                draftTimedScrollIntervalMs
               "
               :monaco-custom-highlight="monacoCustomHighlight"
             />

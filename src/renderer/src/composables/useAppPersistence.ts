@@ -115,6 +115,10 @@ import {
   type VoiceReadSettings,
 } from "../constants/voiceRead";
 import {
+  mergeTimedScrollSettings,
+  type TimedScrollSettings,
+} from "../constants/timedScroll";
+import {
   collectVoiceReadProfileApiKeys,
   hydrateVoiceReadProfilesApiKeys,
   serializeVoiceReadProfileSecrets,
@@ -204,6 +208,7 @@ export function useAppPersistence(deps: {
   editAutoRefreshChapterList: Ref<boolean>;
   aiSmartFormat: Ref<AiSmartFormatSettings>;
   fullscreenReaderWidthPercent: Ref<number>;
+  timedScrollSettings: Ref<TimedScrollSettings>;
   fileMetaRecords: Ref<FileMetaRecord[]>;
   shortcutBindings: Ref<ShortcutBindingMap>;
   defaultShortcutBindings: ShortcutBindingMap;
@@ -881,6 +886,7 @@ export function useAppPersistence(deps: {
       deps.fullscreenReaderWidthPercent.value =
         defaultFullscreenReaderWidthPercent;
     }
+    deps.timedScrollSettings.value = mergeTimedScrollSettings(data.timedScroll);
     deps.shortcutBindings.value = mergeShortcutBindings(
       deps.defaultShortcutBindings,
       data.shortcutBindings,
@@ -1075,6 +1081,7 @@ export function useAppPersistence(deps: {
       editAutoRefreshChapterList: deps.editAutoRefreshChapterList.value,
       aiSmartFormat: deps.aiSmartFormat.value,
       fullscreenReaderWidthPercent: deps.fullscreenReaderWidthPercent.value,
+      timedScroll: deps.timedScrollSettings.value,
       shortcutBindings: deps.shortcutBindings.value,
       readerPaletteOverridesLight:
         Object.keys(deps.readerPaletteOverridesLight.value).length > 0
