@@ -80,6 +80,8 @@ export type PersistedSettingsData = {
   monacoAdvancedWrapping?: boolean;
   /** Monaco 阅读区平滑滚动（滚轮、程序性 setScrollTop/revealLine 等） */
   monacoSmoothScrolling?: boolean;
+  /** 阅读区顶部粘性章节标题（Monaco stickyScroll） */
+  stickyChapterTitleEnabled?: boolean;
   /** 编辑模式下是否显示行号 */
   readerEditShowLineNumbers?: boolean;
   /** 编辑模式下是否显示小地图 */
@@ -310,6 +312,9 @@ export function loadPersistedSettingsData(
   }
   if (typeof obj.monacoSmoothScrolling === "boolean") {
     data.monacoSmoothScrolling = obj.monacoSmoothScrolling;
+  }
+  if (typeof obj.stickyChapterTitleEnabled === "boolean") {
+    data.stickyChapterTitleEnabled = obj.stickyChapterTitleEnabled;
   }
   if (typeof obj.readerEditShowLineNumbers === "boolean") {
     data.readerEditShowLineNumbers = obj.readerEditShowLineNumbers;

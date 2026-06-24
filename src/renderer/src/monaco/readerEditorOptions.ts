@@ -79,6 +79,8 @@ export type ReaderEditorCreateOptionsInput = {
   wrappingStrategyAdvanced?: boolean;
   /** Monaco `smoothScrolling`；与设置「平滑滚动」一致 */
   smoothScrolling?: boolean;
+  /** Monaco `stickyScroll`；与设置「启用粘性章节标题」一致 */
+  stickyChapterTitleEnabled?: boolean;
 };
 
 /**
@@ -118,6 +120,7 @@ export function buildReaderEditorSharedCoreOptions(
     theme = "vs",
     wrappingStrategyAdvanced = false,
     smoothScrolling = true,
+    stickyChapterTitleEnabled = true,
   } = input;
 
   return {
@@ -128,7 +131,10 @@ export function buildReaderEditorSharedCoreOptions(
     automaticLayout: true,
     smoothScrolling,
     wrappingStrategy: wrappingStrategyAdvanced ? "advanced" : "simple",
-    stickyScroll: { enabled: true, defaultModel: "outlineModel" },
+    stickyScroll: {
+      enabled: stickyChapterTitleEnabled,
+      defaultModel: "outlineModel",
+    },
     lineNumbers: "off",
     lineNumbersMinChars: 0,
     glyphMargin: false,

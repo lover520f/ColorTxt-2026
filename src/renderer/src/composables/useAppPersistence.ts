@@ -206,6 +206,7 @@ export function useAppPersistence(deps: {
   chapterMinCharCount: Ref<number>;
   monacoAdvancedWrapping: Ref<boolean>;
   monacoSmoothScrolling: Ref<boolean>;
+  stickyChapterTitleEnabled: Ref<boolean>;
   readerEditShowLineNumbers: Ref<boolean>;
   readerEditMinimap: Ref<boolean>;
   editAutoRefreshChapterList: Ref<boolean>;
@@ -875,6 +876,9 @@ export function useAppPersistence(deps: {
     if (typeof data.monacoSmoothScrolling === "boolean") {
       deps.monacoSmoothScrolling.value = data.monacoSmoothScrolling;
     }
+    if (typeof data.stickyChapterTitleEnabled === "boolean") {
+      deps.stickyChapterTitleEnabled.value = data.stickyChapterTitleEnabled;
+    }
     if (typeof data.readerEditShowLineNumbers === "boolean") {
       deps.readerEditShowLineNumbers.value = data.readerEditShowLineNumbers;
     }
@@ -1091,6 +1095,7 @@ export function useAppPersistence(deps: {
       chapterMinCharCount: deps.chapterMinCharCount.value,
       monacoAdvancedWrapping: deps.monacoAdvancedWrapping.value,
       monacoSmoothScrolling: deps.monacoSmoothScrolling.value,
+      stickyChapterTitleEnabled: deps.stickyChapterTitleEnabled.value,
       readerEditShowLineNumbers: deps.readerEditShowLineNumbers.value,
       readerEditMinimap: deps.readerEditMinimap.value,
       editAutoRefreshChapterList: deps.editAutoRefreshChapterList.value,

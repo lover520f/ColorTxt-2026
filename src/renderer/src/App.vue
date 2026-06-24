@@ -118,6 +118,7 @@ import {
   defaultMonacoAdvancedWrapping,
   defaultMonacoCustomHighlight,
   defaultMonacoSmoothScrolling,
+  defaultStickyChapterTitleEnabled,
   defaultReaderEditShowLineNumbers,
   defaultReaderEditMinimap,
   defaultEditAutoRefreshChapterList,
@@ -516,6 +517,8 @@ const chapterMinCharCount = ref(defaultChapterMinCharCount);
 const monacoAdvancedWrapping = ref(defaultMonacoAdvancedWrapping);
 /** Monaco 阅读区平滑滚动（设置可关） */
 const monacoSmoothScrolling = ref(defaultMonacoSmoothScrolling);
+/** 阅读区顶部粘性章节标题 */
+const stickyChapterTitleEnabled = ref(defaultStickyChapterTitleEnabled);
 const readerEditShowLineNumbers = ref(defaultReaderEditShowLineNumbers);
 const readerEditMinimap = ref(defaultReaderEditMinimap);
 const editAutoRefreshChapterList = ref(defaultEditAutoRefreshChapterList);
@@ -1114,6 +1117,7 @@ const persistence = useAppPersistence({
   chapterMinCharCount,
   monacoAdvancedWrapping,
   monacoSmoothScrolling,
+  stickyChapterTitleEnabled,
   readerEditShowLineNumbers,
   readerEditMinimap,
   editAutoRefreshChapterList,
@@ -2793,6 +2797,7 @@ async function applySettings(payload: SettingsApplyPayload) {
   const prevCompressBlankKeepOneBlank = compressBlankKeepOneBlank.value;
   const prevChapterMinCharCount = chapterMinCharCount.value;
   monacoSmoothScrolling.value = payload.monacoSmoothScrolling;
+  stickyChapterTitleEnabled.value = payload.stickyChapterTitleEnabled;
   timedScrollSettings.value = mergeTimedScrollSettings(payload.timedScroll);
   readerEditShowLineNumbers.value = payload.readerEditShowLineNumbers;
   readerEditMinimap.value = payload.readerEditMinimap;
@@ -3303,6 +3308,7 @@ useAppShellThemeWatch({
           :chapter-min-char-count="chapterMinCharCount"
           :monaco-advanced-wrapping="monacoAdvancedWrapping"
           :monaco-smooth-scrolling="monacoSmoothScrolling"
+          :sticky-chapter-title-enabled="stickyChapterTitleEnabled"
           :reader-edit-show-line-numbers="readerEditShowLineNumbers"
           :reader-edit-minimap="readerEditMinimap"
           :stream-loading="loading"
@@ -3471,6 +3477,7 @@ useAppShellThemeWatch({
       :reader-line-height-multiple="readerLineHeightMultiple"
       :compress-blank-keep-one-blank="compressBlankKeepOneBlank"
       :monaco-smooth-scrolling="monacoSmoothScrolling"
+      :sticky-chapter-title-enabled="stickyChapterTitleEnabled"
       :timed-scroll-settings="timedScrollSettings"
       :reader-edit-show-line-numbers="readerEditShowLineNumbers"
       :reader-edit-minimap="readerEditMinimap"

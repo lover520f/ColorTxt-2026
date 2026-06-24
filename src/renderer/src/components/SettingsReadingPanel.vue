@@ -24,6 +24,7 @@ const props = defineProps<{
   draftFontSize: number;
   draftLineHeightMultiple: number;
   draftMonacoSmoothScrolling: boolean;
+  draftStickyChapterTitleEnabled: boolean;
   draftCompressBlankKeepOneBlank: boolean;
   draftTxtrDelimitedMatchCrossLine: boolean;
   draftFullscreenReaderWidthPercent: number;
@@ -36,6 +37,7 @@ defineEmits<{
   "update:draftFontSize": [v: number];
   "update:draftLineHeightMultiple": [v: number];
   "update:draftMonacoSmoothScrolling": [v: boolean];
+  "update:draftStickyChapterTitleEnabled": [v: boolean];
   "update:draftCompressBlankKeepOneBlank": [v: boolean];
   "update:draftTxtrDelimitedMatchCrossLine": [v: boolean];
   "update:draftFullscreenReaderWidthPercent": [v: number];
@@ -113,6 +115,22 @@ const draftMaxLineHeightMultiple = computed(() =>
         </div>
         <p class="settingsHint">
           仅在开启「内容上色」时生效，开启后引号和括号会跨行匹配；<br />如果出现大段非引号/括号内的文本被误上色，是因为原文没有正确关闭引号/括号，可禁用该选项以降低影响范围。
+        </p>
+      </div>
+
+      <div class="settingsRow">
+        <div class="settingsRowMain">
+          <span class="settingsLabel">启用粘性章节标题</span>
+          <SwitchToggle
+            :model-value="draftStickyChapterTitleEnabled"
+            aria-label="启用粘性章节标题"
+            @update:model-value="
+              $emit('update:draftStickyChapterTitleEnabled', $event)
+            "
+          />
+        </div>
+        <p class="settingsHint">
+          滚动时将章节标题粘在顶部；多层级标题会堆叠。
         </p>
       </div>
 
