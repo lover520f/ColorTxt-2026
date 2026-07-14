@@ -288,7 +288,7 @@ function isPickerSwatchSelected(index: number): boolean {
         v-if="hasLineation"
         type="button"
         class="selAction"
-        aria-label="删除划线"
+        aria-label="移除划线"
         @pointerdown.prevent="emit('action', 'deleteLineation')"
       >
         <span
@@ -296,7 +296,7 @@ function isPickerSwatchSelected(index: number): boolean {
           aria-hidden="true"
           v-html="icons.deleteLineation"
         ></span>
-        <span class="selActionLabel">删除划线</span>
+        <span class="selActionLabel">移除划线</span>
       </button>
       <button
         type="button"

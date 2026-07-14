@@ -14,7 +14,7 @@
     "typecheck": "vue-tsc --noEmit",
     "lint": "echo \"(no lint configured)\"",
     "release": "electron-vite build && electron-rebuild -f -w better-sqlite3,opencc && node scripts/prune-pack-deps.mjs && electron-builder --publish always",
-    "postinstall": "electron-rebuild -f -w better-sqlite3,opencc && node scripts/patch-nested-sharp-stub.mjs && node scripts/patch-monaco-hover-pointer-below.mjs"
+    "postinstall": "electron-rebuild -f -w better-sqlite3,opencc && node scripts/patch-nested-sharp-stub.mjs && node scripts/patch-monaco-hover-pointer-below.mjs && node scripts/patch-vite-plugin-monaco-rmdir.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
@@ -44,12 +44,16 @@
     "@types/sortablejs": "^1.15.9",
     "@types/ws": "^8.5.14",
     "@vitejs/plugin-vue": "^5.2.3",
+    "@xmldom/xmldom": "^0.9.10",
+    "cheerio": "^1.2.0",
     "d3-cloud": "^1.2.7",
     "d3-scale": "^4.0.2",
     "electron": "^35.1.4",
     "electron-builder": "^26.0.12",
     "electron-vite": "^3.0.0",
+    "heic-convert": "^2.1.0",
     "jschardet": "^3.1.4",
+    "jsonpath-plus": "^10.4.0",
     "jszip": "^3.10.1",
     "katex": "^0.16.22",
     "marked": "^14.1.3",
@@ -59,12 +63,15 @@
     "monaco-editor": "^0.55.1",
     "pako": "^2.1.0",
     "pdfjs-dist": "^5.6.205",
+    "socks-proxy-agent": "^10.1.0",
     "sortablejs": "^1.15.7",
+    "tough-cookie": "^6.0.1",
     "typescript": "^5.8.2",
     "vite": "^6.2.3",
     "vite-plugin-monaco-editor": "^1.1.0",
     "vue": "^3.5.31",
-    "vue-tsc": "^2.2.8"
+    "vue-tsc": "^2.2.8",
+    "xpath": "^0.0.34"
   },
   "build": {
     "appId": "com.ssnangua.colortxt",
@@ -92,6 +99,14 @@
       {
         "from": "resources/icon.ico",
         "to": "icon.ico"
+      },
+      {
+        "from": "resources/icon_find.png",
+        "to": "icon_find.png"
+      },
+      {
+        "from": "resources/icon_find.ico",
+        "to": "icon_find.ico"
       }
     ],
     "files": [

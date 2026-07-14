@@ -207,6 +207,7 @@ export function useAppPersistence(deps: {
   monacoAdvancedWrapping: Ref<boolean>;
   monacoSmoothScrolling: Ref<boolean>;
   stickyChapterTitleEnabled: Ref<boolean>;
+  chapterNavToolbarEnabled: Ref<boolean>;
   readerEditShowLineNumbers: Ref<boolean>;
   readerEditMinimap: Ref<boolean>;
   editAutoRefreshChapterList: Ref<boolean>;
@@ -879,6 +880,9 @@ export function useAppPersistence(deps: {
     if (typeof data.stickyChapterTitleEnabled === "boolean") {
       deps.stickyChapterTitleEnabled.value = data.stickyChapterTitleEnabled;
     }
+    if (typeof data.chapterNavToolbarEnabled === "boolean") {
+      deps.chapterNavToolbarEnabled.value = data.chapterNavToolbarEnabled;
+    }
     if (typeof data.readerEditShowLineNumbers === "boolean") {
       deps.readerEditShowLineNumbers.value = data.readerEditShowLineNumbers;
     }
@@ -1032,15 +1036,8 @@ export function useAppPersistence(deps: {
     );
     const vrRaw = data.voiceRead as PersistedVoiceReadRaw | undefined;
     hydrateVoiceReadAiSpeakerTokenUsage({
-      usage:
-        vrRaw && typeof vrRaw === "object"
-          ? (vrRaw as Record<string, unknown>).aiSpeakerTokenUsage
-          : undefined,
-      available:
-        vrRaw && typeof vrRaw === "object"
-          ? (vrRaw as Record<string, unknown>).aiSpeakerTokenUsageAvailable ===
-            true
-          : false,
+      usage: vrRaw?.aiSpeakerTokenUsage,
+      available: vrRaw?.aiSpeakerTokenUsageAvailable === true,
     });
 
     return {
@@ -1096,6 +1093,7 @@ export function useAppPersistence(deps: {
       monacoAdvancedWrapping: deps.monacoAdvancedWrapping.value,
       monacoSmoothScrolling: deps.monacoSmoothScrolling.value,
       stickyChapterTitleEnabled: deps.stickyChapterTitleEnabled.value,
+      chapterNavToolbarEnabled: deps.chapterNavToolbarEnabled.value,
       readerEditShowLineNumbers: deps.readerEditShowLineNumbers.value,
       readerEditMinimap: deps.readerEditMinimap.value,
       editAutoRefreshChapterList: deps.editAutoRefreshChapterList.value,

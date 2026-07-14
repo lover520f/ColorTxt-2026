@@ -11,6 +11,7 @@
   --bg: #f8f8f8;
   --panel: #f3f3f3;
   --border: #d4d4d4;
+  --box-shadow: #dddddd 0 4px 2px -2px;
   --fg: #333333;
   /** 可与 --fg 区分用于图标等；默认等同前景色 */
   --fgj: var(--fg);
@@ -63,6 +64,12 @@
 
   --input-bg: #ffffff;
 
+  /** 卡片 / 浮层表面 */
+  --surface-elevated: #ffffff;
+
+  /** 找书/发现结果卡片中的书源名 */
+  --book-source: #6d28d9;
+
   /** SwitchToggle 未勾选时轨道背景 */
   --switch-track-off-bg: #dcdfe6;
 
@@ -80,6 +87,7 @@ html.dark {
   --bg: #181818;
   --panel: #252526;
   --border: #333333;
+  --box-shadow: #000000 0 4px 2px -2px;
   --fg: #d4d4d4;
   --muted: #9da0a4;
   --secondary: #a3a6ad;
@@ -129,6 +137,11 @@ html.dark {
   --danger-hover: #b25252;
 
   --input-bg: #1e1e1e;
+
+  --surface-elevated: #2d2d2d;
+
+  /** 找书/发现结果卡片中的书源名（暗色背景上提亮） */
+  --book-source: #c4b5fd;
 
   --switch-track-off-bg: #4c4d4f;
 
@@ -394,6 +407,20 @@ button.link.danger:not(:disabled):hover {
   transform: rotate(45deg) scale(1) translate(-1px, -1px);
 }
 
+.checkbox input:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.checkbox input:indeterminate::after {
+  width: 8px;
+  height: 2px;
+  border: none;
+  background: #ffffff;
+  border-radius: 1px;
+  transform: scale(1);
+}
+
 /* 键盘样式 */
 code,
 kbd,
@@ -522,15 +549,14 @@ textarea:focus {
 .appShellMenuTeleport > .appShellMenuDivider,
 .appShellMenuFlyoutList > .appShellMenuFlyoutDivider,
 .fontMenuList > .fontMenuDivider {
-  margin-block: 2px;
-  margin-inline: 4px;
+  margin: 6px 4px;
 }
 
 .appShellMenuItem {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 8px 10px;
   border: none;
   border-radius: 6px;
@@ -539,6 +565,7 @@ textarea:focus {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .appShellMenuItem:hover:not(:disabled, .is-active) {
@@ -790,6 +817,7 @@ textarea:focus {
 .appShellMenuItem--stacked {
   padding-top: 8px;
   padding-bottom: 8px;
+  white-space: normal;
 }
 
 .appShellMenuGroupLabel {
@@ -1019,8 +1047,7 @@ textarea:focus {
 .appShellMenuIconSlot:not(.appShellMenuIconSlot--github):not(
     .appShellMenuIconSlot--colorful
   )
-  svg
-  path {
+  svg>path {
   fill: currentColor;
 }
 
@@ -1031,6 +1058,9 @@ textarea:focus {
 .appShellMenuLabel {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .appShellMenuShortcut {
@@ -1041,4 +1071,5 @@ textarea:focus {
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
+  margin-left: 10px;
 }

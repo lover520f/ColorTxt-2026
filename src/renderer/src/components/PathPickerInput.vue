@@ -221,7 +221,7 @@ function onInput(ev: Event) {
   display: block;
 }
 
-.pathPicker__icon :deep(path) {
+.pathPicker__icon :deep(svg path) {
   fill: currentColor;
 }
 </style>

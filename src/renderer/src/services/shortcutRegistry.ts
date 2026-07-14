@@ -20,6 +20,8 @@ export type ShortcutActionId =
   | "toggleFullscreen"
   | "openSettings"
   | "openColorScheme"
+  | "openFindBook"
+  | "openBookSource"
   | "openNewWindow"
   | "toggleAllWindowsVisibility";
 
@@ -55,13 +57,13 @@ export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
   {
     id: "jumpPrevChapter",
     scope: "window",
-    desc: "上一章节",
+    desc: "上一章",
     handlerKey: "jumpPrevChapter",
   },
   {
     id: "jumpNextChapter",
     scope: "window",
-    desc: "下一章节",
+    desc: "下一章",
     handlerKey: "jumpNextChapter",
   },
   {
@@ -121,6 +123,18 @@ export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
     handlerKey: "openColorScheme",
   },
   {
+    id: "openFindBook",
+    scope: "window",
+    desc: "找书",
+    handlerKey: "openFindBook",
+  },
+  {
+    id: "openBookSource",
+    scope: "window",
+    desc: "书源管理（找书窗口）",
+    handlerKey: "openBookSource",
+  },
+  {
     id: "openNewWindow",
     scope: "window",
     desc: "打开新窗口",
@@ -129,7 +143,7 @@ export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
   {
     id: "toggleAllWindowsVisibility",
     scope: "global",
-    desc: "（全局）显示/隐藏阅读器",
+    desc: "显示/隐藏阅读器（全局）",
     handlerKey: "toggleAllWindowsVisibility",
   },
 ];
@@ -162,6 +176,8 @@ export function createDefaultShortcutBindings(isMac: boolean): ShortcutBindingMa
     toggleFullscreen: "F11",
     openSettings: "F5",
     openColorScheme: "F6",
+    openFindBook: "F7",
+    openBookSource: "F8",
     openNewWindow: `${accel}+Shift+N`,
     toggleAllWindowsVisibility: "Control+`",
   };

@@ -39,6 +39,7 @@ const props = defineProps<{
   readerLineHeightMultiple: number;
   monacoSmoothScrolling: boolean;
   stickyChapterTitleEnabled: boolean;
+  chapterNavToolbarEnabled: boolean;
   readerEditShowLineNumbers: boolean;
   readerEditMinimap: boolean;
   editAutoRefreshChapterList: boolean;
@@ -205,6 +206,7 @@ onBeforeUnmount(() => {
     :reader-line-height-multiple="readerLineHeightMultiple"
     :monaco-smooth-scrolling="monacoSmoothScrolling"
     :sticky-chapter-title-enabled="stickyChapterTitleEnabled"
+    :chapter-nav-toolbar-enabled="chapterNavToolbarEnabled"
     :reader-edit-show-line-numbers="readerEditShowLineNumbers"
     :reader-edit-minimap="readerEditMinimap"
     :edit-auto-refresh-chapter-list="editAutoRefreshChapterList"
@@ -249,7 +251,6 @@ onBeforeUnmount(() => {
   />
 
   <AppModal
-    v-model="addBookmarkOpen"
     :title="editingBookmarkLine == null ? '添加书签' : '编辑书签'"
     max-width="480px"
   >

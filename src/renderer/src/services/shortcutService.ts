@@ -1,6 +1,8 @@
 export type AppShortcutActions = {
   openSettings: () => void | Promise<void>;
   openColorScheme: () => void | Promise<void>;
+  openFindBook: () => void | Promise<void>;
+  openBookSource: () => void | Promise<void>;
   toggleFullscreen: () => void | Promise<void>;
   increaseFontSize: () => void | Promise<void>;
   decreaseFontSize: () => void | Promise<void>;
@@ -46,6 +48,8 @@ const ACTION_BY_ID: Record<string, ActionKey> = {
   toggleFullscreen: "toggleFullscreen",
   openSettings: "openSettings",
   openColorScheme: "openColorScheme",
+  openFindBook: "openFindBook",
+  openBookSource: "openBookSource",
   openNewWindow: "openNewWindow",
 };
 

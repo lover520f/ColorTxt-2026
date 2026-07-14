@@ -20,6 +20,7 @@ type StackEntry = {
   instanceId: number
   close: () => void
   getEscClosable: () => boolean
+  setZIndex: (z: number) => void
 }
 
 const stack: StackEntry[] = []
@@ -32,6 +33,16 @@ const modalStackListeners = new Set<() => void>()
 
 function emitModalStackChange() {
   for (const fn of modalStackListeners) fn()
+}
+
+function zIndexForDepth(depth: number): number {
+  return BASE_Z_INDEX + depth * Z_INDEX_STEP
+}
+
+function reassignStackZIndices() {
+  for (let i = 0; i < stack.length; i++) {
+    stack[i]!.setZIndex(zIndexForDepth(i))
+  }
 }
 
 /** 模态入栈/出栈时回调（用于关闭与蒙层叠放无关的浮层） */
@@ -48,6 +59,11 @@ export function hasModalOrEscBeforeModalLayer(): boolean {
 /** 仅模态栈（不含灯箱等 ESC 前置层） */
 export function hasModalOnStack(): boolean {
   return stack.length > 0
+}
+
+/** 当前模态栈层数（供嵌套模态场景判断是否有更上层对话框） */
+export function getModalStackDepth(): number {
+  return stack.length
 }
 
 export type ModalStackEscResult = "closed" | "swallow" | "none"
@@ -132,23 +148,36 @@ function removeEscListenerIfIdle() {
 /**
  * 打开模态时注册：栈顶优先响应 ESC（仅关闭最顶层，不会跳过上层去关下层）；z-index 随栈深递增。
  * 关闭时必须调用返回的 unregister（通常在 v-model 变为 false 时）。
+ * `bringToFront`：已打开的模态移到栈顶并抬升 z-index（不销毁重开）。
  */
 export function registerModal(opts: {
   close: () => void
   getEscClosable: () => boolean
-}): { zIndex: number; unregister: () => void } {
+  setZIndex: (z: number) => void
+}): { zIndex: number; unregister: () => void; bringToFront: () => void } {
   const instanceId = ++nextInstanceId
-  const zIndex = BASE_Z_INDEX + stack.length * Z_INDEX_STEP
-  stack.push({
+  const zIndex = zIndexForDepth(stack.length)
+  const entry: StackEntry = {
     instanceId,
     close: opts.close,
     getEscClosable: opts.getEscClosable,
-  })
+    setZIndex: opts.setZIndex,
+  }
+  stack.push(entry)
   ensureEscListener()
   emitModalStackChange()
 
   return {
     zIndex,
+    bringToFront: () => {
+      const idx = stack.findIndex((e) => e.instanceId === instanceId)
+      if (idx < 0) return
+      if (idx === stack.length - 1) return
+      stack.splice(idx, 1)
+      stack.push(entry)
+      reassignStackZIndices()
+      emitModalStackChange()
+    },
     unregister: () => {
       const idx = stack.findIndex((e) => e.instanceId === instanceId)
       if (idx >= 0) stack.splice(idx, 1)

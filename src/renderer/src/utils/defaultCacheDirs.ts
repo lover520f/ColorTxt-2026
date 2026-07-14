@@ -1,4 +1,5 @@
 import { EBOOK_CONVERT_DEFAULT_SUBDIR } from "@shared/ebookConvertPaths";
+import { BOOK_SOURCE_DOWNLOAD_DEFAULT_SUBDIR, BOOK_SOURCE_CHAPTER_CACHE_SUBDIR } from "@shared/bookSource/paths";
 import { defaultAiDataCacheRoot, defaultBuiltinModelCacheRoot } from "@shared/aiDataPaths";
 import { defaultCharacterPortraitCacheRoot } from "@shared/characterPortraitPaths";
 import { joinFs } from "../ebook/pathUtils";
@@ -100,6 +101,52 @@ export function resolveDefaultBuiltinModelCacheDirSync(): string {
     if (typeof ud === "string") {
       const t = ud.trim();
       if (t) return defaultBuiltinModelCacheRoot(t);
+    }
+  } catch {
+    /* ignore */
+  }
+  return "";
+}
+
+/** 找书下载目录默认 userData/DownloadedBooks */
+export function resolveDefaultBookSourceDownloadDirSync(): string {
+  try {
+    const p = window.colorTxt?.getDefaultBookSourceDownloadDir?.();
+    if (typeof p === "string") {
+      const t = p.trim();
+      if (t) return t;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const ud = window.colorTxt?.getUserDataPath?.();
+    if (typeof ud === "string") {
+      const t = ud.trim();
+      if (t) return joinFs(t, BOOK_SOURCE_DOWNLOAD_DEFAULT_SUBDIR);
+    }
+  } catch {
+    /* ignore */
+  }
+  return "";
+}
+
+/** 找书章节离线缓存目录默认 userData/book_cache */
+export function resolveDefaultBookSourceChapterCacheDirSync(): string {
+  try {
+    const p = window.colorTxt?.getDefaultBookSourceChapterCacheDir?.();
+    if (typeof p === "string") {
+      const t = p.trim();
+      if (t) return t;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const ud = window.colorTxt?.getUserDataPath?.();
+    if (typeof ud === "string") {
+      const t = ud.trim();
+      if (t) return joinFs(t, BOOK_SOURCE_CHAPTER_CACHE_SUBDIR);
     }
   } catch {
     /* ignore */

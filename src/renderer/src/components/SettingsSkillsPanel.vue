@@ -382,7 +382,7 @@ defineExpose({
   display: block;
 }
 
-.skillCardIconBtn .svg :deep(path) {
+.skillCardIconBtn .svg :deep(svg path) {
   fill: currentColor;
 }
 

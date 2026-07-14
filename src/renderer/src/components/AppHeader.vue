@@ -6,8 +6,6 @@ import HeaderFontToolbar from "./HeaderFontToolbar.vue";
 import HeaderFormatToolbar from "./HeaderFormatToolbar.vue";
 import { useAppHeaderLayout } from "../composables/useAppHeaderLayout";
 import { icons } from "../icons";
-import readingSvg from "../assets/reading.svg?raw";
-import playSvg from "../assets/play.svg?raw";
 import type { ShortcutBindingMap } from "../services/shortcutRegistry";
 import type {
   TextConvertWidthMode,
@@ -130,6 +128,7 @@ const emit = defineEmits<{
   openShortcuts: [];
   openSettings: [];
   openColorScheme: [];
+  openFindBook: [];
   openNewWindow: [];
   openAbout: [];
   quitApp: [];
@@ -227,7 +226,7 @@ const showFormatToolbarInMore = computed(() => compactFormatToolbar.value);
         <span class="toolbarDivider" aria-hidden="true"></span>
         <IconButton
           class="timedScrollBtn"
-          :icon-html="playSvg"
+          :icon-html="icons.play"
           :active="timedScrollActive"
           :pressed="timedScrollActive"
           title="定时滚动"
@@ -237,7 +236,7 @@ const showFormatToolbarInMore = computed(() => compactFormatToolbar.value);
         />
         <IconButton
           class="voiceReadBtn"
-          :icon-html="readingSvg"
+          :icon-html="icons.reading"
           :active="voiceReadActive"
           :pressed="voiceReadActive"
           title="语音朗读"
@@ -349,6 +348,7 @@ const showFormatToolbarInMore = computed(() => compactFormatToolbar.value);
           @open-shortcuts="emit('openShortcuts')"
           @open-settings="emit('openSettings')"
           @open-color-scheme="emit('openColorScheme')"
+          @open-find-book="emit('openFindBook')"
           @open-new-window="emit('openNewWindow')"
           @open-about="emit('openAbout')"
           @quit-app="emit('quitApp')"

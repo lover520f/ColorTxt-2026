@@ -7,6 +7,8 @@ import { isSupportedShellOpenPath } from "../shared/ebookExtensions";
 
 type SetupLaunchTxtHandlersOptions = {
   createWindow: CreateMainWindow;
+  /** 返回 true 表示已处理（跳过默认「开主窗 / 开 txt」） */
+  onSecondInstance?: (argv: string[]) => boolean;
 };
 
 type LaunchTxtHandlerApi = {
@@ -32,7 +34,7 @@ function getTxtPathFromArgv(argv: string[]): string | null {
 export function setupLaunchTxtHandlers(
   options: SetupLaunchTxtHandlersOptions,
 ): LaunchTxtHandlerApi {
-  const { createWindow } = options;
+  const { createWindow, onSecondInstance } = options;
   const macPendingTxtPaths: string[] = [];
 
   async function focusAndOpenTxtPath(filePath: string) {
@@ -63,6 +65,10 @@ export function setupLaunchTxtHandlers(
     app.quit();
   } else {
     app.on("second-instance", (_event, argv) => {
+      if (onSecondInstance?.(argv)) {
+        app.focus({ steal: true });
+        return;
+      }
       const fromArgv = getTxtPathFromArgv(argv);
       if (fromArgv) {
         void focusAndOpenTxtPath(fromArgv);

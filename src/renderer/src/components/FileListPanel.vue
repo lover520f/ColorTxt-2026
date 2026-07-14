@@ -917,7 +917,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="link sidebarTabFooterAction"
+          class="link warning hoverMode sidebarTabFooterAction"
           @click="menus.exitEditFileListMode"
         >
           退出编辑

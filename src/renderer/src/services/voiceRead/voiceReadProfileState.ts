@@ -6,6 +6,7 @@ import {
   type VoiceReadProfile,
   type VoiceReadProfilesBundle,
 } from "@shared/voiceReadProfiles";
+import type { AITokenUsageTotals } from "@shared/aiTokenUsage";
 import { toRaw } from "vue";
 import {
   mergeVoiceReadSettings,
@@ -15,7 +16,7 @@ import {
 export type PersistedVoiceReadRaw = Partial<VoiceReadSettings> & {
   profiles?: unknown;
   activeProfileId?: unknown;
-  aiSpeakerTokenUsage?: unknown;
+  aiSpeakerTokenUsage?: Partial<AITokenUsageTotals> | null;
   aiSpeakerTokenUsageAvailable?: unknown;
 };
 

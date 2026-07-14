@@ -14,6 +14,8 @@ const props = withDefaults(
     ariaLabel?: string;
     panelClass?: string;
     fullscreenFloat?: boolean;
+    /** 全屏浮动顶栏 `mouseleave` 白名单（如顶栏「更多」菜单 Teleport） */
+    fullscreenHeaderFloat?: boolean;
     /** 由 useAnchoredAppShellMenu 传入，用于测量与夹取定位（避免模板对 Ref prop 自动解包） */
     onPanelMount?: (el: HTMLElement | null) => void;
   }>(),
@@ -43,6 +45,7 @@ function setPanelEl(el: Element | null | { $el?: unknown }) {
       class="appShellMenuTeleport appShellMenuPanel"
       :class="panelClass"
       :data-fullscreen-sidebar-float="fullscreenFloat || undefined"
+      :data-fullscreen-header-float="fullscreenHeaderFloat || undefined"
       role="menu"
       :aria-label="ariaLabel"
       :style="{
@@ -76,8 +79,9 @@ function setPanelEl(el: Element | null | { $el?: unknown }) {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+  width: max-content;
+  min-width: max-content;
+  max-width: min(100vw - 16px, max-content);
   overflow: hidden;
 }
 </style>

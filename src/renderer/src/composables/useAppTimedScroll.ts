@@ -13,6 +13,16 @@ export function useAppTimedScroll(deps: {
   readerEditMode: Ref<boolean>;
   viewportAtBottom: Ref<boolean>;
   isVoiceReadActive: Ref<boolean>;
+  /**
+   * 找书等场景：到达底部时不停止，改由 onAtBottomTick 处理（如切下一章）。
+   * 仍须在最后一章/无法续读时自行停止。
+   */
+  continueAtBottom?: boolean;
+  onAtBottomTick?: () => void | Promise<void>;
+  /** 为 true 时即使 viewportAtBottom 也允许开启（如非末章且内容过短无滚动条） */
+  canStartDespiteBottom?: () => boolean;
+  /** 加载中暂停计时并保持 active，加载完成后自动重启计时 */
+  pauseOnLoading?: boolean;
 }) {
   const active = ref(false);
   let timerId: ReturnType<typeof setInterval> | null = null;
@@ -32,6 +42,11 @@ export function useAppTimedScroll(deps: {
   function tick() {
     if (!active.value) return;
     if (deps.viewportAtBottom.value) {
+      if (deps.continueAtBottom && deps.onAtBottomTick) {
+        if (deps.loading.value) return;
+        void Promise.resolve(deps.onAtBottomTick());
+        return;
+      }
       stopTimedScroll();
       return;
     }
@@ -72,7 +87,9 @@ export function useAppTimedScroll(deps: {
     if (deps.loading.value) return false;
     if (deps.readerEditMode.value) return false;
     if (deps.isVoiceReadActive.value) return false;
-    if (deps.viewportAtBottom.value) return false;
+    if (deps.viewportAtBottom.value && !deps.canStartDespiteBottom?.()) {
+      return false;
+    }
     const n = deps.readerRef.value?.getModelLineCount?.() ?? 0;
     return n > 0;
   });
@@ -85,18 +102,31 @@ export function useAppTimedScroll(deps: {
     { deep: true },
   );
 
-  watch(deps.currentFile, () => stopTimedScroll());
+  watch(deps.currentFile, (file, prev) => {
+    if (deps.pauseOnLoading && active.value && file && prev) return;
+    stopTimedScroll();
+  });
   watch(deps.readerEditMode, (ed) => {
     if (ed) stopTimedScroll();
   });
   watch(deps.loading, (ld) => {
+    if (deps.pauseOnLoading && active.value) {
+      if (ld) {
+        clearTimer();
+      } else {
+        startTimer();
+      }
+      return;
+    }
     if (ld) stopTimedScroll();
   });
   watch(deps.isVoiceReadActive, (vr) => {
     if (vr) stopTimedScroll();
   });
   watch(deps.viewportAtBottom, (atBottom) => {
-    if (atBottom && active.value) stopTimedScroll();
+    if (!atBottom || !active.value) return;
+    if (deps.continueAtBottom && deps.canStartDespiteBottom?.()) return;
+    stopTimedScroll();
   });
 
   onBeforeUnmount(() => stopTimedScroll());

@@ -56,7 +56,7 @@ const filteredSystemFonts = computed(() => {
 });
 
 /** 虚拟列表单行高度（px），与 `.fontOtherItem` 一致 */
-const FONT_ROW_STRIDE = 36;
+const FONT_ROW_STRIDE = 40;
 const VIRTUAL_OVERSCAN = 10;
 
 const selectedFont = computed(() =>
@@ -588,7 +588,7 @@ watch(
   display: block;
 }
 
-.fontMenuPinIcon :deep(path) {
+.fontMenuPinIcon :deep(svg path) {
   fill: currentColor;
 }
 
@@ -633,6 +633,10 @@ watch(
   padding-right: 2px;
   min-height: 0; /* allow flex overflow container to size correctly */
   flex: 1;
+}
+
+.fontOtherList :deep(.virtualList-row) {
+  padding-bottom: 4px;
 }
 
 .fontOtherItem {

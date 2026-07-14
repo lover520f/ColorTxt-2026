@@ -1,0 +1,711 @@
+import { ipcMain, type WebContents } from "electron";
+import { readFile } from "node:fs/promises";
+import { BOOK_SOURCE_IPC } from "@shared/bookSource/ipc";
+import type {
+  BookSourceImportCommitPayload,
+  BookSourceResolveCoverPayload,
+} from "@shared/bookSource/ipc";
+import type { BookSourceRecord, BookSourceGetBookInfoPayload } from "@shared/bookSource/types";
+import { parseBookSourceJson } from "@shared/bookSource/types";
+import {
+  applyBookSourceCustomOrders,
+  deleteBookSources,
+  getBookSource,
+  getBookCustomVariable,
+  getLoginHeader,
+  getLoginInfo,
+  getSourceVariable,
+  importCommit,
+  importPreview,
+  listBookSources,
+  moveBookSourceToBottom,
+  moveBookSourceToTop,
+  removeLoginHeader,
+  saveBookSource,
+  setBookCustomVariable,
+  setLoginInfo,
+  setSourceVariable,
+  toggleBookSource,
+} from "./store/bookSourceStore";
+import { cancelSearch, loadMoreSearch, startSearch } from "./searchService";
+import { cancelDownload, startDownload } from "./downloadService";
+import {
+  cancelCheckSource,
+  getCheckSourceConfig,
+  setCheckSourceConfig,
+  startCheckSource,
+} from "./checkSourceService";
+import { openBrowserLogin } from "./engine/jsExtensions";
+import {
+  runLoginUiButton,
+  runSourceLogin,
+} from "./engine/loginCheck";
+import { clearExploreKindsCache, getExploreKinds } from "./engine/exploreKinds";
+import {
+  exploreBook,
+  getBookInfo,
+  getChapterList,
+} from "./engine/webBook";
+import { getChapterContentWithCache } from "./engine/getChapterContentWithCache";
+import { filterCachedChapterUrls, clearBookChapterCache } from "./engine/chapterCache";
+import { fetchCoverDisplayUrl } from "./engine/coverImage";
+import {
+  appendBookSourceErrorLog,
+  summarizeBookSourceError,
+} from "./engine/bookSourceErrorLog";
+
+function sendTo(
+  wc: WebContents,
+  channel: string,
+  payload: unknown,
+): void {
+  if (!wc.isDestroyed()) wc.send(channel, payload);
+}
+
+export function registerBookSourceIpcHandlers(): void {
+  ipcMain.handle(BOOK_SOURCE_IPC.list, () => listBookSources());
+
+  ipcMain.handle(BOOK_SOURCE_IPC.get, (_e, url: unknown) => {
+    if (typeof url !== "string") return null;
+    return getBookSource(url);
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.save, (_e, source: unknown) => {
+    try {
+      const s = source as BookSourceRecord;
+      saveBookSource(s);
+      return { ok: true };
+    } catch (e) {
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : String(e),
+      };
+    }
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.delete, (_e, urls: unknown) => {
+    const list = Array.isArray(urls) ? urls.filter((u) => typeof u === "string") : [];
+    deleteBookSources(list as string[]);
+    return { ok: true };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.toggle, (_e, url: unknown, enabled: unknown) => {
+    if (typeof url === "string" && typeof enabled === "boolean") {
+      toggleBookSource(url, enabled);
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.importPreview, (_e, sources: unknown) => {
+    const list = Array.isArray(sources) ? (sources as BookSourceRecord[]) : [];
+    return importPreview(list);
+  });
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.importCommit,
+    (_e, payload: unknown) => {
+      const p = payload as BookSourceImportCommitPayload;
+      const r = importCommit(p);
+      return { ok: true, ...r };
+    },
+  );
+
+  ipcMain.handle(BOOK_SOURCE_IPC.fetchUrl, async (_e, url: unknown) => {
+    if (typeof url !== "string" || !url.trim()) {
+      return { ok: false, message: "URL 无效" };
+    }
+    try {
+      const res = await fetch(url.trim());
+      const text = await res.text();
+      return { ok: true, text };
+    } catch (e) {
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : String(e),
+      };
+    }
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.readFile, async (_e, filePath: unknown) => {
+    if (typeof filePath !== "string" || !filePath.trim()) {
+      return { ok: false, message: "路径无效" };
+    }
+    try {
+      const text = await readFile(filePath, "utf8");
+      return { ok: true, text };
+    } catch (e) {
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : String(e),
+      };
+    }
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.search, (e, key: unknown, options: unknown) => {
+    const k = typeof key === "string" ? key.trim() : "";
+    if (!k) return { searchId: "" };
+    const opts =
+      options && typeof options === "object"
+        ? (options as { sourceUrls?: unknown; precisionSearch?: unknown })
+        : null;
+    const sourceUrls = Array.isArray(opts?.sourceUrls)
+      ? opts.sourceUrls.filter((u) => typeof u === "string")
+      : undefined;
+    const precisionSearch = opts?.precisionSearch === true;
+    const wc = e.sender;
+    const searchId = startSearch(
+      k,
+      (ev) => {
+        sendTo(wc, BOOK_SOURCE_IPC.searchEvent, ev);
+      },
+      {
+        ...(sourceUrls?.length ? { sourceUrls } : {}),
+        ...(precisionSearch ? { precisionSearch: true } : {}),
+      },
+    );
+    return { searchId };
+  });
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.reorder,
+    (_e, url: unknown, position: unknown) => {
+      if (typeof url !== "string") return { ok: false };
+      if (position === "top") moveBookSourceToTop(url);
+      else if (position === "bottom") moveBookSourceToBottom(url);
+      else return { ok: false };
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.applyCustomOrders,
+    (_e, updates: unknown) => {
+      if (!Array.isArray(updates)) return { ok: false };
+      const list: Array<{ url: string; customOrder: number }> = [];
+      for (const row of updates) {
+        if (!row || typeof row !== "object") continue;
+        const rec = row as { url?: unknown; customOrder?: unknown };
+        if (typeof rec.url !== "string" || typeof rec.customOrder !== "number") {
+          continue;
+        }
+        if (!Number.isFinite(rec.customOrder)) continue;
+        list.push({ url: rec.url, customOrder: rec.customOrder });
+      }
+      applyBookSourceCustomOrders(list);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(BOOK_SOURCE_IPC.searchCancel, (_e, searchId: unknown) => {
+    if (typeof searchId === "string") cancelSearch(searchId);
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.searchLoadMore, (_e, searchId: unknown) => {
+    if (typeof searchId !== "string" || !searchId) return { ok: false };
+    return { ok: loadMoreSearch(searchId) };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.download, (e, req: unknown) => {
+    const wc = e.sender;
+    const downloadId = startDownload(
+      req as import("@shared/bookSource/types").BookSourceDownloadRequest,
+      (ev) => {
+        sendTo(wc, BOOK_SOURCE_IPC.downloadEvent, ev);
+      },
+    );
+    return { downloadId };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.downloadCancel, (_e, downloadId: unknown) => {
+    if (typeof downloadId === "string") cancelDownload(downloadId);
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.getLoginInfo, (_e, url: unknown) => {
+    if (typeof url !== "string") return {};
+    return getLoginInfo(url);
+  });
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.setLoginInfo,
+    (_e, url: unknown, info: unknown) => {
+      if (typeof url === "string" && info && typeof info === "object") {
+        setLoginInfo(url, info as Record<string, string>);
+      }
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.browserLogin,
+    async (_e, sourceUrl: unknown, title: unknown) => {
+      if (typeof sourceUrl !== "string") {
+        return { ok: false, message: "书源无效" };
+      }
+      const source = getBookSource(sourceUrl);
+      if (!source?.loginUrl?.trim()) {
+        return { ok: false, message: "未配置 loginUrl" };
+      }
+      const winTitle =
+        typeof title === "string" && title.trim()
+          ? title
+          : `登录 · ${source.bookSourceName}`;
+      return await openBrowserLogin(source, winTitle);
+    },
+  );
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.login,
+    async (_e, sourceUrl: unknown, loginData: unknown, options: unknown) => {
+      if (typeof sourceUrl !== "string") {
+        return { ok: false, message: "书源无效" };
+      }
+      const source = getBookSource(sourceUrl);
+      if (!source) return { ok: false, message: "书源不存在" };
+      const logs: string[] = [];
+      try {
+        const data =
+          loginData && typeof loginData === "object"
+            ? (loginData as Record<string, string>)
+            : {};
+        const buttonAction =
+          options &&
+          typeof options === "object" &&
+          "buttonAction" in options &&
+          typeof (options as { buttonAction?: unknown }).buttonAction === "string"
+            ? (options as { buttonAction: string }).buttonAction
+            : undefined;
+        if (buttonAction?.trim()) {
+          await runLoginUiButton(source, data, buttonAction, logs);
+        } else {
+          runSourceLogin(source, data, logs);
+        }
+        return { ok: true, logs };
+      } catch (e) {
+        return {
+          ok: false,
+          message: e instanceof Error ? e.message : String(e),
+          logs,
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(BOOK_SOURCE_IPC.getLoginHeader, (_e, sourceUrl: unknown) => {
+    if (typeof sourceUrl !== "string") return "";
+    return getLoginHeader(sourceUrl) ?? "";
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.removeLoginHeader, (_e, sourceUrl: unknown) => {
+    if (typeof sourceUrl === "string") {
+      removeLoginHeader(sourceUrl);
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.exploreKinds, async (_e, sourceUrl: unknown) => {
+    if (typeof sourceUrl !== "string") {
+      return { kinds: [], message: "无效书源" };
+    }
+    const source = getBookSource(sourceUrl);
+    if (!source) return { kinds: [], message: "书源不存在" };
+    const logs: string[] = [];
+    try {
+      const kinds = await getExploreKinds(source, logs);
+      return { kinds, logs };
+    } catch (e) {
+      if (!logs.length) {
+        appendBookSourceErrorLog(logs, e, {
+          phase: "发现分类",
+          sourceName: source.bookSourceName,
+          sourceUrl: source.bookSourceUrl,
+        });
+      }
+      return {
+        kinds: [],
+        message: summarizeBookSourceError(e),
+        logs,
+      };
+    }
+  });
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.exploreBooks,
+    async (
+      _e,
+      payload: unknown,
+    ) => {
+      const p = payload as { sourceUrl?: string; exploreUrl?: string; page?: number };
+      if (typeof p?.sourceUrl !== "string" || typeof p?.exploreUrl !== "string") {
+        return { items: [], message: "参数无效" };
+      }
+      const source = getBookSource(p.sourceUrl);
+      if (!source) return { items: [], message: "书源不存在" };
+      const logs: string[] = [];
+      try {
+        const items = await exploreBook(
+          source,
+          p.exploreUrl,
+          typeof p.page === "number" ? p.page : 1,
+          logs,
+        );
+        return { items, logs };
+      } catch (e) {
+        if (!logs.length) {
+          appendBookSourceErrorLog(logs, e, {
+            phase: "发现书籍列表",
+            sourceName: source.bookSourceName,
+            sourceUrl: source.bookSourceUrl,
+            url: p.exploreUrl,
+            extra: `页码: ${typeof p.page === "number" ? p.page : 1}`,
+          });
+        }
+        return {
+          items: [],
+          message: summarizeBookSourceError(e),
+          logs,
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.exploreClearKindsCache,
+    (_e, sourceUrl: unknown) => {
+      if (typeof sourceUrl === "string") {
+        const source = getBookSource(sourceUrl);
+        if (source) clearExploreKindsCache(source);
+      }
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(BOOK_SOURCE_IPC.getBookInfo, async (_e, payload: unknown) => {
+    const p = payload as BookSourceGetBookInfoPayload;
+    if (
+      typeof p?.bookSourceUrl !== "string" ||
+      typeof p?.bookUrl !== "string" ||
+      typeof p?.name !== "string" ||
+      typeof p?.author !== "string"
+    ) {
+      return { message: "参数无效" };
+    }
+    const source = getBookSource(p.bookSourceUrl);
+    if (!source) return { message: "书源不存在" };
+    const logs: string[] = [];
+    try {
+      const detail = await getBookInfo(
+        source,
+        p.bookUrl,
+        p.name,
+        p.author,
+        logs,
+        {
+          kind: p.kind,
+          wordCount: p.wordCount,
+          intro: p.intro,
+          lastChapter: p.lastChapter,
+          coverUrl: p.coverUrl,
+        },
+      );
+      return { detail, logs };
+    } catch (e) {
+      if (!logs.length) {
+        appendBookSourceErrorLog(logs, e, {
+          phase: "书籍详情",
+          sourceName: source.bookSourceName,
+          sourceUrl: source.bookSourceUrl,
+          url: p.bookUrl,
+        });
+      }
+      return { message: summarizeBookSourceError(e), logs };
+    }
+  });
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.resolveCoverDisplay,
+    async (_e, payload: unknown) => {
+      const p = payload as BookSourceResolveCoverPayload;
+      if (typeof p?.bookSourceUrl !== "string") {
+        return { message: "参数无效" };
+      }
+      const source = getBookSource(p.bookSourceUrl);
+      if (!source) return { message: "书源不存在" };
+      const logs: string[] = [];
+      try {
+        let sourceUrl = p.coverSourceUrl?.trim();
+        if (!sourceUrl) {
+          const cu = p.coverUrl?.trim();
+          if (cu && /^https?:\/\//i.test(cu)) sourceUrl = cu;
+          else if (cu?.startsWith("data:")) {
+            return { coverUrl: cu, coverSourceUrl: cu, logs };
+          }
+        }
+        if (sourceUrl && !sourceUrl.startsWith("colortxt-local:")) {
+          const coverUrl = await fetchCoverDisplayUrl(
+            source,
+            sourceUrl,
+            logs,
+            typeof p.bookUrl === "string" ? p.bookUrl : undefined,
+          );
+          if (coverUrl) {
+            return { coverUrl, coverSourceUrl: sourceUrl, logs };
+          }
+        }
+        if (
+          typeof p.bookUrl === "string" &&
+          typeof p.name === "string" &&
+          typeof p.author === "string"
+        ) {
+          const detail = await getBookInfo(
+            source,
+            p.bookUrl,
+            p.name,
+            p.author,
+            logs,
+            {
+              kind: p.kind,
+              wordCount: p.wordCount,
+              intro: p.intro,
+              lastChapter: p.lastChapter,
+              coverUrl: p.coverUrl,
+            },
+          );
+          return {
+            coverUrl: detail.coverUrl || undefined,
+            coverSourceUrl: detail.coverSourceUrl,
+            logs,
+          };
+        }
+        return { message: "无法解析封面", logs };
+      } catch (e) {
+        if (!logs.length) {
+          appendBookSourceErrorLog(logs, e, {
+            phase: "封面",
+            sourceName: source.bookSourceName,
+            sourceUrl: source.bookSourceUrl,
+            url: p.bookUrl,
+          });
+        }
+        return { message: summarizeBookSourceError(e), logs };
+      }
+    },
+  );
+
+  ipcMain.handle(BOOK_SOURCE_IPC.getChapterList, async (_e, payload: unknown) => {
+    const p = payload as {
+      bookSourceUrl?: string;
+      bookUrl?: string;
+      tocUrl?: string;
+    };
+    if (
+      typeof p?.bookSourceUrl !== "string" ||
+      typeof p?.bookUrl !== "string" ||
+      typeof p?.tocUrl !== "string"
+    ) {
+      return { message: "参数无效" };
+    }
+    const source = getBookSource(p.bookSourceUrl);
+    if (!source) return { message: "书源不存在" };
+    const logs: string[] = [];
+    try {
+      const chapters = await getChapterList(
+        source,
+        p.tocUrl,
+        p.bookUrl,
+        logs,
+      );
+      return { chapters, logs };
+    } catch (e) {
+      if (!logs.length) {
+        appendBookSourceErrorLog(logs, e, {
+          phase: "章节目录",
+          sourceName: source.bookSourceName,
+          sourceUrl: source.bookSourceUrl,
+          url: p.tocUrl,
+        });
+      }
+      return { message: summarizeBookSourceError(e), logs };
+    }
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.getChapterContent, async (_e, payload: unknown) => {
+    const p = payload as {
+      bookSourceUrl?: string;
+      bookUrl?: string;
+      tocUrl?: string;
+      name?: string;
+      author?: string;
+      chapterUrl?: string;
+      chapterTitle?: string;
+      chapterIndex?: number;
+      nextChapterUrl?: string;
+      cacheDir?: string;
+    };
+    if (
+      typeof p?.bookSourceUrl !== "string" ||
+      typeof p?.bookUrl !== "string" ||
+      typeof p?.tocUrl !== "string" ||
+      typeof p?.chapterUrl !== "string" ||
+      typeof p?.chapterTitle !== "string" ||
+      typeof p?.chapterIndex !== "number"
+    ) {
+      return { message: "参数无效" };
+    }
+    const source = getBookSource(p.bookSourceUrl);
+    if (!source) return { message: "书源不存在" };
+    const logs: string[] = [];
+    try {
+      const book = {
+        name: p.name ?? "",
+        author: p.author ?? "",
+        bookUrl: p.bookUrl,
+        tocUrl: p.tocUrl,
+      };
+      const chapter = {
+        title: p.chapterTitle,
+        url: p.chapterUrl,
+        index: p.chapterIndex,
+      };
+      const cacheDir =
+        typeof p.cacheDir === "string" && p.cacheDir.trim()
+          ? p.cacheDir.trim()
+          : undefined;
+      const { content, fromCache } = await getChapterContentWithCache(
+        source,
+        p.chapterUrl,
+        book,
+        chapter,
+        logs,
+        p.nextChapterUrl,
+        { cacheDir },
+      );
+      return { content, fromCache, logs };
+    } catch (e) {
+      if (!logs.length) {
+        appendBookSourceErrorLog(logs, e, {
+          phase: "章节正文",
+          sourceName: source.bookSourceName,
+          sourceUrl: source.bookSourceUrl,
+          url: p.chapterUrl,
+        });
+      }
+      return { message: summarizeBookSourceError(e), logs };
+    }
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.chapterCacheStatus, async (_e, payload: unknown) => {
+    const p = payload as {
+      name?: string;
+      bookUrl?: string;
+      chapterUrls?: unknown;
+      cacheDir?: string;
+    };
+    if (typeof p?.bookUrl !== "string" || !p.bookUrl.trim()) {
+      return { cachedUrls: [] as string[] };
+    }
+    const urls = Array.isArray(p.chapterUrls)
+      ? p.chapterUrls.filter((u): u is string => typeof u === "string")
+      : [];
+    const cacheDir =
+      typeof p.cacheDir === "string" && p.cacheDir.trim()
+        ? p.cacheDir.trim()
+        : undefined;
+    const cachedUrls = await filterCachedChapterUrls(
+      typeof p.name === "string" ? p.name : "",
+      p.bookUrl,
+      urls,
+      cacheDir,
+    );
+    return { cachedUrls };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.clearChapterCache, async (_e, payload: unknown) => {
+    const p = payload as {
+      name?: string;
+      bookUrl?: string;
+      cacheDir?: string;
+    };
+    if (typeof p?.bookUrl !== "string" || !p.bookUrl.trim()) {
+      return { ok: false, message: "参数无效" };
+    }
+    const cacheDir =
+      typeof p.cacheDir === "string" && p.cacheDir.trim()
+        ? p.cacheDir.trim()
+        : undefined;
+    const { cleared } = await clearBookChapterCache(
+      typeof p.name === "string" ? p.name : "",
+      p.bookUrl,
+      cacheDir,
+    );
+    return { ok: true, cleared };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.getSourceVariable, (_e, sourceUrl: unknown) => {
+    if (typeof sourceUrl !== "string" || !sourceUrl.trim()) return "";
+    return getSourceVariable(sourceUrl.trim());
+  });
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.setSourceVariable,
+    (_e, payload: unknown) => {
+      const p = payload as { sourceUrl?: string; variable?: string };
+      if (typeof p?.sourceUrl !== "string" || !p.sourceUrl.trim()) {
+        return { ok: false };
+      }
+      setSourceVariable(p.sourceUrl.trim(), p.variable ?? "");
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(BOOK_SOURCE_IPC.getBookVariable, (_e, bookUrl: unknown) => {
+    if (typeof bookUrl !== "string" || !bookUrl.trim()) return "";
+    return getBookCustomVariable(bookUrl.trim());
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.setBookVariable, (_e, payload: unknown) => {
+    const p = payload as { bookUrl?: string; variable?: string };
+    if (typeof p?.bookUrl !== "string" || !p.bookUrl.trim()) {
+      return { ok: false };
+    }
+    setBookCustomVariable(p.bookUrl.trim(), p.variable ?? "");
+    return { ok: true };
+  });
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.checkStart,
+    (e, sourceUrls: unknown, options: unknown) => {
+      const urls = Array.isArray(sourceUrls)
+        ? sourceUrls.filter((u): u is string => typeof u === "string")
+        : [];
+      const opts =
+        options && typeof options === "object"
+          ? (options as { keyword?: string })
+          : {};
+      const wc = e.sender;
+      return startCheckSource(
+        urls,
+        (ev) => sendTo(wc, BOOK_SOURCE_IPC.checkEvent, ev),
+        opts,
+      );
+    },
+  );
+
+  ipcMain.handle(BOOK_SOURCE_IPC.checkCancel, () => {
+    cancelCheckSource();
+    return { ok: true };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.checkGetConfig, () => getCheckSourceConfig());
+
+  ipcMain.handle(BOOK_SOURCE_IPC.checkSetConfig, (_e, patch: unknown) => {
+    const p =
+      patch && typeof patch === "object"
+        ? (patch as Partial<ReturnType<typeof getCheckSourceConfig>>)
+        : {};
+    return setCheckSourceConfig(p);
+  });
+}
+
+export function parseImportedBookSources(text: string): BookSourceRecord[] {
+  return parseBookSourceJson(text);
+}

@@ -9,6 +9,11 @@ import mindmapIcon from "./assets/mindmap.svg?raw";
 import wordcloudIcon from "./assets/wordcloud.svg?raw";
 import wordcloudAngleIcon from "./assets/wordcloud_angle.svg?raw";
 import findIcon from "./assets/find.svg?raw";
+import findBookIcon from "./assets/findBook.svg?raw";
+import bookSourceIcon from "./assets/book_source.svg?raw";
+import exploreIcon from "./assets/explore.svg?raw";
+import bookshelfIcon from "./assets/bookshelf.svg?raw";
+import filterIcon from "./assets/filter.svg?raw";
 import regExpIcon from "./assets/RegExp.svg?raw";
 import githubIcon from "./assets/GitHub.svg?raw";
 import shortcutIcon from "./assets/shortcut.svg?raw";
@@ -34,6 +39,7 @@ import advancedWrappingIcon from "./assets/advanced_wrapping.svg?raw";
 import pinIcon from "./assets/pin.svg?raw";
 import pinActiveIcon from "./assets/pin_active.svg?raw";
 import backIcon from "./assets/back.svg?raw";
+import homeIcon from "./assets/home.svg?raw";
 import bookmarkIcon from "./assets/bookmark.svg?raw";
 import bookmarkActiveIcon from "./assets/bookmark_active.svg?raw";
 import ebookIcon from "./assets/ebook.svg?raw";
@@ -51,6 +57,7 @@ import aiComposeIcon from "./assets/AI_compose.svg?raw";
 import brainIcon from "./assets/brain.svg?raw";
 import copyIcon from "./assets/copy.svg?raw";
 import downloadIcon from "./assets/download.svg?raw";
+import readIcon from "./assets/read.svg?raw";
 import historyIcon from "./assets/history.svg?raw";
 import newChatIcon from "./assets/new_chat.svg?raw";
 import sendIcon from "./assets/send.svg?raw";
@@ -78,12 +85,25 @@ import genderUnknownIcon from "./assets/unknown.svg?raw";
 import warningIcon from "./assets/warning.svg?raw";
 import favoriteIcon from "./assets/favorite.svg?raw";
 import favoriteFillIcon from "./assets/favorite_fill.svg?raw";
+import readingIcon from "./assets/reading.svg?raw";
+import playIcon from "./assets/play.svg?raw";
+import pauseIcon from "./assets/pause.svg?raw";
+import prevIcon from "./assets/prev.svg?raw";
+import nextIcon from "./assets/next.svg?raw";
+import speedIcon from "./assets/speed.svg?raw";
+import zoomInIcon from "./assets/zoom_in.svg?raw";
+import convertIcon from "./assets/conver.svg?raw";
 import noteIcon from "./assets/note.svg?raw";
 import quoteIcon from "./assets/quote.svg?raw";
 import deleteLineationIcon from "./assets/delete_lineation.svg?raw";
 import speakIcon from "./assets/speak.svg?raw";
 import speak0Icon from "./assets/speak_0.svg?raw";
 import speak1Icon from "./assets/speak_1.svg?raw";
+import loginIcon from "./assets/login.svg?raw";
+import okIcon from "./assets/ok.svg?raw";
+import lockIcon from "./assets/lock.svg?raw";
+import disclaimerIcon from "./assets/disclaimer.svg?raw";
+import desktopShortcutIcon from "./assets/desktop_shortcut.svg?raw";
 
 /** 角色卡「语音」播放动画帧：speak_0 → speak_1 → speak */
 export const speakIconAnimFrames = [
@@ -100,6 +120,9 @@ export const icons = {
   leaveFullscreen: leaveFullscreenIcon,
   palette: paletteIcon,
   more: moreIcon,
+  /** 书源列表行「登录」 */
+  login: loginIcon,
+  ok: okIcon,
   /** 思维导图面板标题 */
   mindmap: mindmapIcon,
   /** 词云面板标题 */
@@ -107,6 +130,15 @@ export const icons = {
   /** 词云角度布局 */
   wordcloudAngle: wordcloudAngleIcon,
   find: findIcon,
+  /** 找书（书本 + 放大镜） */
+  findBook: findBookIcon,
+  /** 书源管理（彩色） */
+  bookSource: bookSourceIcon,
+  /** 发现页 */
+  explore: exploreIcon,
+  /** 书架 */
+  bookshelf: bookshelfIcon,
+  filter: filterIcon,
   regExp: regExpIcon,
   github: githubIcon,
   shortcut: shortcutIcon,
@@ -132,6 +164,8 @@ export const icons = {
   pin: pinIcon,
   pinActive: pinActiveIcon,
   back: backIcon,
+  /** 主界面（找书窗口顶栏） */
+  home: homeIcon,
   bookmark: bookmarkIcon,
   bookmarkActive: bookmarkActiveIcon,
   ebook: ebookIcon,
@@ -150,6 +184,8 @@ export const icons = {
   brain: brainIcon,
   copy: copyIcon,
   download: downloadIcon,
+  /** 开始/继续阅读 */
+  read: readIcon,
   history: historyIcon,
   newChat: newChatIcon,
   send: sendIcon,
@@ -191,9 +227,31 @@ export const icons = {
   note: noteIcon,
   quote: quoteIcon,
   deleteLineation: deleteLineationIcon,
+  /** 定时滚动 / 自动阅读 */
+  reading: readingIcon,
+  /** 语音朗读：播放 */
+  play: playIcon,
+  /** 语音朗读：暂停 */
+  pause: pauseIcon,
+  /** 语音朗读：上一行 */
+  prev: prevIcon,
+  /** 语音朗读：下一行 */
+  next: nextIcon,
+  /** 语音朗读：语速 */
+  speed: speedIcon,
+  /** 角色卡：放大预览 */
+  zoomIn: zoomInIcon,
+  /** 简繁/全半角转换 */
+  convert: convertIcon,
   /** 角色卡「语音」默认图标 */
   speak: speakIcon,
   /** 角色卡「语音」播放动画帧 */
   speak0: speak0Icon,
   speak1: speak1Icon,
+  /** VIP / 锁定章节 */
+  lock: lockIcon,
+  /** 免责声明 */
+  disclaimer: disclaimerIcon,
+  /** 生成桌面快捷方式 */
+  desktopShortcut: desktopShortcutIcon,
 } as const;

@@ -1181,7 +1181,7 @@ defineExpose({
   color: var(--tab-fg);
 }
 
-.activityTabBtn:not(.color) .activityIcon :deep(svg) path {
+.activityTabBtn:not(.color) .activityIcon :deep(svg path) {
   fill: currentColor;
 }
 .activityTabBtn.color {

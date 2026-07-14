@@ -1173,8 +1173,11 @@ watch(
 
 watch(
   () => [props.stickyChapterTitleEnabled, props.streamLoading] as const,
-  () => {
+  (val, oldVal) => {
     syncStickyScrollToStreamState();
+    if (oldVal != null && oldVal[1] === true && val[1] === false) {
+      refreshChapterStickyScroll();
+    }
   },
 );
 
@@ -1222,6 +1225,16 @@ function scheduleStickyChapterScrollRefresh() {
     const e = editor.value;
     if (!e || !stickyChapterTitleShouldEnable()) return;
     refreshStickyChapterScrollWidget(e);
+  });
+}
+
+/** 流式/章节加载结束后刷新粘性章节标题（加载期间 sticky 关闭，须在大纲更新后再开） */
+function refreshChapterStickyScroll() {
+  notifyChapterStickyFoldingRanges?.();
+  scheduleStickyChapterScrollRefresh();
+  requestAnimationFrame(() => {
+    notifyChapterStickyFoldingRanges?.();
+    scheduleStickyChapterScrollRefresh();
   });
 }
 
@@ -1279,12 +1292,16 @@ function appendText(text: string) {
 }
 
 /** 流式读盘结束后一次性写入正文（分块时不再逐块 append，避免重复着色与换行拼接问题） */
-async function setFullText(text: string, opts?: { heavy?: boolean }) {
+async function setFullText(
+  text: string,
+  opts?: { heavy?: boolean; resetScroll?: boolean },
+) {
   streamCarriageReturnPending = false;
   const m = model.value;
   const e = editor.value;
   if (!m || !e) return;
   const heavy = opts?.heavy === true;
+  const resetScroll = opts?.resetScroll === true;
   if (heavy) {
     setReaderSyntaxHighlightEnabled(
       monaco,
@@ -1308,7 +1325,16 @@ async function setFullText(text: string, opts?: { heavy?: boolean }) {
     m.dispose();
     annotationDecorationsCollection.value?.clear();
     annotationDecorationsCollection.value = e.createDecorationsCollection();
+    if (resetScroll) {
+      e.setScrollTop(0, monaco.editor.ScrollType.Immediate);
+      e.setPosition({ lineNumber: 1, column: 1 });
+    }
   } else {
+    if (resetScroll) {
+      beginProgrammaticScroll();
+      e.setScrollTop(0, monaco.editor.ScrollType.Immediate);
+      e.setPosition({ lineNumber: 1, column: 1 });
+    }
     m.setValue(text);
   }
   await yieldToUi();
@@ -1317,6 +1343,9 @@ async function setFullText(text: string, opts?: { heavy?: boolean }) {
       requestAnimationFrame(() => resolve());
     });
   });
+  if (resetScroll) {
+    scrollToDocumentStart(false);
+  }
   if (heavy && props.monacoCustomHighlight) {
     window.setTimeout(() => applyReaderSyntaxFromProps(), 0);
   }
@@ -2215,10 +2244,17 @@ function scrollToDocumentStart(smooth = false) {
   if (!e || !m) return;
   beginProgrammaticScroll();
   const scrollType = monacoScrollType(smooth);
-  e.layout();
-  e.setScrollTop(0, scrollType);
-  e.setPosition({ lineNumber: 1, column: 1 });
-  e.focus();
+  const apply = () => {
+    e.layout();
+    e.setScrollTop(0, scrollType);
+    e.setPosition({ lineNumber: 1, column: 1 });
+  };
+  apply();
+  normalizeScrollAfterEmbeddedViewZones();
+  requestAnimationFrame(() => {
+    apply();
+    normalizeScrollAfterEmbeddedViewZones();
+  });
 }
 
 /**
@@ -2971,6 +3007,7 @@ defineExpose({
   setWrappingStrategyAdvanced,
   resetToTop,
   scrollToDocumentStart,
+  refreshChapterStickyScroll,
   jumpToLine,
   scrollToLineNearTop,
   jumpToLineCentered,

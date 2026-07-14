@@ -2,6 +2,9 @@ export type AnchoredMenuPlacement =
   | "below-end"
   | "below-start"
   | "below-center"
+  | "above-end"
+  | "above-start"
+  | "above-center"
   | "beside-right"
   | "beside-left";
 
@@ -46,6 +49,18 @@ export function computeAnchoredMenuPosition(
     case "below-center":
       left = anchorRect.left + anchorRect.width / 2 - w / 2;
       top = anchorRect.bottom + gap;
+      break;
+    case "above-end":
+      left = anchorRect.right - w;
+      top = anchorRect.top - h - gap;
+      break;
+    case "above-start":
+      left = anchorRect.left;
+      top = anchorRect.top - h - gap;
+      break;
+    case "above-center":
+      left = anchorRect.left + anchorRect.width / 2 - w / 2;
+      top = anchorRect.top - h - gap;
       break;
     case "beside-right":
       left = anchorRect.right + gap;

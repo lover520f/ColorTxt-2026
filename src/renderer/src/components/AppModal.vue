@@ -16,8 +16,19 @@ const props = withDefaults(
     showCloseButton?: boolean;
     /** 内容区面板最大宽度，如 520px、800px */
     maxWidth?: string;
+    /** 撑满整个窗口（无圆角、无外边距） */
+    fullscreen?: boolean;
+    /** 与窗口边缘留白（px 或带单位字符串），面板撑满剩余区域 */
+    inset?: number | string;
     bodyScroll?: boolean;
     panelClass?: string;
+    /** 为 true 时 title 按 HTML 渲染（仅传入可信内容） */
+    dangerouslyUseHTMLString?: boolean;
+    /**
+     * 为全屏浮动顶栏 `mouseleave` 白名单标记蒙层（默认 true）。
+     * 找书阅读器等「整窗即阅读器」的全屏 AppModal 应设为 false，否则移入正文无法收起顶栏。
+     */
+    fullscreenHeaderFloat?: boolean;
   }>(),
   {
     title: "",
@@ -25,10 +36,15 @@ const props = withDefaults(
     escClosable: true,
     showCloseButton: true,
     maxWidth: "520px",
+    fullscreen: false,
     bodyScroll: true,
     panelClass: "",
+    dangerouslyUseHTMLString: false,
+    fullscreenHeaderFloat: true,
   },
 );
+
+const slots = useSlots();
 
 const showCloseChrome = computed(
   () =>
@@ -36,17 +52,32 @@ const showCloseChrome = computed(
     (props.maskClosable || props.escClosable),
 );
 
+const hasTitle = computed(() => Boolean(props.title.trim()));
+
+const showHeader = computed(
+  () => Boolean(hasTitle.value || showCloseChrome.value || slots.headerPrefix),
+);
+
+const insetCss = computed(() => {
+  if (props.inset == null || props.inset === "") return undefined;
+  return typeof props.inset === "number" ? `${props.inset}px` : props.inset;
+});
+
 const modelValue = defineModel<boolean>({ default: false });
 
-const slots = useSlots();
 const titleId = useId();
 
 const zIndex = ref(6000);
 
 let unregister: (() => void) | null = null;
+let bringToFrontFn: (() => void) | null = null;
 
 function close() {
   modelValue.value = false;
+}
+
+function bringToFront() {
+  bringToFrontFn?.();
 }
 
 function onMaskClick() {
@@ -60,19 +91,28 @@ watch(
       const reg = registerModal({
         close,
         getEscClosable: () => props.escClosable,
+        setZIndex: (z) => {
+          zIndex.value = z;
+        },
       });
       zIndex.value = reg.zIndex;
       unregister = reg.unregister;
+      bringToFrontFn = reg.bringToFront;
     } else {
       unregister?.();
       unregister = null;
+      bringToFrontFn = null;
     }
   },
-  { flush: "sync" },
+  { flush: "sync", immediate: true },
 );
 
 onBeforeUnmount(() => {
   unregister?.();
+});
+
+defineExpose({
+  bringToFront,
 });
 </script>
 
@@ -82,32 +122,53 @@ onBeforeUnmount(() => {
       <div
         v-if="modelValue"
         class="appModalBackdrop"
-        data-fullscreen-header-float
-        :style="{ zIndex }"
+        :class="{
+          'appModalBackdrop--fullscreen': fullscreen,
+          'appModalBackdrop--inset': insetCss,
+        }"
+        :data-fullscreen-header-float="fullscreenHeaderFloat || undefined"
+        :style="{ zIndex, padding: insetCss }"
         role="dialog"
         aria-modal="true"
-        :aria-labelledby="title ? titleId : undefined"
-        :aria-label="title ? undefined : '对话框'"
+        :aria-labelledby="hasTitle ? titleId : undefined"
+        :aria-label="hasTitle ? undefined : '对话框'"
         @click.self="onMaskClick"
         @drop.stop.prevent
       >
         <div
           class="appModalPanel"
-          :style="{ maxWidth }"
-          :class="panelClass"
+          :style="
+            fullscreen || insetCss
+              ? { maxWidth: insetCss ? '100%' : undefined }
+              : { maxWidth }
+          "
+          :class="[
+            panelClass,
+            {
+              'appModalPanel--fullscreen': fullscreen,
+              'appModalPanel--inset': insetCss,
+            },
+          ]"
           @click.stop
         >
           <div
-            v-if="title || showCloseChrome"
+            v-if="showHeader"
             class="appModalPanelHeader"
             :class="{
-              'appModalPanelHeader--noTitle': !title,
+              'appModalPanelHeader--noTitle': !hasTitle,
               'appModalPanelHeader--noClose': !showCloseChrome,
             }"
           >
-            <h2 v-if="title" :id="titleId" class="appModalTitle">
-              {{ title }}
-            </h2>
+            <div class="appModalTitleCluster">
+              <slot name="headerPrefix" />
+              <h2 v-if="hasTitle" :id="titleId" class="appModalTitle">
+                <span
+                  v-if="dangerouslyUseHTMLString"
+                  v-html="title"
+                />
+                <template v-else>{{ title }}</template>
+              </h2>
+            </div>
             <button
               v-if="showCloseChrome"
               type="button"
@@ -149,6 +210,19 @@ onBeforeUnmount(() => {
   background: rgba(0, 0, 0, 0.45);
 }
 
+.appModalBackdrop--fullscreen {
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  background: var(--panel, #fff);
+}
+
+.appModalBackdrop--inset {
+  align-items: stretch;
+  justify-content: stretch;
+  box-sizing: border-box;
+}
+
 .appModal-enter-active,
 .appModal-leave-active {
   transition: opacity 0.22s ease;
@@ -172,6 +246,11 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
+.appModalBackdrop--fullscreen.appModal-enter-from .appModalPanel,
+.appModalBackdrop--fullscreen.appModal-leave-to .appModalPanel {
+  transform: none;
+}
+
 .appModal-leave-to .appModalPanel {
   transform: scale(0.96);
   opacity: 0;
@@ -191,6 +270,24 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
+.appModalPanel--fullscreen {
+  max-width: none;
+  max-height: none;
+  height: 100%;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.appModalPanel--inset {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+}
+
 .appModalPanelHeader {
   display: flex;
   align-items: center;
@@ -201,6 +298,12 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.appModalPanel--fullscreen .appModalPanelHeader {
+  margin-bottom: 0;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
 .appModalPanelHeader--noTitle {
   justify-content: flex-end;
   margin-bottom: 0;
@@ -208,6 +311,14 @@ onBeforeUnmount(() => {
 
 .appModalPanelHeader--noClose {
   justify-content: flex-start;
+}
+
+.appModalTitleCluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .appModalTitle {
@@ -255,7 +366,7 @@ onBeforeUnmount(() => {
   height: 16px;
 }
 
-.appModalCloseIcon :deep(path) {
+.appModalCloseIcon :deep(svg path) {
   fill: currentColor;
 }
 

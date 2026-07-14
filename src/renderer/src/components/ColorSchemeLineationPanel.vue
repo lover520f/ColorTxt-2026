@@ -255,7 +255,7 @@ function straightStyle(hex: string) {
   display: block;
 }
 
-.lineationAddBtnIcon :deep(path) {
+.lineationAddBtnIcon :deep(svg path) {
   fill: currentColor;
 }
 

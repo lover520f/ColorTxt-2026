@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { isSupportedShellOpenPath } from "@shared/ebookExtensions";
 import { APP_DISPLAY_NAME } from "@shared/packageDerived";
+import { FIND_BOOK_WINDOW_TITLE } from "@shared/findBookWindowTitle";
 import {
   resolveInitialWindowBounds,
   saveWindowBounds,
@@ -14,23 +15,51 @@ import { attachWebContentsExternalLinkPolicy } from "./webContentsExternalLinks"
 
 export type CreateMainWindow = (options?: {
   openTxtPath?: string | null;
+  openFindBook?: boolean;
+  /** 找书窗初始标签；默认 search（主界面入口），桌面快捷方式用 bookshelf */
+  findBookInitialTab?: "bookshelf" | "search";
 }) => BrowserWindow;
 
 type MainWindowMaps = {
   shouldRestoreSessionByWindowId: Map<number, boolean>;
   pendingOpenTxtByWindowId: Map<number, string>;
+  findBookWindowByWindowId: Map<number, boolean>;
+  findBookInitialTabByWindowId: Map<number, "bookshelf" | "search">;
+  onMainWindowFocused?: (windowId: number) => void;
 };
 
 export function createMainWindowFactory(maps: MainWindowMaps): CreateMainWindow {
-  const { shouldRestoreSessionByWindowId, pendingOpenTxtByWindowId } = maps;
+  const {
+    shouldRestoreSessionByWindowId,
+    pendingOpenTxtByWindowId,
+    findBookWindowByWindowId,
+    findBookInitialTabByWindowId,
+    onMainWindowFocused,
+  } = maps;
 
-  return function createWindow(options?: { openTxtPath?: string | null }) {
+  return function createWindow(options?: {
+    openTxtPath?: string | null;
+    openFindBook?: boolean;
+    findBookInitialTab?: "bookshelf" | "search";
+  }) {
     const openTxtPath = options?.openTxtPath ?? null;
+    const openFindBook = options?.openFindBook === true;
+    const findBookInitialTab =
+      options?.findBookInitialTab === "bookshelf" ? "bookshelf" : "search";
+    const hasOtherMainWindow = BrowserWindow.getAllWindows().some(
+      (w) => !w.isDestroyed() && !findBookWindowByWindowId.get(w.id),
+    );
     const shouldRestoreSession =
-      BrowserWindow.getAllWindows().length === 0 && !openTxtPath;
+      !hasOtherMainWindow && !openTxtPath && !openFindBook;
     const initialBounds = resolveInitialWindowBounds();
     const SAVE_DEBOUNCE_MS = 300;
-    const iconFileName = process.platform === "win32" ? "icon.ico" : "icon.png";
+    const iconFileName = openFindBook
+      ? process.platform === "win32"
+        ? "icon_find.ico"
+        : "icon_find.png"
+      : process.platform === "win32"
+        ? "icon.ico"
+        : "icon.png";
     const iconPath = app.isPackaged
       ? path.join(process.resourcesPath, iconFileName)
       : path.join(app.getAppPath(), "resources", iconFileName);
@@ -53,15 +82,44 @@ export function createMainWindowFactory(maps: MainWindowMaps): CreateMainWindow 
     win.removeMenu();
     attachWebContentsExternalLinkPolicy(win.webContents);
     shouldRestoreSessionByWindowId.set(win.id, shouldRestoreSession);
+    if (openFindBook) {
+      findBookWindowByWindowId.set(win.id, true);
+      findBookInitialTabByWindowId.set(win.id, findBookInitialTab);
+    } else {
+      win.on("focus", () => {
+        onMainWindowFocused?.(win.id);
+      });
+    }
     win.on("closed", () => {
       shouldRestoreSessionByWindowId.delete(win.id);
       pendingOpenTxtByWindowId.delete(win.id);
+      findBookWindowByWindowId.delete(win.id);
+      findBookInitialTabByWindowId.delete(win.id);
     });
 
+    const findBookTitle = FIND_BOOK_WINDOW_TITLE;
+    const findBookQuery =
+      openFindBook && findBookInitialTab === "bookshelf"
+        ? "?tab=bookshelf"
+        : "";
     if (process.env.ELECTRON_RENDERER_URL) {
-      win.loadURL(process.env.ELECTRON_RENDERER_URL);
+      const base = process.env.ELECTRON_RENDERER_URL.replace(/\/$/, "");
+      win.loadURL(
+        openFindBook
+          ? `${base}/find-book.html${findBookQuery}`
+          : base,
+      );
     } else {
-      win.loadFile(path.join(__dirname, "../renderer/index.html"));
+      win.loadFile(
+        path.join(
+          __dirname,
+          "../renderer",
+          openFindBook ? "find-book.html" : "index.html",
+        ),
+        openFindBook && findBookInitialTab === "bookshelf"
+          ? { search: "tab=bookshelf" }
+          : undefined,
+      );
     }
     win.once("ready-to-show", () => {
       if (win.isDestroyed()) return;
@@ -85,7 +143,7 @@ export function createMainWindowFactory(maps: MainWindowMaps): CreateMainWindow 
       }
     });
 
-    win.setTitle(APP_DISPLAY_NAME);
+    win.setTitle(openFindBook ? findBookTitle : APP_DISPLAY_NAME);
 
     if (openTxtPath) {
       const resolved = path.resolve(openTxtPath);

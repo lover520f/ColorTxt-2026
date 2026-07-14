@@ -6,6 +6,10 @@ import { registerGlobalShortcuts, unregisterGlobalShortcuts } from "./globalShor
 import { registerUpdaterIpc, setupAutoUpdater } from "./updater";
 import { markAppQuittingForClose } from "./windowCloseGuard";
 import { createMainWindowFactory } from "./windowFactory";
+import {
+  argvHasFindBookFlag,
+  openFindBookLaunchWindow,
+} from "./findBookLaunch";
 
 /** 须在 `app.ready` 之前注册，否则自定义协议无法在渲染进程用于 `<img>` 等 */
 protocol.registerSchemesAsPrivileged([
@@ -26,26 +30,51 @@ registerUpdaterIpc();
 const shouldRestoreSessionByWindowId = new Map<number, boolean>();
 /** 从资源管理器 / 命令行启动时待打开的 txt，由渲染进程 pull 一次 */
 const pendingOpenTxtByWindowId = new Map<number, string>();
+/** 找书专用窗口（加载 find-book.html） */
+const findBookWindowByWindowId = new Map<number, boolean>();
+/** 找书窗初始标签（桌面快捷方式 → bookshelf） */
+const findBookInitialTabByWindowId = new Map<number, "bookshelf" | "search">();
+/** 最近一次获得焦点的阅读主窗口 id（非找书窗） */
+const mainWindowFocusState = { lastId: null as number | null };
 
 const createWindow = createMainWindowFactory({
   shouldRestoreSessionByWindowId,
   pendingOpenTxtByWindowId,
+  findBookWindowByWindowId,
+  findBookInitialTabByWindowId,
+  onMainWindowFocused: (id) => {
+    mainWindowFocusState.lastId = id;
+  },
 });
 
 registerMainIpcHandlers({
   createWindow,
   shouldRestoreSessionByWindowId,
   pendingOpenTxtByWindowId,
+  findBookWindowByWindowId,
+  findBookInitialTabByWindowId,
+  mainWindowFocusState,
 });
 
-const launchTxtHandlers = setupLaunchTxtHandlers({ createWindow });
+const launchTxtHandlers = setupLaunchTxtHandlers({
+  createWindow,
+  onSecondInstance: (argv) => {
+    if (!argvHasFindBookFlag(argv)) return false;
+    openFindBookLaunchWindow(createWindow, "bookshelf");
+    return true;
+  },
+});
 
 app.whenReady().then(async () => {
   registerColortxtLocalProtocol();
   setupAutoUpdater();
-  const launchTxt = launchTxtHandlers.resolveLaunchTxtForStartup(process.argv);
-  createWindow({ openTxtPath: launchTxt });
-  launchTxtHandlers.openRemainingMacPendingTxtPaths();
+  if (argvHasFindBookFlag(process.argv)) {
+    openFindBookLaunchWindow(createWindow, "bookshelf");
+  } else {
+    const launchTxt = launchTxtHandlers.resolveLaunchTxtForStartup(process.argv);
+    createWindow({ openTxtPath: launchTxt });
+    launchTxtHandlers.openRemainingMacPendingTxtPaths();
+  }
   registerGlobalShortcuts();
 
   app.on("activate", () => {

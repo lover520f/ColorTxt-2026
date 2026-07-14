@@ -35,6 +35,9 @@ const newWindowShortcutLabel = computed(() =>
 const colorSchemeShortcutLabel = computed(() =>
   bindingLabel(props.shortcutBindings.openColorScheme),
 );
+const findBookShortcutLabel = computed(() =>
+  bindingLabel(props.shortcutBindings.openFindBook),
+);
 
 const emit = defineEmits<{
   toggleFind: [];
@@ -43,6 +46,7 @@ const emit = defineEmits<{
   openShortcuts: [];
   openSettings: [];
   openColorScheme: [];
+  openFindBook: [];
   openNewWindow: [];
   openAbout: [];
   quitApp: [];
@@ -141,6 +145,11 @@ function onOpenSettings() {
 function onOpenColorScheme() {
   closeMoreMenu();
   emit("openColorScheme");
+}
+
+function onOpenFindBook() {
+  closeMoreMenu();
+  emit("openFindBook");
 }
 
 function onOpenNewWindow() {
@@ -280,6 +289,11 @@ onBeforeUnmount(() => {
         ></span>
         <span class="appShellMenuLabel">配色</span>
         <span class="appShellMenuShortcut">{{ colorSchemeShortcutLabel }}</span>
+      </button>
+      <button class="appShellMenuItem" role="menuitem" @click="onOpenFindBook">
+        <span class="appShellMenuIconSlot" v-html="icons.findBook"></span>
+        <span class="appShellMenuLabel">找书（beta）</span>
+        <span class="appShellMenuShortcut">{{ findBookShortcutLabel }}</span>
       </button>
       <button class="appShellMenuItem" role="menuitem" @click="onCheckForUpdates">
         <span class="appShellMenuIconSlot" v-html="icons.update"></span>

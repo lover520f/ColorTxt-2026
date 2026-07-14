@@ -47,6 +47,10 @@ export type ReaderDisplayFormatOptions = {
    * 不走只读展示用的 span 剥离与 MD 侧车。
    */
   preservePhysicalSourceLines?: boolean;
+  /**
+   * 压缩空行时，首个合格章节标题前不插入预留空行（找书单章阅读等场景）。
+   */
+  skipBlanksBeforeFirstChapterTitle?: boolean;
 };
 
 export type ReaderDisplayFormatResult = {
@@ -64,6 +68,26 @@ export type ReaderDisplayFormatResult = {
 
 function normalizeNewlines(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function firstQualifiedChapterTitlePhysicalLine(
+  qualifiedChapterTitles: ReadonlySet<number>,
+): number | null {
+  let first = Infinity;
+  for (const physicalLine of qualifiedChapterTitles) {
+    if (physicalLine < first) first = physicalLine;
+  }
+  return first === Infinity ? null : first;
+}
+
+function shouldInsertBlanksBeforeChapterTitle(
+  physicalLine: number,
+  qualifiedChapterTitles: ReadonlySet<number>,
+  options: ReaderDisplayFormatOptions,
+): boolean {
+  if (!options.skipBlanksBeforeFirstChapterTitle) return true;
+  const first = firstQualifiedChapterTitlePhysicalLine(qualifiedChapterTitles);
+  return first == null || physicalLine !== first;
 }
 
 /** 剥离后为空且原文仅 span 锚点：不占阅读器展示行（跳转仍按物理行号解析） */
@@ -494,8 +518,16 @@ export function formatPhysicalLinesForReader(
     const isQualifiedChapterTitle = qualifiedChapterTitles.has(physicalLine);
     const hasVisibleTitle = shown.trim().length > 0;
     if (isQualifiedChapterTitle && hasVisibleTitle) {
-      for (let i = 0; i < blanksAbove; i += 1) {
-        pushDisplay("", physicalLine);
+      if (
+        shouldInsertBlanksBeforeChapterTitle(
+          physicalLine,
+          qualifiedChapterTitles,
+          options,
+        )
+      ) {
+        for (let i = 0; i < blanksAbove; i += 1) {
+          pushDisplay("", physicalLine);
+        }
       }
       const titleDisplayLine = pushDisplay(shown, physicalLine, linkContext);
       chapterTitleDisplayLineByPhysical.set(physicalLine, titleDisplayLine);
@@ -712,8 +744,16 @@ export async function formatPhysicalLinesForReaderAsync(
     const isQualifiedChapterTitle = qualifiedChapterTitles.has(physicalLine);
     const hasVisibleTitle = shown.trim().length > 0;
     if (isQualifiedChapterTitle && hasVisibleTitle) {
-      for (let j = 0; j < blanksAbove; j += 1) {
-        pushDisplay("", physicalLine);
+      if (
+        shouldInsertBlanksBeforeChapterTitle(
+          physicalLine,
+          qualifiedChapterTitles,
+          options,
+        )
+      ) {
+        for (let j = 0; j < blanksAbove; j += 1) {
+          pushDisplay("", physicalLine);
+        }
       }
       const titleDisplayLine = pushDisplay(shown, physicalLine, linkContext);
       chapterTitleDisplayLineByPhysical.set(physicalLine, titleDisplayLine);

@@ -15,6 +15,7 @@ import {
   VOICE_READ_SCROLL_BLOCKED_ACTIONS,
 } from "../services/shortcutService";
 import { hasModalOrEscBeforeModalLayer } from "../utils/modalStack";
+import { keyboardEventFromReaderSidebar } from "../utils/readerSidebarKeyboard";
 import { useAppFileSession } from "./useAppFileSession";
 import { useTxtStreamPipeline } from "./useTxtStreamPipeline";
 import type { ShortcutBindingMap } from "../services/shortcutRegistry";
@@ -25,19 +26,6 @@ type Stream = ReturnType<typeof useTxtStreamPipeline>;
 /** 侧栏任意区域拖入均合并进文件列表，不显示阅读区「打开文件」蒙层 */
 function isOverSidebarImportDropZone(ev: DragEvent): boolean {
   return isDragOverDropZone(ev, DROP_ZONE_READER_SIDEBAR);
-}
-
-/** 键盘事件是否起源于阅读侧栏（活动栏 + 面板）；与全局快捷键捕获监听配合，避免侧栏输入触发阅读器快捷键 */
-function keyboardEventFromReaderSidebar(ev: KeyboardEvent): boolean {
-  for (const n of ev.composedPath()) {
-    if (
-      n instanceof HTMLElement &&
-      n.hasAttribute("data-reader-sidebar-root")
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /** 焦点是否在主阅读器 Monaco 编辑器内（用于编辑模式下判断是否让出冲突快捷键） */
@@ -122,6 +110,9 @@ export function useAppWindowBindings(deps: {
   jumpToNextChapter: () => void;
   openSettings: () => void;
   openColorScheme: () => void;
+  openFindBook: () => void;
+  /** 主窗口无书源面板；找书窗口内由对应快捷键处理 */
+  openBookSource?: () => void;
   toggleFind: () => void;
   scrollDownLine: () => void;
   scrollUpLine: () => void;
@@ -235,6 +226,8 @@ export function useAppWindowBindings(deps: {
         {
           openSettings: deps.openSettings,
           openColorScheme: deps.openColorScheme,
+          openFindBook: deps.openFindBook,
+          openBookSource: deps.openBookSource ?? (() => {}),
           toggleFullscreen: deps.enterOrExitFullscreenView,
           increaseFontSize: deps.increaseFontSize,
           decreaseFontSize: deps.decreaseFontSize,

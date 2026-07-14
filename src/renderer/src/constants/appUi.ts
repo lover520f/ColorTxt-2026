@@ -1,4 +1,5 @@
 import { readerEditorLineHeight } from "../monaco/readerEditorOptions";
+import { MODAL_STACK_BASE_Z_INDEX } from "../utils/modalStack";
 
 export type {
   ReaderSurfaceColorEnabled,
@@ -49,6 +50,9 @@ export const SIDEBAR_MIN_WIDTH = 250;
 export const SIDEBAR_MIN_READER_WIDTH = 300;
 /** 侧栏左侧活动栏（图标列）固定宽度，与 `sidebarWidth` 持久化中的「总宽」相加关系为：总宽 = 本列 + 面板列 */
 export const SIDEBAR_ACTIVITY_BAR_WIDTH = 48;
+/** 找书阅读器侧栏最小宽度（无活动栏，等同主界面章节列最小宽） */
+export const FIND_BOOK_SIDEBAR_MIN_WIDTH =
+  SIDEBAR_MIN_WIDTH - SIDEBAR_ACTIVITY_BAR_WIDTH;
 
 export const FULLSCREEN_LEFT_EDGE_PX = 20;
 export const FULLSCREEN_TOP_EDGE_PX = 20;
@@ -68,7 +72,12 @@ export const FULLSCREEN_SIDEBAR_FLOAT_SELECTOR =
 export const FULLSCREEN_HEADER_FLOAT_SELECTOR =
   "[data-fullscreen-header-float]";
 
+/** 须高于 `AppModal` 模态栈，弹层内 java.toast / appToast 反馈才能可见 */
+export const APP_TOAST_Z_INDEX = MODAL_STACK_BASE_Z_INDEX + 500;
+
 export const persistKey = "colorTxt.ui.settings";
+/** 同窗口内 localStorage 写入 {@link persistKey} 后派发，供找书阅读器等同步主界面设置 */
+export const persistedSettingsChangedEvent = "colortxt:persisted-settings-changed";
 export const sessionKey = "colorTxt.session";
 export const fileListKey = "colorTxt.file.list";
 export const recentFilesKey = "colorTxt.recent.files";
@@ -124,6 +133,8 @@ export const defaultMonacoAdvancedWrapping = false;
 export const defaultMonacoSmoothScrolling = true;
 /** 阅读区顶部是否显示粘性章节标题（Monaco stickyScroll + outlineModel） */
 export const defaultStickyChapterTitleEnabled = true;
+/** 主界面阅读区底部「上一章 / 下一章」工具栏（默认关闭） */
+export const defaultChapterNavToolbarEnabled = false;
 /** 编辑模式下 Monaco 是否显示行号（只读模式始终关闭） */
 export const defaultReaderEditShowLineNumbers = false;
 /** 编辑模式下 Monaco 是否显示小地图（只读模式始终关闭） */

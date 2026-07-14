@@ -496,6 +496,7 @@ export function useAppFileSession(deps: {
           name: "电子书",
           extensions: [...COLOR_TXT_OPEN_BOOK_EXTENSIONS],
         },
+        { name: "所有文件", extensions: ["*"] },
       ],
     });
     const filePath =

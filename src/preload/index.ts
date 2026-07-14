@@ -57,6 +57,8 @@ import type {
   VoiceReadAttributeSpeakersResult,
 } from "@shared/voiceReadSpeakerIpc";
 import { SECRET_SLOT_VOICE_READ_PROFILE_KEYS } from "@shared/secretSlots";
+import { BOOK_SOURCE_IPC } from "@shared/bookSource/ipc";
+import type { BookSourceIpcApi } from "@shared/bookSource/ipc";
 
 /** sandbox 下 preload 不可 require('path')，与 renderer 的 joinFs 行为对齐 */
 function joinUserDataSubdir(userData: string, segment: string): string {
@@ -360,6 +362,7 @@ const api = {
     ipcRenderer.sendSync("window:getInitialLoadIntent") as {
       shouldRestoreSession: boolean;
       hasPendingOpenTxt: boolean;
+      isFindBookWindow: boolean;
     },
   /** 安装包关联 / 命令行启动时由主进程写入，仅可取一次 */
   consumePendingOpenTxtPath: () =>
@@ -393,6 +396,27 @@ const api = {
   openNewWindow: () => {
     ipcRenderer.send("window:new");
   },
+  openFindBookWindow: () => {
+    ipcRenderer.send("window:openFindBook");
+  },
+  createFindBookDesktopShortcut: () =>
+    ipcRenderer.invoke("findBook:createDesktopShortcut") as Promise<
+      { ok: true; shortcutPath: string } | { ok: false; error: string }
+    >,
+  /** Windows / Linux 可创建桌面快捷方式；macOS 为 false */
+  supportsFindBookDesktopShortcut:
+    process.platform === "win32" || process.platform === "linux",
+  onFindBookActivateTab: (cb: (tab: string) => void) => {
+    const fn = (_e: Electron.IpcRendererEvent, tab: string) => {
+      cb(tab);
+    };
+    ipcRenderer.on("findBook:activateTab", fn);
+    return () => ipcRenderer.removeListener("findBook:activateTab", fn);
+  },
+  focusOrOpenMainWindow: () =>
+    ipcRenderer.invoke("window:focusOrOpenMain") as Promise<void>,
+  openFileInMainWindow: (filePath: string) =>
+    ipcRenderer.invoke("window:openFileInMain", filePath) as Promise<void>,
   openFileInNewWindow: (filePath: string) => {
     ipcRenderer.send("window:new", filePath);
   },
@@ -874,6 +898,258 @@ const api = {
   },
   replyChapterPlainText: (replyChannel: string, text: string) => {
     ipcRenderer.send(replyChannel, text);
+  },
+  bookSourceList: () =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.list) as ReturnType<
+      BookSourceIpcApi["bookSourceList"]
+    >,
+  bookSourceGet: (url: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.get, url) as ReturnType<
+      BookSourceIpcApi["bookSourceGet"]
+    >,
+  bookSourceSave: (source: Parameters<BookSourceIpcApi["bookSourceSave"]>[0]) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.save, source) as ReturnType<
+      BookSourceIpcApi["bookSourceSave"]
+    >,
+  bookSourceDelete: (urls: string[]) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.delete, urls) as ReturnType<
+      BookSourceIpcApi["bookSourceDelete"]
+    >,
+  bookSourceToggle: (url: string, enabled: boolean) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.toggle, url, enabled) as ReturnType<
+      BookSourceIpcApi["bookSourceToggle"]
+    >,
+  bookSourceImportPreview: (
+    sources: Parameters<BookSourceIpcApi["bookSourceImportPreview"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.importPreview, sources) as ReturnType<
+      BookSourceIpcApi["bookSourceImportPreview"]
+    >,
+  bookSourceImportCommit: (
+    payload: Parameters<BookSourceIpcApi["bookSourceImportCommit"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.importCommit, payload) as ReturnType<
+      BookSourceIpcApi["bookSourceImportCommit"]
+    >,
+  bookSourceFetchUrl: (url: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.fetchUrl, url) as ReturnType<
+      BookSourceIpcApi["bookSourceFetchUrl"]
+    >,
+  bookSourceReadFile: (filePath: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.readFile, filePath) as ReturnType<
+      BookSourceIpcApi["bookSourceReadFile"]
+    >,
+  bookSourceSearch: (key: string, options?: { sourceUrls?: string[]; precisionSearch?: boolean }) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.search, key, options) as ReturnType<
+      BookSourceIpcApi["bookSourceSearch"]
+    >,
+  bookSourceSearchCancel: (searchId: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.searchCancel, searchId),
+  bookSourceSearchLoadMore: (searchId: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.searchLoadMore, searchId) as ReturnType<
+      BookSourceIpcApi["bookSourceSearchLoadMore"]
+    >,
+  onBookSourceSearchEvent: (cb: (ev: import("@shared/bookSource/types").BookSourceSearchEvent) => void) => {
+    const fn = (_: unknown, payload: import("@shared/bookSource/types").BookSourceSearchEvent) =>
+      cb(payload);
+    ipcRenderer.on(BOOK_SOURCE_IPC.searchEvent, fn);
+    return () => ipcRenderer.off(BOOK_SOURCE_IPC.searchEvent, fn);
+  },
+  bookSourceDownload: (
+    req: Parameters<BookSourceIpcApi["bookSourceDownload"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.download, req) as ReturnType<
+      BookSourceIpcApi["bookSourceDownload"]
+    >,
+  bookSourceDownloadCancel: (downloadId: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.downloadCancel, downloadId),
+  onBookSourceDownloadEvent: (cb: (ev: import("@shared/bookSource/types").BookSourceDownloadEvent) => void) => {
+    const fn = (_: unknown, payload: import("@shared/bookSource/types").BookSourceDownloadEvent) =>
+      cb(payload);
+    ipcRenderer.on(BOOK_SOURCE_IPC.downloadEvent, fn);
+    return () => ipcRenderer.off(BOOK_SOURCE_IPC.downloadEvent, fn);
+  },
+  bookSourceGetLoginInfo: (url: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.getLoginInfo, url) as ReturnType<
+      BookSourceIpcApi["bookSourceGetLoginInfo"]
+    >,
+  bookSourceSetLoginInfo: (url: string, info: Record<string, string>) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.setLoginInfo, url, info) as ReturnType<
+      BookSourceIpcApi["bookSourceSetLoginInfo"]
+    >,
+  bookSourceBrowserLogin: (sourceUrl: string, title?: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.browserLogin, sourceUrl, title) as ReturnType<
+      BookSourceIpcApi["bookSourceBrowserLogin"]
+    >,
+  bookSourceLogin: (
+    sourceUrl: string,
+    loginData: Record<string, string>,
+    options?: import("@shared/bookSource/ipc").BookSourceLoginOptions,
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.login, sourceUrl, loginData, options) as ReturnType<
+      BookSourceIpcApi["bookSourceLogin"]
+    >,
+  bookSourceGetLoginHeader: (sourceUrl: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.getLoginHeader, sourceUrl) as ReturnType<
+      BookSourceIpcApi["bookSourceGetLoginHeader"]
+    >,
+  bookSourceRemoveLoginHeader: (sourceUrl: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.removeLoginHeader, sourceUrl) as ReturnType<
+      BookSourceIpcApi["bookSourceRemoveLoginHeader"]
+    >,
+  bookSourceReorder: (url: string, position: "top" | "bottom") =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.reorder, url, position) as ReturnType<
+      BookSourceIpcApi["bookSourceReorder"]
+    >,
+  bookSourceApplyCustomOrders: (
+    updates: Array<{ url: string; customOrder: number }>,
+  ) =>
+    ipcRenderer.invoke(
+      BOOK_SOURCE_IPC.applyCustomOrders,
+      updates,
+    ) as ReturnType<BookSourceIpcApi["bookSourceApplyCustomOrders"]>,
+  bookSourceExploreKinds: (sourceUrl: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.exploreKinds, sourceUrl) as ReturnType<
+      BookSourceIpcApi["bookSourceExploreKinds"]
+    >,
+  bookSourceExploreBooks: (
+    payload: Parameters<BookSourceIpcApi["bookSourceExploreBooks"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.exploreBooks, payload) as ReturnType<
+      BookSourceIpcApi["bookSourceExploreBooks"]
+    >,
+  bookSourceExploreClearKindsCache: (sourceUrl: string) =>
+    ipcRenderer.invoke(
+      BOOK_SOURCE_IPC.exploreClearKindsCache,
+      sourceUrl,
+    ) as ReturnType<BookSourceIpcApi["bookSourceExploreClearKindsCache"]>,
+  bookSourceGetBookInfo: (
+    payload: Parameters<BookSourceIpcApi["bookSourceGetBookInfo"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.getBookInfo, payload) as ReturnType<
+      BookSourceIpcApi["bookSourceGetBookInfo"]
+    >,
+  bookSourceResolveCoverDisplay: (
+    payload: Parameters<BookSourceIpcApi["bookSourceResolveCoverDisplay"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.resolveCoverDisplay, payload) as ReturnType<
+      BookSourceIpcApi["bookSourceResolveCoverDisplay"]
+    >,
+  bookSourceGetChapterList: (
+    payload: Parameters<BookSourceIpcApi["bookSourceGetChapterList"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.getChapterList, payload) as ReturnType<
+      BookSourceIpcApi["bookSourceGetChapterList"]
+    >,
+  bookSourceGetChapterContent: (
+    payload: Parameters<BookSourceIpcApi["bookSourceGetChapterContent"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.getChapterContent, payload) as ReturnType<
+      BookSourceIpcApi["bookSourceGetChapterContent"]
+    >,
+  bookSourceChapterCacheStatus: (payload: {
+    name: string;
+    bookUrl: string;
+    chapterUrls: string[];
+    cacheDir?: string;
+  }) =>
+    ipcRenderer.invoke(
+      BOOK_SOURCE_IPC.chapterCacheStatus,
+      payload,
+    ) as ReturnType<BookSourceIpcApi["bookSourceChapterCacheStatus"]>,
+  bookSourceClearChapterCache: (payload: {
+    name: string;
+    bookUrl: string;
+    cacheDir?: string;
+  }) =>
+    ipcRenderer.invoke(
+      BOOK_SOURCE_IPC.clearChapterCache,
+      payload,
+    ) as ReturnType<BookSourceIpcApi["bookSourceClearChapterCache"]>,
+  bookSourceGetSourceVariable: (sourceUrl: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.getSourceVariable, sourceUrl) as ReturnType<
+      BookSourceIpcApi["bookSourceGetSourceVariable"]
+    >,
+  bookSourceSetSourceVariable: (
+    sourceUrl: string,
+    variable: string,
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.setSourceVariable, {
+      sourceUrl,
+      variable,
+    }) as ReturnType<BookSourceIpcApi["bookSourceSetSourceVariable"]>,
+  bookSourceGetBookVariable: (bookUrl: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.getBookVariable, bookUrl) as ReturnType<
+      BookSourceIpcApi["bookSourceGetBookVariable"]
+    >,
+  bookSourceSetBookVariable: (bookUrl: string, variable: string) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.setBookVariable, {
+      bookUrl,
+      variable,
+    }) as ReturnType<BookSourceIpcApi["bookSourceSetBookVariable"]>,
+  onBookSourceCaptchaRequest: (
+    cb: (payload: import("@shared/bookSource/ipc").BookSourceCaptchaRequest) => void,
+  ) => {
+    const fn = (
+      _: unknown,
+      payload: import("@shared/bookSource/ipc").BookSourceCaptchaRequest,
+    ) => cb(payload);
+    ipcRenderer.on(BOOK_SOURCE_IPC.captchaRequest, fn);
+    return () => ipcRenderer.off(BOOK_SOURCE_IPC.captchaRequest, fn);
+  },
+  onBookSourceCaptchaDismiss: (cb: (payload: { requestId: string }) => void) => {
+    const fn = (_: unknown, payload: { requestId: string }) => cb(payload);
+    ipcRenderer.on(BOOK_SOURCE_IPC.captchaDismiss, fn);
+    return () => ipcRenderer.off(BOOK_SOURCE_IPC.captchaDismiss, fn);
+  },
+  bookSourceCaptchaReply: (
+    payload: import("@shared/bookSource/ipc").BookSourceCaptchaReply,
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.captchaReply, payload) as ReturnType<
+      BookSourceIpcApi["bookSourceCaptchaReply"]
+    >,
+  bookSourceCheckStart: (
+    sourceUrls: string[],
+    options?: { keyword?: string },
+  ) =>
+    ipcRenderer.invoke(
+      BOOK_SOURCE_IPC.checkStart,
+      sourceUrls,
+      options,
+    ) as ReturnType<BookSourceIpcApi["bookSourceCheckStart"]>,
+  bookSourceCheckCancel: () =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.checkCancel) as ReturnType<
+      BookSourceIpcApi["bookSourceCheckCancel"]
+    >,
+  bookSourceCheckGetConfig: () =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.checkGetConfig) as ReturnType<
+      BookSourceIpcApi["bookSourceCheckGetConfig"]
+    >,
+  bookSourceCheckSetConfig: (
+    patch: Parameters<BookSourceIpcApi["bookSourceCheckSetConfig"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.checkSetConfig, patch) as ReturnType<
+      BookSourceIpcApi["bookSourceCheckSetConfig"]
+    >,
+  onBookSourceCheckEvent: (
+    cb: (ev: import("@shared/bookSource/ipc").BookSourceCheckEvent) => void,
+  ) => {
+    const fn = (
+      _: unknown,
+      payload: import("@shared/bookSource/ipc").BookSourceCheckEvent,
+    ) => cb(payload);
+    ipcRenderer.on(BOOK_SOURCE_IPC.checkEvent, fn);
+    return () => ipcRenderer.off(BOOK_SOURCE_IPC.checkEvent, fn);
+  },
+  getDefaultBookSourceDownloadDir: () => {
+    const ud = getPathFromMainSync("userData");
+    if (!ud) return "";
+    return joinUserDataSubdir(ud, "DownloadedBooks");
+  },
+  getDefaultBookSourceChapterCacheDir: () => {
+    const ud = getPathFromMainSync("userData");
+    if (!ud) return "";
+    return joinUserDataSubdir(ud, "book_cache");
   },
 };
 

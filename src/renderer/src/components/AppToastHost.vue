@@ -4,6 +4,7 @@ import {
   dismissAppToast,
   type AppToastItem,
 } from "../services/appToast";
+import { APP_TOAST_Z_INDEX } from "../constants/appUi";
 import { icons } from "../icons";
 
 function iconHtml(kind: AppToastItem["kind"]): string {
@@ -25,7 +26,7 @@ function iconHtml(kind: AppToastItem["kind"]): string {
 
 <template>
   <Teleport to="body">
-    <div class="appToastHost" aria-live="polite">
+    <div class="appToastHost" aria-live="polite" :style="{ zIndex: APP_TOAST_Z_INDEX }">
       <TransitionGroup name="appToast" tag="div" class="appToastStack">
         <div
           v-for="t in appToastItems"
@@ -68,7 +69,6 @@ function iconHtml(kind: AppToastItem["kind"]): string {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 5998;
   display: flex;
   justify-content: center;
   padding: 12px 12px 0;
@@ -89,7 +89,7 @@ function iconHtml(kind: AppToastItem["kind"]): string {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 10px;
+  gap: 4px;
   width: auto;
   max-width: min(480px, 100%);
   box-sizing: border-box;

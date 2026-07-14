@@ -2,13 +2,6 @@
 import { computed, ref } from "vue";
 import IconButton from "./IconButton.vue";
 import RangeSlider from "./RangeSlider.vue";
-import playSvg from "../assets/play.svg?raw";
-import pauseSvg from "../assets/pause.svg?raw";
-import prevSvg from "../assets/prev.svg?raw";
-import nextSvg from "../assets/next.svg?raw";
-import refreshSvg from "../assets/refresh.svg?raw";
-import stopSvg from "../assets/stop.svg?raw";
-import speedSvg from "../assets/speed.svg?raw";
 import {
   voiceReadEngineSupportsRate,
   voiceReadVolumeMax,
@@ -55,7 +48,7 @@ const playIcon = computed(() => {
   if (props.synthesizing) {
     return `<span class="aiThinkingPulse">${icons.thinkingPulse}</span>`;
   }
-  return props.mode === "playing" ? pauseSvg : playSvg;
+  return props.mode === "playing" ? icons.pause : icons.play;
 });
 const playLabel = computed(() => {
   if (props.synthesizing) {
@@ -97,7 +90,7 @@ function toggleToolbarLayer() {
               <div class="layerPlaybackInner">
                 <IconButton
                   class="layerBtn layerBtn--stagger"
-                  :icon-html="prevSvg"
+                  :icon-html="icons.prev"
                   title="上一行"
                   aria-label="上一行"
                   :disabled="toolbarLocked || !canPrevLine"
@@ -105,7 +98,7 @@ function toggleToolbarLayer() {
                 />
                 <IconButton
                   class="layerBtn layerBtn--stagger"
-                  :icon-html="refreshSvg"
+                  :icon-html="icons.refresh"
                   title="重新合成"
                   aria-label="重新合成"
                   :disabled="toolbarLocked"
@@ -114,7 +107,7 @@ function toggleToolbarLayer() {
                 <div class="playSpacer" aria-hidden="true" />
                 <IconButton
                   class="layerBtn layerBtn--stagger layerBtn--stop"
-                  :icon-html="stopSvg"
+                  :icon-html="icons.stop"
                   title="停止"
                   aria-label="停止"
                   :disabled="toolbarLocked"
@@ -122,7 +115,7 @@ function toggleToolbarLayer() {
                 />
                 <IconButton
                   class="layerBtn layerBtn--stagger"
-                  :icon-html="nextSvg"
+                  :icon-html="icons.next"
                   title="下一行"
                   aria-label="下一行"
                   :disabled="toolbarLocked || !canNextLine"
@@ -196,7 +189,7 @@ function toggleToolbarLayer() {
           :disabled="toolbarLocked"
           @click="toggleToolbarLayer"
         >
-          <span class="layerToggleIcon" v-html="speedSvg" />
+          <span class="layerToggleIcon" v-html="icons.speed" />
         </button>
       </div>
     </div>
@@ -537,7 +530,7 @@ function toggleToolbarLayer() {
   display: block;
 }
 
-.layerToggleIcon :deep(path) {
+.layerToggleIcon :deep(svg path) {
   fill: currentColor;
 }
 

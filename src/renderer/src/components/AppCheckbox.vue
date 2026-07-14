@@ -1,21 +1,33 @@
 <script setup lang="ts">
+import { ref, watchEffect } from "vue";
+
 const modelValue = defineModel<boolean>({ default: false });
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     label?: string;
     disabled?: boolean;
     /** 为 true 时不响应指针事件（如文件列表行点击选中） */
     passive?: boolean;
     ariaLabel?: string;
+    indeterminate?: boolean;
   }>(),
   {
     label: "",
     disabled: false,
     passive: false,
     ariaLabel: "",
+    indeterminate: false,
   },
 );
+
+const inputRef = ref<HTMLInputElement | null>(null);
+
+watchEffect(() => {
+  if (inputRef.value) {
+    inputRef.value.indeterminate = props.indeterminate;
+  }
+});
 </script>
 
 <template>
@@ -27,6 +39,7 @@ withDefaults(
     }"
   >
     <input
+      ref="inputRef"
       v-model="modelValue"
       type="checkbox"
       :disabled="disabled"

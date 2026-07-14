@@ -213,7 +213,7 @@ async function onAddClick() {
   display: block;
 }
 
-.highlightAddBtnIcon :deep(path) {
+.highlightAddBtnIcon :deep(svg path) {
   fill: currentColor;
 }
 

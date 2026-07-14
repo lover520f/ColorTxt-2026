@@ -25,6 +25,7 @@ const props = defineProps<{
   draftLineHeightMultiple: number;
   draftMonacoSmoothScrolling: boolean;
   draftStickyChapterTitleEnabled: boolean;
+  draftChapterNavToolbarEnabled: boolean;
   draftCompressBlankKeepOneBlank: boolean;
   draftTxtrDelimitedMatchCrossLine: boolean;
   draftFullscreenReaderWidthPercent: number;
@@ -38,6 +39,7 @@ defineEmits<{
   "update:draftLineHeightMultiple": [v: number];
   "update:draftMonacoSmoothScrolling": [v: boolean];
   "update:draftStickyChapterTitleEnabled": [v: boolean];
+  "update:draftChapterNavToolbarEnabled": [v: boolean];
   "update:draftCompressBlankKeepOneBlank": [v: boolean];
   "update:draftTxtrDelimitedMatchCrossLine": [v: boolean];
   "update:draftFullscreenReaderWidthPercent": [v: number];
@@ -131,6 +133,22 @@ const draftMaxLineHeightMultiple = computed(() =>
         </div>
         <p class="settingsHint">
           滚动时将章节标题粘在顶部；多层级标题会堆叠。
+        </p>
+      </div>
+
+      <div class="settingsRow">
+        <div class="settingsRowMain">
+          <span class="settingsLabel">启用章节导航工具栏</span>
+          <SwitchToggle
+            :model-value="draftChapterNavToolbarEnabled"
+            aria-label="启用章节导航工具栏"
+            @update:model-value="
+              $emit('update:draftChapterNavToolbarEnabled', $event)
+            "
+          />
+        </div>
+        <p class="settingsHint">
+          在阅读区底部显示「上一章 / 下一章」快捷跳转。
         </p>
       </div>
 

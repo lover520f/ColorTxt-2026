@@ -1,0 +1,276 @@
+import type {
+  BookSourceDownloadEvent,
+  BookSourceDownloadRequest,
+  BookSourceImportPreviewItem,
+  BookSourceListItem,
+  BookSourceRecord,
+  BookSourceSearchEvent,
+  BookDetail,
+  BookChapter,
+  BookSourceGetBookInfoPayload,
+  BookSourceGetChapterListPayload,
+  BookSourceGetChapterContentPayload,
+  ExploreKind,
+  SearchBookItem,
+} from "./types";
+
+export const BOOK_SOURCE_IPC = {
+  list: "bookSource:list",
+  get: "bookSource:get",
+  save: "bookSource:save",
+  delete: "bookSource:delete",
+  toggle: "bookSource:toggle",
+  importPreview: "bookSource:importPreview",
+  importCommit: "bookSource:importCommit",
+  fetchUrl: "bookSource:fetchUrl",
+  readFile: "bookSource:readFile",
+  search: "bookSource:search",
+  searchCancel: "bookSource:searchCancel",
+  searchLoadMore: "bookSource:searchLoadMore",
+  searchEvent: "bookSource:searchEvent",
+  download: "bookSource:download",
+  downloadCancel: "bookSource:downloadCancel",
+  downloadEvent: "bookSource:downloadEvent",
+  getLoginInfo: "bookSource:getLoginInfo",
+  setLoginInfo: "bookSource:setLoginInfo",
+  browserLogin: "bookSource:browserLogin",
+  login: "bookSource:login",
+  getLoginHeader: "bookSource:getLoginHeader",
+  removeLoginHeader: "bookSource:removeLoginHeader",
+  reorder: "bookSource:reorder",
+  applyCustomOrders: "bookSource:applyCustomOrders",
+  exploreKinds: "bookSource:exploreKinds",
+  exploreBooks: "bookSource:exploreBooks",
+  exploreClearKindsCache: "bookSource:exploreClearKindsCache",
+  getBookInfo: "bookSource:getBookInfo",
+  resolveCoverDisplay: "bookSource:resolveCoverDisplay",
+  getChapterList: "bookSource:getChapterList",
+  getChapterContent: "bookSource:getChapterContent",
+  /** 查询哪些章节 URL 已有离线正文缓存 */
+  chapterCacheStatus: "bookSource:chapterCacheStatus",
+  /** 清除某本书的章节正文离线缓存 */
+  clearChapterCache: "bookSource:clearChapterCache",
+  getSourceVariable: "bookSource:getSourceVariable",
+  setSourceVariable: "bookSource:setSourceVariable",
+  getBookVariable: "bookSource:getBookVariable",
+  setBookVariable: "bookSource:setBookVariable",
+  /** 主进程 → 渲染进程：请求显示图片验证码 */
+  captchaRequest: "bookSource:captchaRequest",
+  /** 主进程 → 渲染进程：关闭指定验证码弹框 */
+  captchaDismiss: "bookSource:captchaDismiss",
+  /** 渲染进程 → 主进程：提交验证码 */
+  captchaReply: "bookSource:captchaReply",
+  /** 校验书源（对齐 Legado CheckSource） */
+  checkStart: "bookSource:checkStart",
+  checkCancel: "bookSource:checkCancel",
+  checkEvent: "bookSource:checkEvent",
+  checkGetConfig: "bookSource:checkGetConfig",
+  checkSetConfig: "bookSource:checkSetConfig",
+} as const;
+
+export type BookSourceCheckConfig = {
+  keyword: string;
+  timeout: number;
+  checkSearch: boolean;
+  checkDiscovery: boolean;
+  checkInfo: boolean;
+  checkCategory: boolean;
+  checkContent: boolean;
+};
+
+export type BookSourceCheckEvent =
+  | {
+      type: "progress";
+      completed: number;
+      total: number;
+      sourceUrl: string;
+      sourceName: string;
+      message: string;
+    }
+  | {
+      /** 校验过程中间态（如开始校验、获取目录链接） */
+      type: "sourceStatus";
+      sourceUrl: string;
+      sourceName: string;
+      message: string;
+    }
+  | {
+      type: "sourceDone";
+      sourceUrl: string;
+      sourceName: string;
+      ok: boolean;
+      message: string;
+      bookSourceGroup?: string;
+      respondTime?: number;
+    }
+  | {
+      type: "done";
+      cancelled: boolean;
+      completed: number;
+      total: number;
+    };
+
+export type BookSourceCaptchaRequest = {
+  requestId: string;
+  sourceName: string;
+  imageDataUrl: string;
+};
+
+export type BookSourceCaptchaReply = {
+  requestId: string;
+  ok: boolean;
+  code: string;
+};
+
+export type BookSourceLoginOptions = {
+  /** loginUi 按钮的 action（JS 或 http URL） */
+  buttonAction?: string;
+};
+
+export type BookSourceLoginResult = {
+  ok: boolean;
+  message?: string;
+  logs?: string[];
+};
+
+export type BookSourceResolveCoverPayload = {
+  bookSourceUrl: string;
+  /** 已规范化的封面 HTTP URL（优先） */
+  coverSourceUrl?: string;
+  /** 书架/搜索带入的 coverUrl（可为 colortxt-local 或 http） */
+  coverUrl?: string;
+  bookUrl?: string;
+  name?: string;
+  author?: string;
+  kind?: string;
+  wordCount?: string;
+  intro?: string;
+  lastChapter?: string;
+};
+
+export type BookSourceResolveCoverResult = {
+  coverUrl?: string;
+  coverSourceUrl?: string;
+  logs?: string[];
+  message?: string;
+};
+
+export type BookSourceImportCommitPayload = {
+  addUrls: string[];
+  updateUrls: string[];
+  sources: BookSourceRecord[];
+};
+
+export type BookSourceIpcApi = {
+  bookSourceList: () => Promise<BookSourceListItem[]>;
+  bookSourceGet: (url: string) => Promise<BookSourceRecord | null>;
+  bookSourceSave: (source: BookSourceRecord) => Promise<{ ok: boolean; message?: string }>;
+  bookSourceDelete: (urls: string[]) => Promise<{ ok: boolean }>;
+  bookSourceToggle: (url: string, enabled: boolean) => Promise<{ ok: boolean }>;
+  bookSourceImportPreview: (
+    sources: BookSourceRecord[],
+  ) => Promise<BookSourceImportPreviewItem[]>;
+  bookSourceImportCommit: (
+    payload: BookSourceImportCommitPayload,
+  ) => Promise<{ ok: boolean; added: number; updated: number }>;
+  bookSourceFetchUrl: (url: string) => Promise<{ ok: boolean; text?: string; message?: string }>;
+  bookSourceReadFile: (filePath: string) => Promise<{ ok: boolean; text?: string; message?: string }>;
+  bookSourceSearch: (
+    key: string,
+    options?: { sourceUrls?: string[]; precisionSearch?: boolean },
+  ) => Promise<{ searchId: string }>;
+  bookSourceSearchCancel: (searchId: string) => Promise<void>;
+  bookSourceSearchLoadMore: (searchId: string) => Promise<{ ok: boolean }>;
+  onBookSourceSearchEvent: (cb: (ev: BookSourceSearchEvent) => void) => () => void;
+  bookSourceDownload: (
+    req: BookSourceDownloadRequest,
+  ) => Promise<{ downloadId: string }>;
+  bookSourceDownloadCancel: (downloadId: string) => Promise<void>;
+  onBookSourceDownloadEvent: (cb: (ev: BookSourceDownloadEvent) => void) => () => void;
+  bookSourceGetLoginInfo: (url: string) => Promise<Record<string, string>>;
+  bookSourceSetLoginInfo: (
+    url: string,
+    info: Record<string, string>,
+  ) => Promise<{ ok: boolean }>;
+  bookSourceBrowserLogin: (
+    sourceUrl: string,
+    title?: string,
+  ) => Promise<{ ok: boolean; message?: string; cancelled?: boolean }>;
+  bookSourceLogin: (
+    sourceUrl: string,
+    loginData: Record<string, string>,
+    options?: BookSourceLoginOptions,
+  ) => Promise<BookSourceLoginResult>;
+  bookSourceGetLoginHeader: (sourceUrl: string) => Promise<string>;
+  bookSourceRemoveLoginHeader: (sourceUrl: string) => Promise<{ ok: boolean }>;
+  bookSourceReorder: (
+    url: string,
+    position: "top" | "bottom",
+  ) => Promise<{ ok: boolean }>;
+  bookSourceApplyCustomOrders: (
+    updates: Array<{ url: string; customOrder: number }>,
+  ) => Promise<{ ok: boolean }>;
+  bookSourceExploreKinds: (
+    sourceUrl: string,
+  ) => Promise<{ kinds: ExploreKind[]; logs?: string[]; message?: string }>;
+  bookSourceExploreBooks: (payload: {
+    sourceUrl: string;
+    exploreUrl: string;
+    page?: number;
+  }) => Promise<{ items: SearchBookItem[]; logs?: string[]; message?: string }>;
+  bookSourceExploreClearKindsCache: (
+    sourceUrl: string,
+  ) => Promise<{ ok: boolean }>;
+  bookSourceGetBookInfo: (
+    payload: BookSourceGetBookInfoPayload,
+  ) => Promise<{ detail?: BookDetail; logs?: string[]; message?: string }>;
+  bookSourceResolveCoverDisplay: (
+    payload: BookSourceResolveCoverPayload,
+  ) => Promise<BookSourceResolveCoverResult>;
+  bookSourceGetChapterList: (
+    payload: BookSourceGetChapterListPayload,
+  ) => Promise<{ chapters?: BookChapter[]; logs?: string[]; message?: string }>;
+  bookSourceGetChapterContent: (
+    payload: BookSourceGetChapterContentPayload,
+  ) => Promise<{ content?: string; fromCache?: boolean; logs?: string[]; message?: string }>;
+  bookSourceChapterCacheStatus: (payload: {
+    name: string;
+    bookUrl: string;
+    chapterUrls: string[];
+    cacheDir?: string;
+  }) => Promise<{ cachedUrls: string[] }>;
+  bookSourceClearChapterCache: (payload: {
+    name: string;
+    bookUrl: string;
+    cacheDir?: string;
+  }) => Promise<{ ok: boolean; cleared?: boolean; message?: string }>;
+  bookSourceGetSourceVariable: (sourceUrl: string) => Promise<string>;
+  bookSourceSetSourceVariable: (
+    sourceUrl: string,
+    variable: string,
+  ) => Promise<{ ok: boolean }>;
+  bookSourceGetBookVariable: (bookUrl: string) => Promise<string>;
+  bookSourceSetBookVariable: (
+    bookUrl: string,
+    variable: string,
+  ) => Promise<{ ok: boolean }>;
+  onBookSourceCaptchaRequest: (
+    cb: (payload: BookSourceCaptchaRequest) => void,
+  ) => () => void;
+  onBookSourceCaptchaDismiss: (
+    cb: (payload: { requestId: string }) => void,
+  ) => () => void;
+  bookSourceCaptchaReply: (
+    payload: BookSourceCaptchaReply,
+  ) => Promise<{ ok: boolean }>;
+  bookSourceCheckStart: (
+    sourceUrls: string[],
+    options?: { keyword?: string },
+  ) => Promise<{ ok: boolean; message?: string }>;
+  bookSourceCheckCancel: () => Promise<{ ok: boolean }>;
+  bookSourceCheckGetConfig: () => Promise<BookSourceCheckConfig>;
+  bookSourceCheckSetConfig: (
+    patch: Partial<BookSourceCheckConfig>,
+  ) => Promise<BookSourceCheckConfig>;
+  onBookSourceCheckEvent: (cb: (ev: BookSourceCheckEvent) => void) => () => void;
+};

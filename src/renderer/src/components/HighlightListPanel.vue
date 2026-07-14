@@ -295,7 +295,7 @@ const emptyMessage = computed(() => {
   height: 12px;
 }
 
-.highlightActionIcon :deep(path) {
+.highlightActionIcon :deep(svg path) {
   fill: currentColor;
 }
 

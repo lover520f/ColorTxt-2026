@@ -562,8 +562,7 @@ function chapterHeaderPadding(
   vector-effect: non-scaling-stroke;
 }
 
-.annotationIconInner:not(.annotationIconInner--lineation) :deep(path),
-.annotationIconInner:not(.annotationIconInner--lineation) :deep(svg) {
+.annotationIconInner:not(.annotationIconInner--lineation) :deep(svg path) {
   fill: currentColor;
 }
 

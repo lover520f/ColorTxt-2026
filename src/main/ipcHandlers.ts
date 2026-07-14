@@ -60,6 +60,8 @@ import { loadAiConfig } from "./ai/infra/config";
 import { readActiveChatEndpoint } from "@shared/aiEndpointProfiles";
 import { attributeVoiceReadSpeakers } from "./ai/voiceReadSpeaker";
 import { registerVoiceReadIpcHandlers } from "./voiceRead/registerVoiceReadIpc";
+import { registerBookSourceIpcHandlers } from "./bookSource/registerBookSourceIpc";
+import { createFindBookDesktopShortcut } from "./findBookLaunch";
 
 type TxtFileItem = { name: string; path: string; size: number };
 type DirListScanProgress = (item: { name: string; path: string }) => void;
@@ -75,6 +77,9 @@ type RegisterMainIpcHandlersOptions = {
   createWindow: CreateMainWindow;
   shouldRestoreSessionByWindowId: Map<number, boolean>;
   pendingOpenTxtByWindowId: Map<number, string>;
+  findBookWindowByWindowId: Map<number, boolean>;
+  findBookInitialTabByWindowId: Map<number, "bookshelf" | "search">;
+  mainWindowFocusState: { lastId: number | null };
 };
 
 let cachedSystemFonts: string[] | null = null;
@@ -181,6 +186,9 @@ export function registerMainIpcHandlers(
     createWindow,
     shouldRestoreSessionByWindowId,
     pendingOpenTxtByWindowId,
+    findBookWindowByWindowId,
+    findBookInitialTabByWindowId,
+    mainWindowFocusState,
   } = options;
   const activeStreamBySenderId = new Map<
     number,
@@ -339,6 +347,56 @@ export function registerMainIpcHandlers(
     createWindow({ openTxtPath: targetPath });
   });
 
+  ipcMain.on("window:openFindBook", () => {
+    createWindow({ openFindBook: true });
+  });
+
+  ipcMain.handle("findBook:createDesktopShortcut", async () => {
+    return createFindBookDesktopShortcut();
+  });
+
+  ipcMain.handle("window:focusOrOpenMain", () => {
+    const mains = BrowserWindow.getAllWindows().filter(
+      (w) => !w.isDestroyed() && !findBookWindowByWindowId.get(w.id),
+    );
+    if (mains.length > 0) {
+      const preferred = mainWindowFocusState.lastId
+        ? mains.find((w) => w.id === mainWindowFocusState.lastId)
+        : undefined;
+      const target = preferred ?? mains[mains.length - 1]!;
+      if (target.isMinimized()) target.restore();
+      target.show();
+      target.focus();
+      mainWindowFocusState.lastId = target.id;
+      return;
+    }
+    createWindow({});
+  });
+
+  ipcMain.handle("window:openFileInMain", (_evt, filePath: unknown) => {
+    const resolved =
+      typeof filePath === "string" && filePath.trim()
+        ? filePath.trim()
+        : null;
+    if (!resolved) return;
+    const mains = BrowserWindow.getAllWindows().filter(
+      (w) => !w.isDestroyed() && !findBookWindowByWindowId.get(w.id),
+    );
+    if (mains.length === 0) {
+      createWindow({ openTxtPath: resolved });
+      return;
+    }
+    const preferred = mainWindowFocusState.lastId
+      ? mains.find((w) => w.id === mainWindowFocusState.lastId)
+      : undefined;
+    const target = preferred ?? mains[mains.length - 1]!;
+    if (target.isMinimized()) target.restore();
+    target.show();
+    target.focus();
+    mainWindowFocusState.lastId = target.id;
+    target.webContents.send("app:open-txt-path", resolved);
+  });
+
   ipcMain.handle("window:toggleDevTools", (evt) => {
     const win = BrowserWindow.fromWebContents(evt.sender);
     if (!win || win.isDestroyed()) return;
@@ -358,6 +416,8 @@ export function registerMainIpcHandlers(
       evt.returnValue = {
         shouldRestoreSession: false,
         hasPendingOpenTxt: false,
+        isFindBookWindow: false,
+        findBookInitialTab: "search" as const,
       };
       return;
     }
@@ -365,6 +425,11 @@ export function registerMainIpcHandlers(
       shouldRestoreSession:
         shouldRestoreSessionByWindowId.get(win.id) === true,
       hasPendingOpenTxt: pendingOpenTxtByWindowId.has(win.id),
+      isFindBookWindow: findBookWindowByWindowId.get(win.id) === true,
+      findBookInitialTab:
+        findBookInitialTabByWindowId.get(win.id) === "bookshelf"
+          ? ("bookshelf" as const)
+          : ("search" as const),
     };
   });
 
@@ -964,6 +1029,7 @@ function unknownQuoteAttributions(
 
   registerAiIpcHandlers();
   registerVoiceReadIpcHandlers();
+  registerBookSourceIpcHandlers();
   registerSecretsIpcHandlers();
   registerTextConvertIpcHandlers();
 }

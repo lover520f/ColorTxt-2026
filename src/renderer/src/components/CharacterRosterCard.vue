@@ -15,7 +15,6 @@ import {
 } from "@shared/characterCardTextureEffects";
 import { useCharacterCardTilt } from "../composables/useCharacterCardTilt";
 import { useCharacterCardPopoverZoom } from "../composables/useCharacterCardPopoverZoom";
-import zoomInSvg from "../assets/zoom_in.svg?raw";
 import { icons } from "../icons";
 import IconButton from "./IconButton.vue";
 
@@ -289,7 +288,7 @@ onBeforeUnmount(() => {
               @click="emit('speak')"
             />
             <IconButton
-              :icon-html="zoomInSvg"
+              :icon-html="icons.zoomIn"
               title="放大"
               aria-label="放大角色卡"
               :disabled="!portraitUrl"

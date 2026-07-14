@@ -12,10 +12,12 @@ import { nextTick, type ComponentPublicInstance } from "vue";
 import { getChapterMatchRules, type Chapter } from "./chapter";
 import AppHeader, { type RecentFileItem } from "./components/AppHeader.vue";
 import VoiceReadToolbar from "./components/VoiceReadToolbar.vue";
+import ReaderChapterNavBar from "./components/ReaderChapterNavBar.vue";
 import ReaderSidebar from "./components/ReaderSidebar.vue";
 import AppFooter from "./components/AppFooter.vue";
 import ReaderMain from "./components/ReaderMain.vue";
 import AppDialogHost from "./components/AppDialogHost.vue";
+import AppCaptchaHost from "./components/AppCaptchaHost.vue";
 import AppToastHost from "./components/AppToastHost.vue";
 import AppOverlays from "./components/AppOverlays.vue";
 import type { SettingsApplyPayload } from "./components/SettingsPanel.vue";
@@ -39,6 +41,7 @@ import {
   resolveInitialReaderSidebarTab,
   type InitialWindowLoadIntent,
 } from "./reader/initialSidebarTab";
+import { pickActiveChapterIdx } from "./reader/chapterIndex";
 import {
   WORDCLOUD_DEFAULT_ANGLE_MODE,
   WORDCLOUD_DEFAULT_FONT_FAMILY,
@@ -119,6 +122,7 @@ import {
   defaultMonacoCustomHighlight,
   defaultMonacoSmoothScrolling,
   defaultStickyChapterTitleEnabled,
+  defaultChapterNavToolbarEnabled,
   defaultReaderEditShowLineNumbers,
   defaultReaderEditMinimap,
   defaultEditAutoRefreshChapterList,
@@ -304,6 +308,7 @@ const showAboutPanel = ref(false);
 const showShortcutPanel = ref(false);
 const showSettingsPanel = ref(false);
 const showColorSchemePanel = ref(false);
+const appOverlaysRef = ref<InstanceType<typeof AppOverlays> | null>(null);
 watch(
   () => [showSettingsPanel.value, showColorSchemePanel.value] as const,
   ([settingsOpen, colorOpen]) => {
@@ -311,7 +316,6 @@ watch(
   },
   { immediate: true },
 );
-const appOverlaysRef = ref<InstanceType<typeof AppOverlays> | null>(null);
 const showChapterRulePanel = ref(false);
 const chapterRuleErrorText = ref("");
 const chapterRuleState = ref(getChapterMatchRules());
@@ -519,6 +523,7 @@ const monacoAdvancedWrapping = ref(defaultMonacoAdvancedWrapping);
 const monacoSmoothScrolling = ref(defaultMonacoSmoothScrolling);
 /** 阅读区顶部粘性章节标题 */
 const stickyChapterTitleEnabled = ref(defaultStickyChapterTitleEnabled);
+const chapterNavToolbarEnabled = ref(defaultChapterNavToolbarEnabled);
 const readerEditShowLineNumbers = ref(defaultReaderEditShowLineNumbers);
 const readerEditMinimap = ref(defaultReaderEditMinimap);
 const editAutoRefreshChapterList = ref(defaultEditAutoRefreshChapterList);
@@ -1126,6 +1131,7 @@ const persistence = useAppPersistence({
   monacoAdvancedWrapping,
   monacoSmoothScrolling,
   stickyChapterTitleEnabled,
+  chapterNavToolbarEnabled,
   readerEditShowLineNumbers,
   readerEditMinimap,
   editAutoRefreshChapterList,
@@ -1768,6 +1774,43 @@ function jumpToNextChapterWithVoiceRead() {
   guardReaderNavigation(() => jumpToNextChapter());
 }
 
+const showReaderChapterNav = computed(
+  () =>
+    chapterNavToolbarEnabled.value &&
+    Boolean(currentFile.value) &&
+    chapters.value.length > 0,
+);
+
+const readerChapterNavUiVisible = computed(
+  () => showReaderChapterNav.value && !isVoiceReadActive.value,
+);
+
+const readerChapterNavVisible = computed(
+  () =>
+    readerChapterNavUiVisible.value &&
+    (!isFullscreenView.value || showFullscreenFooter.value),
+);
+
+const readerChapterNavBusy = computed(
+  () => loading.value || isVoiceReadNavigationBlocked.value,
+);
+
+const readerChapterNavActiveIdx = computed(() => {
+  if (activeChapterIdx.value >= 0) return activeChapterIdx.value;
+  return pickActiveChapterIdx(chapters.value, lastProbeLine.value);
+});
+
+const readerChapterNavCanPrev = computed(
+  () => showReaderChapterNav.value && readerChapterNavActiveIdx.value > 0,
+);
+
+const readerChapterNavCanNext = computed(() => {
+  if (!showReaderChapterNav.value) return false;
+  const idx = readerChapterNavActiveIdx.value;
+  if (idx === -1) return true;
+  return idx + 1 < chapters.value.length;
+});
+
 const canEnterReaderEditMode = computed(
   () =>
     Boolean(currentFile.value) &&
@@ -2082,6 +2125,10 @@ function requestCheckForUpdates() {
 
 function openNewWindow() {
   window.colorTxt.openNewWindow();
+}
+
+function openFindBookWindow() {
+  window.colorTxt.openFindBookWindow();
 }
 
 async function applyShortcutBindings(next: ShortcutBindingMap) {
@@ -2806,6 +2853,7 @@ async function applySettings(payload: SettingsApplyPayload) {
   const prevChapterMinCharCount = chapterMinCharCount.value;
   monacoSmoothScrolling.value = payload.monacoSmoothScrolling;
   stickyChapterTitleEnabled.value = payload.stickyChapterTitleEnabled;
+  chapterNavToolbarEnabled.value = payload.chapterNavToolbarEnabled;
   timedScrollSettings.value = mergeTimedScrollSettings(payload.timedScroll);
   readerEditShowLineNumbers.value = payload.readerEditShowLineNumbers;
   readerEditMinimap.value = payload.readerEditMinimap;
@@ -3000,6 +3048,7 @@ useAppWindowBindings({
   openColorScheme: () => {
     showColorSchemePanel.value = true;
   },
+  openFindBook: openFindBookWindow,
   toggleFind: onToggleFind,
   scrollDownLine: () => readerRef.value?.scrollByLineStep?.(1),
   scrollUpLine: () => readerRef.value?.scrollByLineStep?.(-1),
@@ -3118,6 +3167,7 @@ useAppShellThemeWatch({
         @open-shortcuts="showShortcutPanel = true"
         @open-settings="showSettingsPanel = true"
         @open-color-scheme="showColorSchemePanel = true"
+        @open-find-book="openFindBookWindow"
         @open-new-window="openNewWindow"
         @open-recent-file="openRecentFileFromHistory"
         @clear-recent-files="clearRecentFiles"
@@ -3272,6 +3322,7 @@ useAppShellThemeWatch({
           @request-expand-panel="showSidebar = true"
           @request-collapse-panel="showSidebar = false"
           @open-color-scheme="showColorSchemePanel = true"
+        @open-find-book="openFindBookWindow"
           @open-settings="showSettingsPanel = true"
         />
         <!-- 放在侧栏容器内，避免移到拖条时触发 @mouseleave 导致全屏侧栏收起 -->
@@ -3388,6 +3439,15 @@ useAppShellThemeWatch({
           @regenerate="voiceReadRegenerateCurrentLine"
           @stop="exitVoiceRead"
         />
+        <ReaderChapterNavBar
+          v-if="readerChapterNavUiVisible && !isFullscreenView"
+          :visible="readerChapterNavVisible"
+          :can-go-prev="readerChapterNavCanPrev"
+          :can-go-next="readerChapterNavCanNext"
+          :disabled="readerChapterNavBusy"
+          @prev="jumpToPrevChapterWithVoiceRead"
+          @next="jumpToNextChapterWithVoiceRead"
+        />
         <div
           v-if="showReaderIdleHint"
           class="readerIdleHint"
@@ -3426,6 +3486,15 @@ useAppShellThemeWatch({
       v-show="!isFullscreenView || showFullscreenFooter"
       @mouseleave="onFullscreenFooterMouseLeave"
     >
+      <ReaderChapterNavBar
+        v-if="readerChapterNavUiVisible && isFullscreenView"
+        :visible="readerChapterNavVisible"
+        :can-go-prev="readerChapterNavCanPrev"
+        :can-go-next="readerChapterNavCanNext"
+        :disabled="readerChapterNavBusy"
+        @prev="jumpToPrevChapterWithVoiceRead"
+        @next="jumpToNextChapterWithVoiceRead"
+      />
       <AppFooter
         :loading="loading"
         :loading-progress-percent="loadingProgressPercent"
@@ -3454,6 +3523,7 @@ useAppShellThemeWatch({
     </div>
 
     <AppDialogHost />
+    <AppCaptchaHost />
     <AppToastHost />
     <AiSmartFormatProgressModal
       v-model="aiSmartFormatProgressOpen"
@@ -3486,6 +3556,7 @@ useAppShellThemeWatch({
       :compress-blank-keep-one-blank="compressBlankKeepOneBlank"
       :monaco-smooth-scrolling="monacoSmoothScrolling"
       :sticky-chapter-title-enabled="stickyChapterTitleEnabled"
+      :chapter-nav-toolbar-enabled="chapterNavToolbarEnabled"
       :timed-scroll-settings="timedScrollSettings"
       :reader-edit-show-line-numbers="readerEditShowLineNumbers"
       :reader-edit-minimap="readerEditMinimap"

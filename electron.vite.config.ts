@@ -41,6 +41,10 @@ const GITHUB_REPO_URL_JSON = JSON.stringify(GITHUB_REPO_URL_LITERAL);
 
 const sharedResolveAlias = {
   "@shared": resolve(__electronViteConfigDir, "src/shared"),
+  "node:sqlite": resolve(
+    __electronViteConfigDir,
+    "scripts/stubs/node-sqlite-stub.ts",
+  ),
 };
 
 const monacoEditorPlugin =
@@ -75,6 +79,9 @@ export default defineConfig({
          *  - `font-list` 依赖包内 `./libs/core` 等相对路径，需保留在 node_modules。
          *  - `iconv-lite` 常含动态编码加载，保持 external。
          *  - `jschardet` 由 Rollup 打入主包；`jszip`/`pako` 仅 renderer 使用，主进程勿 external。
+         *  - Legado 书源解析（`cheerio`、`jsonpath-plus`、`@xmldom/xmldom`、`xpath`、`tough-cookie`）同样打入主包，见 devDependencies，勿加入 external。
+         *  - `heic-convert`（HEIC 封面懒加载 chunk）、`socks-proxy-agent`（SOCKS 代理）intentionally bundled，见 devDependencies，勿加入 external。
+         *  - `cheerio` 依赖的 undici 会引用 `node:sqlite`（SqliteCacheStore）；经 alias 指向 stub，避免 ExperimentalWarning。
          *  - `electron-updater` 保持 CJS 动态 require 与依赖树习惯用法。
          *  - `ws` 内含对可选原生模块 `bufferutil`/`utf-8-validate` 的动态加载；打入 bundle 时会被解析成硬导入导致启动失败，故保持 external。
          */
@@ -164,7 +171,10 @@ export default defineConfig({
     build: {
       outDir: resolve(__electronViteConfigDir, "dist/renderer"),
       rollupOptions: {
-        input: resolve(__electronViteConfigDir, "src/renderer/index.html"),
+        input: {
+          index: resolve(__electronViteConfigDir, "src/renderer/index.html"),
+          "find-book": resolve(__electronViteConfigDir, "src/renderer/find-book.html"),
+        },
       },
     },
   },

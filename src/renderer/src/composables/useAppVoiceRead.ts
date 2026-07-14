@@ -44,6 +44,16 @@ export function useAppVoiceRead(deps: {
   monacoSmoothScrolling: Ref<boolean>;
   aiFeaturesEnabled: Ref<boolean>;
   characterRoster: Ref<readonly CharacterRosterEntry[]>;
+  /**
+   * 找书等场景：当前章读完后自动续章（由 onDocumentEnd 加载下一章）。
+   * 最后一章仍正常结束朗读。
+   */
+  continueAtDocumentEnd?: boolean;
+  onDocumentEnd?: () => void | Promise<void>;
+  /** 为 true 时可续读下一章（非最后一章） */
+  canAdvanceToNextDocument?: () => boolean;
+  /** 加载下一章时暂停播放循环并保持 playing，加载完成后自动从篇首续读 */
+  pauseOnLoading?: boolean;
 }) {
   const mode = ref<VoiceReadMode>("off");
   const isSynthesizing = ref(false);
@@ -306,32 +316,28 @@ export function useAppVoiceRead(deps: {
     deps.readerRef.value?.setVoiceReadLineHighlight?.(null);
   }
 
+  async function handleDocumentEndReached(): Promise<boolean> {
+    if (!deps.continueAtDocumentEnd || !deps.onDocumentEnd) return false;
+    if (deps.canAdvanceToNextDocument && !deps.canAdvanceToNextDocument()) {
+      return false;
+    }
+    playbackLoopGen += 1;
+    player.onChunkChange = undefined;
+    player.stopForLineJump();
+    player.discardPrefetch();
+    resetSynthesizingState();
+    clearActiveBatch();
+    lastCompletedBatchEndLine = 0;
+    await Promise.resolve(deps.onDocumentEnd());
+    return true;
+  }
+
   function clampPlaybackStartLine(line: number, mCount: number): number {
     let ln = Math.max(1, Math.min(Math.floor(line), mCount));
     if (ln <= lastCompletedBatchEndLine) {
       ln = Math.min(mCount, lastCompletedBatchEndLine + 1);
     }
     return ln;
-  }
-
-  function resumePlaybackAfterBatch(batchEnd: number, gen: number) {
-    if (!isPlaybackAlive(gen, mode.value)) return;
-    lastCompletedBatchEndLine = Math.max(lastCompletedBatchEndLine, batchEnd);
-    const reader = deps.readerRef.value;
-    const mCount = reader?.getModelLineCount?.() ?? 0;
-    if (!reader || mCount < 1) return;
-    if (batchEnd >= mCount) {
-      player.discardPrefetch();
-      exitVoiceRead();
-      return;
-    }
-    const next = clampPlaybackStartLine(batchEnd + 1, mCount);
-    if (next > mCount) {
-      exitVoiceRead();
-      return;
-    }
-    currentLine = next;
-    void runPlaybackLoop(next);
   }
 
   function syncToolbarFromPersisted() {
@@ -459,7 +465,11 @@ export function useAppVoiceRead(deps: {
     const gen = ++playbackLoopGen;
     const reader0 = deps.readerRef.value;
     const mCount0 = reader0?.getModelLineCount?.() ?? 0;
-    if (!reader0 || mCount0 < 1) return;
+    if (!reader0 || mCount0 < 1) {
+      if (await handleDocumentEndReached()) return;
+      exitVoiceRead();
+      return;
+    }
     const startLn = clampPlaybackStartLine(startLine, mCount0);
     currentLine = startLn;
     if (startLn > mCount0) {
@@ -473,6 +483,7 @@ export function useAppVoiceRead(deps: {
       const reader = deps.readerRef.value;
       const mCount = reader?.getModelLineCount?.() ?? 0;
       if (!reader || mCount < 1) {
+        if (await handleDocumentEndReached()) break;
         exitVoiceRead();
         break;
       }
@@ -515,6 +526,7 @@ export function useAppVoiceRead(deps: {
         lastCompletedBatchEndLine = Math.max(lastCompletedBatchEndLine, batchEnd);
         if (batchEnd >= mCount) {
           player.discardPrefetch();
+          if (await handleDocumentEndReached()) break;
           exitVoiceRead();
           break;
         }
@@ -547,6 +559,7 @@ export function useAppVoiceRead(deps: {
 
       if (batchEnd >= mCount) {
         player.discardPrefetch();
+        if (await handleDocumentEndReached()) break;
         exitVoiceRead();
         break;
       }
@@ -653,7 +666,10 @@ export function useAppVoiceRead(deps: {
     if (mode.value === "off") return;
     const reader = deps.readerRef.value;
     const mCount = reader?.getModelLineCount?.() ?? 0;
-    if (!reader || mCount < 1) return;
+    if (!reader || mCount < 1) {
+      void handleDocumentEndReached();
+      return;
+    }
     const ln = resolveSpeakableStartLine(
       Math.max(1, Math.min(Math.floor(line), mCount)),
     );
@@ -783,12 +799,14 @@ export function useAppVoiceRead(deps: {
     if (deps.loading.value) return false;
     if (deps.readerEditMode.value) return false;
     const n = deps.readerRef.value?.getModelLineCount?.() ?? 0;
-    return n > 0;
+    if (n > 0) return true;
+    return Boolean(deps.canAdvanceToNextDocument?.());
   });
 
-  watch(deps.currentFile, () => {
+  watch(deps.currentFile, (file, prev) => {
     player.clearSynthesisCache();
     clearVoiceReadSpeakerCache();
+    if (deps.pauseOnLoading && mode.value !== "off" && file && prev) return;
     exitVoiceRead();
   });
 
@@ -827,6 +845,21 @@ export function useAppVoiceRead(deps: {
   watch(
     () => deps.loading.value,
     (ld) => {
+      if (deps.pauseOnLoading && mode.value === "playing") {
+        if (ld) {
+          playbackLoopGen += 1;
+          player.onChunkChange = undefined;
+          player.stopForLineJump();
+          resetSynthesizingState();
+          clearActiveBatch();
+        } else {
+          void nextTick(() => {
+            if (mode.value !== "playing" || deps.loading.value) return;
+            restartPlaybackFromLine(1);
+          });
+        }
+        return;
+      }
       if (ld) exitVoiceRead();
     },
   );

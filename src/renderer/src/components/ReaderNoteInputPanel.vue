@@ -32,6 +32,9 @@ watch(
       const reg = registerModal({
         close: () => emit("close"),
         getEscClosable: () => true,
+        setZIndex: (z) => {
+          panelZIndex.value = z;
+        },
       });
       panelZIndex.value = reg.zIndex;
       modalUnregister = reg.unregister;

@@ -1,0 +1,77 @@
+<script setup lang="ts">
+export type FindBookSettingsTabId = "download" | "reading";
+
+defineProps<{
+  activeTab: FindBookSettingsTabId;
+}>();
+
+const emit = defineEmits<{
+  "update:activeTab": [value: FindBookSettingsTabId];
+}>();
+</script>
+
+<template>
+  <div class="settingsTabBar" role="tablist" aria-label="找书设置分类">
+    <div class="tabs">
+      <button
+        type="button"
+        role="tab"
+        class="tabBtn"
+        :class="{ active: activeTab === 'download' }"
+        :aria-selected="activeTab === 'download'"
+        @click="emit('update:activeTab', 'download')"
+      >
+        下载
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tabBtn"
+        :class="{ active: activeTab === 'reading' }"
+        :aria-selected="activeTab === 'reading'"
+        @click="emit('update:activeTab', 'reading')"
+      >
+        阅读
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.settingsTabBar {
+  flex-shrink: 0;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tabBtn {
+  box-sizing: border-box;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--tab-fg);
+  font-size: 14px;
+  padding: 8px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tabBtn:hover {
+  color: var(--tab-fg-hover);
+}
+
+.tabBtn.active {
+  color: var(--tab-fg-active);
+  border-bottom: 2px solid var(--tab-underline);
+  font-weight: 600;
+}
+</style>

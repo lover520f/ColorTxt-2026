@@ -74,7 +74,7 @@ defineEmits<{ click: [e: MouseEvent] }>();
   display: block;
 }
 
-.icon:not(.icon--multicolor) :deep(path) {
+.icon:not(.icon--multicolor) :deep(svg path) {
   fill: currentColor;
 }
 

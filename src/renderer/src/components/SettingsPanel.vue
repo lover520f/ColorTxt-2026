@@ -36,6 +36,7 @@ import {
   defaultFullscreenReaderWidthPercent,
   defaultMonacoSmoothScrolling,
   defaultStickyChapterTitleEnabled,
+  defaultChapterNavToolbarEnabled,
   defaultReaderEditShowLineNumbers,
   defaultReaderEditMinimap,
   defaultEditAutoRefreshChapterList,
@@ -103,6 +104,7 @@ export type SettingsApplyPayload = {
   fullscreenReaderWidthPercent: number;
   monacoSmoothScrolling: boolean;
   stickyChapterTitleEnabled: boolean;
+  chapterNavToolbarEnabled: boolean;
   readerEditShowLineNumbers: boolean;
   readerEditMinimap: boolean;
   editAutoRefreshChapterList: boolean;
@@ -134,6 +136,7 @@ const props = defineProps<{
   readerLineHeightMultiple: number;
   monacoSmoothScrolling: boolean;
   stickyChapterTitleEnabled: boolean;
+  chapterNavToolbarEnabled: boolean;
   readerEditShowLineNumbers: boolean;
   readerEditMinimap: boolean;
   editAutoRefreshChapterList: boolean;
@@ -184,6 +187,7 @@ const draftFontSize = ref(14);
 const draftLineHeightMultiple = ref(1.5);
 const draftMonacoSmoothScrolling = ref(true);
 const draftStickyChapterTitleEnabled = ref(defaultStickyChapterTitleEnabled);
+const draftChapterNavToolbarEnabled = ref(defaultChapterNavToolbarEnabled);
 const draftReaderEditShowLineNumbers = ref(defaultReaderEditShowLineNumbers);
 const draftReaderEditMinimap = ref(defaultReaderEditMinimap);
 const draftEditAutoRefreshChapterList = ref(defaultEditAutoRefreshChapterList);
@@ -235,6 +239,7 @@ function syncDraftFromProps() {
   );
   draftMonacoSmoothScrolling.value = props.monacoSmoothScrolling;
   draftStickyChapterTitleEnabled.value = props.stickyChapterTitleEnabled;
+  draftChapterNavToolbarEnabled.value = props.chapterNavToolbarEnabled;
   draftReaderEditShowLineNumbers.value = props.readerEditShowLineNumbers;
   draftReaderEditMinimap.value = props.readerEditMinimap;
   draftEditAutoRefreshChapterList.value = props.editAutoRefreshChapterList;
@@ -345,6 +350,7 @@ function resetReadingDraft() {
   );
   draftMonacoSmoothScrolling.value = defaultMonacoSmoothScrolling;
   draftStickyChapterTitleEnabled.value = defaultStickyChapterTitleEnabled;
+  draftChapterNavToolbarEnabled.value = defaultChapterNavToolbarEnabled;
   draftCompressBlankKeepOneBlank.value = defaultCompressBlankKeepOneBlank;
   draftTxtrDelimitedMatchCrossLine.value = defaultTxtrDelimitedMatchCrossLine;
   draftFullscreenReaderWidthPercent.value = defaultFullscreenReaderWidthPercent;
@@ -529,6 +535,7 @@ async function onConfirm() {
     fullscreenReaderWidthPercent: draftFullscreenReaderWidthPercent.value,
     monacoSmoothScrolling: draftMonacoSmoothScrolling.value,
     stickyChapterTitleEnabled: draftStickyChapterTitleEnabled.value,
+    chapterNavToolbarEnabled: draftChapterNavToolbarEnabled.value,
     readerEditShowLineNumbers: draftReaderEditShowLineNumbers.value,
     readerEditMinimap: draftReaderEditMinimap.value,
     editAutoRefreshChapterList: draftEditAutoRefreshChapterList.value,
@@ -622,6 +629,9 @@ async function onClearCache() {
               v-model:draft-monaco-smooth-scrolling="draftMonacoSmoothScrolling"
               v-model:draft-sticky-chapter-title-enabled="
                 draftStickyChapterTitleEnabled
+              "
+              v-model:draft-chapter-nav-toolbar-enabled="
+                draftChapterNavToolbarEnabled
               "
               v-model:draft-compress-blank-keep-one-blank="
                 draftCompressBlankKeepOneBlank
@@ -813,7 +823,7 @@ async function onClearCache() {
   display: block;
 }
 
-.settingsFooterAddIcon :deep(path) {
+.settingsFooterAddIcon :deep(svg path) {
   fill: currentColor;
 }
 

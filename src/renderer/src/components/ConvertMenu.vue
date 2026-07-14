@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import IconButton from "./IconButton.vue";
-import convertSvg from "../assets/conver.svg?raw";
+import { icons } from "../icons";
 import {
   TEXT_CONVERT_WIDTH_EDIT_MENU,
   TEXT_CONVERT_WIDTH_READ_MENU,
@@ -198,7 +198,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="menuRootEl" class="convertMenuWrap">
     <IconButton
-      :icon-html="convertSvg"
+      :icon-html="icons.convert"
       :primary="readerEditMode"
       :active="menuOpen || (!readerEditMode && displayActive)"
       :pressed="menuOpen || (!readerEditMode && displayActive)"
