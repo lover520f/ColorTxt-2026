@@ -71,6 +71,11 @@ import type {
   TextConvertWidthMode,
   TextConvertZhMode,
 } from "@shared/textConvertTypes";
+import {
+  applyReplaceRulesToText,
+  filterEnabledReplaceRules,
+} from "@shared/bookSource/replaceRuleApply";
+import type { ReplaceRule } from "@shared/bookSource/replaceRule";
 import { isMarkdownFilePath } from "../ebook/ebookFormat";
 import {
   captureReaderViewportRestoreAnchor,
@@ -1022,6 +1027,17 @@ async function applyEditFormatTextConvertDigits(
 ): Promise<boolean> {
   return applyEditFormat((plain) => ({
     text: applyTextConvertDigits(plain, mode),
+  }));
+}
+
+async function applyEditFormatTextReplace(
+  rules: readonly ReplaceRule[],
+): Promise<boolean> {
+  return applyEditFormat((plain) => ({
+    text: applyReplaceRulesToText(
+      plain,
+      filterEnabledReplaceRules([...rules], "", "", "content"),
+    ),
   }));
 }
 
@@ -3037,6 +3053,7 @@ defineExpose({
   applyEditFormatTextConvertZh,
   applyEditFormatTextConvertLetters,
   applyEditFormatTextConvertDigits,
+  applyEditFormatTextReplace,
   applyEditFormatLeadIndentFullWidthInRange,
   applySmartFormatReviewCompressBlankLines,
   applySmartFormatReviewLeadIndentFullWidth,

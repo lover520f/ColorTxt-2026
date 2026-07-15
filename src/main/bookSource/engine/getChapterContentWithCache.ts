@@ -1,6 +1,7 @@
 /**
  * 带离线缓存的章节正文：先读本地，miss 再联网，成功后写入缓存。
  * 阅读与整书下载共用。
+ * 返回缓存/联网原文；全局「替换净化」在渲染展示管线（与「转换」同路径）或导出时再套用。
  */
 import type { BookSourceRecord } from "@shared/bookSource/types";
 import {
@@ -29,12 +30,21 @@ export async function getChapterContentWithCache(
   chapter: ChapterContentChapter,
   logs: string[] = [],
   nextChapterUrl?: string,
-  options?: { preferCache?: boolean; cacheDir?: string },
-): Promise<{ content: string; fromCache: boolean }> {
+  options?: {
+    preferCache?: boolean;
+    cacheDir?: string;
+  },
+): Promise<{ content: string; fromCache: boolean; displayTitle: string }> {
   const preferCache = options?.preferCache !== false;
   const cacheDir = options?.cacheDir;
   const bookName = book.name || "";
   const bookUrl = book.bookUrl || "";
+
+  const finalize = (raw: string, fromCache: boolean) => ({
+    content: raw,
+    fromCache,
+    displayTitle: chapter.title || "",
+  });
 
   if (preferCache && bookUrl && chapterUrl) {
     const cached = await readChapterCache(
@@ -63,7 +73,7 @@ export async function getChapterContentWithCache(
           /* ignore rewrite failures */
         }
       }
-      return { content: stripped, fromCache: true };
+      return finalize(stripped, true);
     }
   }
 
@@ -91,5 +101,5 @@ export async function getChapterContentWithCache(
     }
   }
 
-  return { content, fromCache: false };
+  return finalize(content, false);
 }

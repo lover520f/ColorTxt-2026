@@ -577,7 +577,7 @@ export function registerBookSourceIpcHandlers(): void {
           ? p.cacheDir.trim()
           : undefined;
       const preferCache = p.preferCache !== false;
-      const { content, fromCache } = await getChapterContentWithCache(
+      const { content, fromCache, displayTitle } = await getChapterContentWithCache(
         source,
         p.chapterUrl,
         book,
@@ -586,7 +586,7 @@ export function registerBookSourceIpcHandlers(): void {
         p.nextChapterUrl,
         { cacheDir, preferCache },
       );
-      return { content, fromCache, logs };
+      return { content, fromCache, displayTitle, logs };
     } catch (e) {
       if (!logs.length) {
         appendBookSourceErrorLog(logs, e, {

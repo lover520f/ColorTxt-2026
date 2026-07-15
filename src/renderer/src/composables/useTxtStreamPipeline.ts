@@ -25,6 +25,11 @@ import type {
   TextConvertWidthMode,
   TextConvertZhMode,
 } from "@shared/textConvertTypes";
+import {
+  applyReplaceRulesToText,
+  filterEnabledReplaceRules,
+} from "@shared/bookSource/replaceRuleApply";
+import type { ReplaceRule } from "@shared/bookSource/replaceRule";
 
 type ReaderRef = Ref<InstanceType<typeof ReaderMain> | null>;
 
@@ -42,6 +47,8 @@ export function useTxtStreamPipeline(deps: {
   textConvertZh: Ref<TextConvertZhMode>;
   textConvertLetter: Ref<TextConvertWidthMode>;
   textConvertDigit: Ref<TextConvertWidthMode>;
+  /** 文本替换（阅读展示在转换前套用） */
+  replaceRules: Ref<ReplaceRule[]>;
   chapterMinCharCount: Ref<number>;
   currentFileIsMarkdown: Ref<boolean>;
   /** 展示正文写入 Monaco 且插图/内链处理完成后 */
@@ -301,6 +308,18 @@ export function useTxtStreamPipeline(deps: {
     await yieldToUi();
 
     let displayText = formatted.text;
+    if (!deps.readerEditMode.value) {
+      const contentRules = filterEnabledReplaceRules(
+        deps.replaceRules.value,
+        "",
+        "",
+        "content",
+      );
+      if (contentRules.length > 0) {
+        // 不走 applyContentReplaceWithRules 的按行 trim：否则会抵消已完成的行首缩进
+        displayText = applyReplaceRulesToText(displayText, contentRules);
+      }
+    }
     displayText = await applyTextDisplayConverts(displayText, {
       zh: deps.textConvertZh.value,
       letter: deps.textConvertLetter.value,

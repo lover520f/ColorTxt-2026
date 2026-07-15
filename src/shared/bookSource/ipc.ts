@@ -236,7 +236,13 @@ export type BookSourceIpcApi = {
   ) => Promise<{ chapters?: BookChapter[]; logs?: string[]; message?: string }>;
   bookSourceGetChapterContent: (
     payload: BookSourceGetChapterContentPayload,
-  ) => Promise<{ content?: string; fromCache?: boolean; logs?: string[]; message?: string }>;
+  ) => Promise<{
+    content?: string;
+    fromCache?: boolean;
+    displayTitle?: string;
+    logs?: string[];
+    message?: string;
+  }>;
   bookSourceChapterCacheStatus: (payload: {
     name: string;
     bookUrl: string;

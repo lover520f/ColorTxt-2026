@@ -9,6 +9,7 @@ import AppCustomSelect from "../../components/AppCustomSelect.vue";
 import { icons } from "../../icons";
 import { useAnchoredAppShellMenu } from "../../composables/useAnchoredAppShellMenu";
 import BookSourcePanel from "./BookSourcePanel.vue";
+import ReplaceRulePanel from "./ReplaceRulePanel.vue";
 import BookDetailPanel from "./BookDetailPanel.vue";
 import FindBookReaderPanel from "./FindBookReaderPanel.vue";
 import FindDiscoverPanel from "./FindDiscoverPanel.vue";
@@ -37,6 +38,7 @@ import type { BookSourceListItem, BookDetail, BookChapter, SearchBookItem } from
 import { appLog } from "../../services/appDialog";
 import { appToast } from "../../services/appToast";
 import type { BookshelfBook } from "../findBookBookshelf";
+import type { ReplaceRule } from "@shared/bookSource/replaceRule";
 import {
   buildBookDetailFromShelf,
   hasCachedBookshelfToc,
@@ -176,12 +178,20 @@ const searchInputRef = ref<HTMLInputElement | null>(null);
 const searchInputFocused = ref(false);
 const searchHistory = ref<string[]>(loadFindBookSearchHistory());
 const showBookSourcePanel = ref(false);
+const showReplaceRulePanel = ref(false);
 const showBookDetail = ref(false);
 const showBookReader = ref(false);
 const bookDetailPanelRef = ref<InstanceType<typeof BookDetailPanel> | null>(null);
 const bookReaderPanelRef = ref<InstanceType<typeof FindBookReaderPanel> | null>(
   null,
 );
+const replaceRuleEditFormatMode = computed(
+  () => bookReaderPanelRef.value?.readerEditMode === true,
+);
+
+function onApplyReplaceRuleFormat(rules: ReplaceRule[]) {
+  void bookReaderPanelRef.value?.applyEditFormatTextReplace?.(rules);
+}
 const readerInitialChapterIndex = ref(0);
 /** 书架未缓存目录时先打开阅读器，后台拉目录 */
 const readerTocLoading = ref(false);
@@ -392,6 +402,11 @@ watch(
 function onOpenBookSources() {
   closeMoreMenu();
   showBookSourcePanel.value = true;
+}
+
+function onOpenReplaceRules() {
+  closeMoreMenu();
+  showReplaceRulePanel.value = true;
 }
 
 async function onOpenDownloadDir() {
@@ -1269,6 +1284,7 @@ function onGoMain() {
       @open-book-detail="onOpenBookDetailFromReader"
       @chapter-cache-cleared="onChapterCacheCleared"
       @toc-refreshed="onReaderTocRefreshed"
+      @open-text-replace="onOpenReplaceRules"
     />
 
     <FindBookSettingsPanel
@@ -1283,6 +1299,13 @@ function onGoMain() {
       v-model="showBookSourcePanel"
       @search-source="onSearchFromSource"
       @sources-changed="onBookSourcesChanged"
+    />
+
+    <ReplaceRulePanel
+      v-model="showReplaceRulePanel"
+      bucket="findBook"
+      :edit-format-mode="replaceRuleEditFormatMode"
+      @apply-format="onApplyReplaceRuleFormat"
     />
   </AppModal>
 </template>

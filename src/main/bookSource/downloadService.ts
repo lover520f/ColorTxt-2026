@@ -204,7 +204,7 @@ async function runDownload(
       return;
     }
 
-    // 2) 自动导出：只读缓存拼 .txt（对齐 Legado Export）
+    // 2) 自动导出：只读缓存拼 .txt（原文；不套文本替换 / 简繁·全半角转换）
     const parts: string[] = [];
     for (let i = 0; i < contentChapters.length; i++) {
       const ch = contentChapters[i]!;
@@ -218,11 +218,11 @@ async function runDownload(
         ch.url,
         req.cacheDir,
       );
-      const text =
+      const body =
         cached != null && cached.length
           ? formatExportParagraphs(cached)
           : `${EXPORT_PARAGRAPH_INDENT}[下载失败: 章节未缓存]`;
-      parts.push(`\n\n${heading}\n\n${text}`);
+      parts.push(`\n\n${heading}\n\n${body}`);
     }
 
     const body = parts.join("").trim();

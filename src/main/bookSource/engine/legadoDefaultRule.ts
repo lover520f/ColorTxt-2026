@@ -607,6 +607,30 @@ function legadoElementText(el: Cheerio<any>): string {
   return el.clone().find("script, style, noscript").remove().end().text().trim();
 }
 
+/**
+ * 对齐 Legado AnalyzeByJSoup `textNodes`：
+ * 仅取元素的直接 Text 子节点，各自 `trim { it <= ' ' }`，再用 `\n` 拼接。
+ * （不等于 `@text`：后者会递归取出所有后代文本，易把子标签里的广告行一并捞进正文。）
+ */
+function legadoElementTextNodes(el: Cheerio<any>): string {
+  if (!el.length) return "";
+  const parts: string[] = [];
+  el.contents().each((_, node) => {
+    if (node.type !== "text") return;
+    // Kotlin: trim { it <= ' ' } —— 只去掉 code<=0x20，保留全角空格等
+    const raw = "data" in node && typeof (node as { data?: string }).data === "string"
+      ? (node as { data: string }).data
+      : "";
+    let start = 0;
+    let end = raw.length;
+    while (start < end && raw.charCodeAt(start) <= 0x20) start += 1;
+    while (end > start && raw.charCodeAt(end - 1) <= 0x20) end -= 1;
+    const text = raw.slice(start, end);
+    if (text) parts.push(text);
+  });
+  return parts.join("\n");
+}
+
 export function extractFromElement(
   el: Cheerio<any>,
   extract: string,
@@ -615,7 +639,8 @@ export function extractFromElement(
   const t = extract.trim();
   const lower = t.toLowerCase();
 
-  if (lower === "text" || lower === "textnodes") return legadoElementText(el);
+  if (lower === "text") return legadoElementText(el);
+  if (lower === "textnodes") return legadoElementTextNodes(el);
   if (lower === "html" || lower === "all") return el.html() ?? "";
   if (lower === "owntext") {
     return el

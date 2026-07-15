@@ -7,17 +7,26 @@ import type {
   TextConvertZhMode,
 } from "@shared/textConvertTypes";
 
-defineProps<{
-  readerEditMode: boolean;
-  disabled?: boolean;
-  textConvertZh?: TextConvertZhMode;
-  textConvertLetter?: TextConvertWidthMode;
-  textConvertDigit?: TextConvertWidthMode;
-  compressBlankLines: boolean;
-  leadIndentFullWidth: boolean;
-  monacoAdvancedWrapping: boolean;
-  monacoCustomHighlight: boolean;
-}>();
+withDefaults(
+  defineProps<{
+    readerEditMode: boolean;
+    disabled?: boolean;
+    textConvertZh?: TextConvertZhMode;
+    textConvertLetter?: TextConvertWidthMode;
+    textConvertDigit?: TextConvertWidthMode;
+    compressBlankLines: boolean;
+    leadIndentFullWidth: boolean;
+    monacoAdvancedWrapping: boolean;
+    /** 找书阅读器：显示「文本替换」入口 */
+    showTextReplace?: boolean;
+    /** 有对本生效的文本替换规则时为激活态 */
+    textReplaceActive?: boolean;
+  }>(),
+  {
+    showTextReplace: false,
+    textReplaceActive: false,
+  },
+);
 
 const emit = defineEmits<{
   selectTextConvertZhRead: [mode: TextConvertZhMode];
@@ -31,12 +40,23 @@ const emit = defineEmits<{
   formatEditCompressBlankLines: [];
   formatEditLeadIndentFullWidth: [];
   toggleMonacoAdvancedWrapping: [];
-  toggleMonacoCustomHighlight: [];
+  openTextReplace: [];
 }>();
 </script>
 
 <template>
   <div class="headerFormatToolbar">
+    <IconButton
+      v-if="showTextReplace"
+      :icon-html="icons.replace"
+      :primary="readerEditMode"
+      :active="!readerEditMode && textReplaceActive"
+      :pressed="!readerEditMode && textReplaceActive"
+      :title="readerEditMode ? '格式化：文本替换' : '文本替换'"
+      :aria-label="readerEditMode ? '格式化：文本替换' : '文本替换'"
+      :disabled="disabled"
+      @click="emit('openTextReplace')"
+    />
     <ConvertMenu
       :reader-edit-mode="readerEditMode"
       :disabled="disabled"
@@ -97,14 +117,6 @@ const emit = defineEmits<{
       aria-label="高级换行策略"
       :disabled="disabled"
       @click="emit('toggleMonacoAdvancedWrapping')"
-    />
-    <IconButton
-      :icon-html="icons.palette"
-      multicolor
-      :active="monacoCustomHighlight"
-      :pressed="monacoCustomHighlight"
-      title="内容上色"
-      @click="emit('toggleMonacoCustomHighlight')"
     />
   </div>
 </template>

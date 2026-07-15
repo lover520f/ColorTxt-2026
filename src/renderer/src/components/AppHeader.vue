@@ -30,6 +30,8 @@ const props = withDefaults(
     monacoAdvancedWrapping: boolean;
     /** Monaco 自定义语法着色是否开启 */
     monacoCustomHighlight: boolean;
+    /** 有启用中的文本替换规则时工具栏按钮为激活态 */
+    textReplaceActive?: boolean;
     /** 是否在加载时过滤空行 */
     compressBlankLines: boolean;
     /** 是否将正文行首统一为两个全角空格（章节标题与空行除外） */
@@ -85,6 +87,7 @@ const props = withDefaults(
     readerEditMode: false,
     canEnterReaderEditMode: false,
     chapterRulesDisabled: false,
+    textReplaceActive: false,
     aiFeaturesEnabled: false,
     canUseAiSmartFormat: false,
     aiSmartFormatRunning: false,
@@ -123,6 +126,7 @@ const emit = defineEmits<{
   toggleMonacoCustomHighlight: [];
   toggleFind: [];
   openChapterRules: [];
+  openTextReplace: [];
   openGithub: [];
   checkForUpdates: [];
   openShortcuts: [];
@@ -282,7 +286,8 @@ const showFormatToolbarInMore = computed(() => compactFormatToolbar.value);
           :compress-blank-lines="compressBlankLines"
           :lead-indent-full-width="leadIndentFullWidth"
           :monaco-advanced-wrapping="monacoAdvancedWrapping"
-          :monaco-custom-highlight="monacoCustomHighlight"
+          show-text-replace
+          :text-replace-active="textReplaceActive"
           @select-text-convert-zh-read="emit('selectTextConvertZhRead', $event)"
           @select-text-convert-letter-read="
             emit('selectTextConvertLetterRead', $event)
@@ -300,7 +305,7 @@ const showFormatToolbarInMore = computed(() => compactFormatToolbar.value);
           @format-edit-compress-blank-lines="emit('formatEditCompressBlankLines')"
           @format-edit-lead-indent-full-width="emit('formatEditLeadIndentFullWidth')"
           @toggle-monaco-advanced-wrapping="emit('toggleMonacoAdvancedWrapping')"
-          @toggle-monaco-custom-highlight="emit('toggleMonacoCustomHighlight')"
+          @open-text-replace="emit('openTextReplace')"
         />
       </div>
       <span class="toolbarDivider" aria-hidden="true"></span>
@@ -313,6 +318,16 @@ const showFormatToolbarInMore = computed(() => compactFormatToolbar.value);
             : '章节匹配规则'
         "
         @click="!chapterRulesDisabled && $emit('openChapterRules')"
+      />
+      <IconButton
+        :icon-html="icons.palette"
+        multicolor
+        :active="monacoCustomHighlight"
+        :pressed="monacoCustomHighlight"
+        title="内容上色"
+        aria-label="内容上色"
+        :disabled="vrFormatLock"
+        @click="emit('toggleMonacoCustomHighlight')"
       />
       <IconButton
         :icon-html="currentTheme === 'vs' ? icons.light : icons.dark"
@@ -387,7 +402,8 @@ const showFormatToolbarInMore = computed(() => compactFormatToolbar.value);
               :compress-blank-lines="compressBlankLines"
               :lead-indent-full-width="leadIndentFullWidth"
               :monaco-advanced-wrapping="monacoAdvancedWrapping"
-              :monaco-custom-highlight="monacoCustomHighlight"
+              show-text-replace
+              :text-replace-active="textReplaceActive"
               @select-text-convert-zh-read="
                 emit('selectTextConvertZhRead', $event)
               "
@@ -415,7 +431,7 @@ const showFormatToolbarInMore = computed(() => compactFormatToolbar.value);
               @toggle-monaco-advanced-wrapping="
                 emit('toggleMonacoAdvancedWrapping')
               "
-              @toggle-monaco-custom-highlight="emit('toggleMonacoCustomHighlight')"
+              @open-text-replace="emit('openTextReplace')"
             />
           </template>
         </MoreMenu>

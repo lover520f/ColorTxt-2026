@@ -29,11 +29,6 @@ function hasLegadoTopLevelStatements(script: string): boolean {
   return /;\s*\S/.test(withoutTrailingSemi);
 }
 
-/** @deprecated java.getStringList/getElements 已改为同步 API，不再注入 await */
-export function wrapAwaitLegadoJavaListCalls(script: string): string {
-  return script;
-}
-
 /** 多行 JSON.stringify({ ... }) 等：从末尾回溯到表达式起始行（仅匹配 ()[]，避免 if { } 块误判） */
 function findTrailingExpressionStartLine(lines: string[], endLineIdx: number): number {
   let depth = 0;

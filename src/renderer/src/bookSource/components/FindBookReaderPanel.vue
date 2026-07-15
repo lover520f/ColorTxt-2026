@@ -34,7 +34,9 @@ import {
   useBookSourceDownload,
 } from "../composables/useBookSource";
 import { useFindBookBookshelf } from "../composables/useFindBookBookshelf";
-import { updateFindBookBookshelfBookInfo } from "../findBookBookshelf";
+import {
+  updateFindBookBookshelfBookInfo,
+} from "../findBookBookshelf";
 import { useFindBookReaderSettings } from "../composables/useFindBookReaderSettings";
 import { useFindBookSettings } from "../composables/useFindBookSettings";
 import { useFindBookReaderShortcuts } from "../composables/useFindBookReaderShortcuts";
@@ -55,6 +57,16 @@ import type {
   TextConvertWidthMode,
   TextConvertZhMode,
 } from "@shared/textConvertTypes";
+import {
+  findBookReplaceRulesChangedEvent,
+  type ReplaceRule,
+} from "@shared/bookSource/replaceRule";
+import {
+  applyContentReplaceWithRules,
+  applyTitleReplaceWithRules,
+  filterEnabledReplaceRules,
+} from "@shared/bookSource/replaceRuleApply";
+import { listReplaceRulesLocal } from "../replaceRuleLocalStore";
 import type { BookSourceEditTab } from "../editBookSourceFields";
 import { useChapterCacheMarks } from "../composables/useChapterCacheMarks";
 import { confirmClearBookChapterCache } from "../services/clearBookChapterCache";
@@ -100,6 +112,7 @@ const emit = defineEmits<{
   chapterCacheCleared: [];
   /** 重新获取目录后同步父级 detail/chapters */
   tocRefreshed: [payload: { detail: BookDetail; chapters: BookChapter[] }];
+  openTextReplace: [];
 }>();
 
 const readerRef = ref<InstanceType<typeof ReaderMain> | null>(null);
@@ -263,6 +276,67 @@ const inBookshelf = computed(() =>
   isInBookshelf(props.detail.bookUrl, props.item.origin),
 );
 
+/** 展示管线用规则缓存（原文在 lastChapter*；规则变更时刷新） */
+const cachedReplaceRules = ref<ReplaceRule[]>([]);
+const replaceRulesLoaded = ref(false);
+
+async function refreshReplaceRulesCache() {
+  try {
+    cachedReplaceRules.value = listReplaceRulesLocal("findBook");
+  } catch {
+    cachedReplaceRules.value = [];
+  } finally {
+    replaceRulesLoaded.value = true;
+  }
+}
+
+async function ensureReplaceRulesCache() {
+  if (!replaceRulesLoaded.value) await refreshReplaceRulesCache();
+}
+
+async function onReplaceRulesChanged() {
+  await refreshReplaceRulesCache();
+  if (!modelValue.value || readerEditMode.value) return;
+  void refreshCurrentChapterDisplay();
+  void refreshConvertedChapterTitles();
+}
+
+function applyDisplayReplaceTitle(title: string): string {
+  if (!title) return title;
+  const rules = filterEnabledReplaceRules(
+    cachedReplaceRules.value,
+    props.detail.name || "",
+    props.item.origin || "",
+    "title",
+  );
+  return applyTitleReplaceWithRules(title, rules);
+}
+
+function applyDisplayReplaceBody(body: string): string {
+  const rules = filterEnabledReplaceRules(
+    cachedReplaceRules.value,
+    props.detail.name || "",
+    props.item.origin || "",
+    "content",
+  );
+  return applyContentReplaceWithRules(body, rules);
+}
+
+/** 有已启用的规则 → 工具栏按钮激活（无总开关） */
+const textReplaceActive = computed(() => {
+  const name = props.detail.name || "";
+  const origin = props.item.origin || "";
+  const rules = cachedReplaceRules.value;
+  return (
+    filterEnabledReplaceRules(rules, name, origin, "content").length > 0 ||
+    filterEnabledReplaceRules(rules, name, origin, "title").length > 0
+  );
+});
+
+function onOpenTextReplace() {
+  emit("openTextReplace");
+}
+
 const fullscreenSidebarPopoversSuppressCollapse = ref(false);
 const chrome = useAppReaderChrome({
   readerRef,
@@ -423,12 +497,15 @@ function textConvertOptions() {
 
 async function refreshConvertedChapterTitles() {
   const gen = ++convertedChapterTitlesGen;
+  await ensureReplaceRulesCache();
+  if (gen !== convertedChapterTitlesGen) return;
   const opts = textConvertOptions();
   const next = new Map<number, string>();
   const list = displayChapters.value;
   for (let i = 0; i < list.length; i++) {
     if (gen !== convertedChapterTitlesGen) return;
-    next.set(i, await applyTextDisplayConverts(list[i]!.title, opts));
+    const titled = applyDisplayReplaceTitle(list[i]!.title);
+    next.set(i, await applyTextDisplayConverts(titled, opts));
   }
   if (gen !== convertedChapterTitlesGen) return;
   convertedChapterTitlesByIndex.value = next;
@@ -651,12 +728,16 @@ async function renderChapterText(
   body: string,
   opts?: { resetScroll?: boolean },
 ) {
+  await ensureReplaceRulesCache();
   const convertOpts = textConvertOptions();
   const rawTitle = heading.trim();
   // 正文若已带章节名（旧缓存 / ##{{title}} 未生效），先剥离再拼回一行，
   // 避免「橙色章节装饰行 + 正文里又一行黑字标题」
   let bodyText = stripLeadingChapterTitleFromBody(body, rawTitle);
-  let text = rawTitle ? `${rawTitle}\n${bodyText}` : bodyText;
+  // 文本替换与「转换」同属展示管线：先替换，再简繁/全半角
+  const titleText = applyDisplayReplaceTitle(rawTitle);
+  bodyText = applyDisplayReplaceBody(bodyText);
+  let text = titleText ? `${titleText}\n${bodyText}` : bodyText;
   text = await applyTextDisplayConverts(text, convertOpts);
   const formatted = formatPhysicalPlainTextForReader(text, {
     compressBlankLines: compressBlankLines.value,
@@ -736,6 +817,7 @@ async function onToggleReaderEdit() {
     if (!(await confirmIfReaderEditDiscard())) return;
     readerEditorDirty.value = false;
     readerEditMode.value = false;
+    // 退出编辑：lastChapter* 仍为原文，重跑展示管线（文本替换 → 转换 → …）
     if (lastChapterBody.value || lastChapterTitle.value) {
       await renderChapterText(lastChapterTitle.value, lastChapterBody.value, {
         resetScroll: false,
@@ -749,6 +831,7 @@ async function onToggleReaderEdit() {
   }
   voiceRead.exitVoiceRead();
   timedScroll.stopTimedScroll();
+  // 进入编辑：直接编辑原文（文本替换只在阅读展示管线，不改 lastChapter*）
   const editText = buildEditSourceText();
   const reader = readerRef.value;
   if (reader) {
@@ -843,7 +926,7 @@ async function loadChapterAtDisplayIndex(
       ? displayChapters.value[nextDisplayIdx]
       : undefined;
   try {
-    const body = await loadChapterContent({
+    const loaded = await loadChapterContent({
       bookSourceUrl: props.item.origin,
       bookUrl: props.detail.bookUrl,
       tocUrl: props.detail.tocUrl,
@@ -856,17 +939,19 @@ async function loadChapterAtDisplayIndex(
       cacheDir: effectiveCacheDir.value.trim() || undefined,
       preferCache,
     });
-    if (body == null) {
+    if (loaded == null) {
       if (chapterError.value) appToast(chapterError.value);
       return;
     }
+    const { content: body, displayTitle } = loaded;
     // 缓存命中往往立刻返回：等列表动画结束再写正文，避免与 rAF 平滑滚动抢帧
     if (wantSmooth) await scrollDone;
     markChapterCached(ch.url);
     readerContentKey.value = `findbook://${props.detail.bookUrl}#${ch.url}`;
-    lastChapterTitle.value = ch.title;
+    // IPC 返回缓存/联网原文；文本替换在 renderChapterText 中与「转换」一并套用
+    lastChapterTitle.value = displayTitle || ch.title;
     lastChapterBody.value = body;
-    await renderChapterText(ch.title, body);
+    await renderChapterText(lastChapterTitle.value, body);
     if (isInBookshelf(props.detail.bookUrl, props.item.origin)) {
       updateReadProgress(
         props.detail.bookUrl,
@@ -1449,6 +1534,7 @@ watch(
 
 async function bootstrapReaderContent() {
   if (!modelValue.value || !displayChapters.value.length) return;
+  await refreshReplaceRulesCache();
   await refreshChapterCacheStatus();
   const startIndex = displayIndexForContentIndex(props.initialChapterIndex ?? 0);
   void loadChapterAtDisplayIndex(startIndex, { smoothScroll: false });
@@ -1522,7 +1608,9 @@ onMounted(() => {
   window.addEventListener("resize", clampSidebarWidthToViewport);
   window.addEventListener("storage", onStorageSync);
   window.addEventListener(persistedSettingsChangedEvent, onPersistedSettingsChanged);
+  window.addEventListener(findBookReplaceRulesChangedEvent, onReplaceRulesChanged);
   document.addEventListener("keydown", onDocumentKeydownEscape, true);
+  void refreshReplaceRulesCache();
 });
 
 onBeforeUnmount(() => {
@@ -1535,6 +1623,10 @@ onBeforeUnmount(() => {
   window.removeEventListener(
     persistedSettingsChangedEvent,
     onPersistedSettingsChanged,
+  );
+  window.removeEventListener(
+    findBookReplaceRulesChangedEvent,
+    onReplaceRulesChanged,
   );
   document.removeEventListener("keydown", onDocumentKeydownEscape, true);
   voiceRead.exitVoiceRead();
@@ -1554,6 +1646,9 @@ defineExpose({
       void loadChapterAtDisplayIndex(startIndex, { smoothScroll: false });
     }
   },
+  readerEditMode,
+  applyEditFormatTextReplace: (rules: ReplaceRule[]) =>
+    readerRef.value?.applyEditFormatTextReplace?.(rules),
 });
 
 const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
@@ -1708,6 +1803,7 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
           :settings-shortcut-label="settingsShortcutLabel"
           :reader-edit-mode="readerEditMode"
           :can-enter-reader-edit-mode="canEnterReaderEditMode"
+          :text-replace-active="textReplaceActive"
           @change-theme="onChangeTheme"
           @toggle-sidebar="showSidebar = !showSidebar"
           @toggle-fullscreen="toggleFullscreen"
@@ -1733,6 +1829,7 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
           @timed-scroll-toggle="timedScroll.toggleTimedScroll"
           @open-settings="emit('openSettings')"
           @toggle-bookshelf="onToggleBookshelf"
+          @open-text-replace="onOpenTextReplace"
           @toggle-reader-edit="onToggleReaderEdit"
           @save-reader-chapter="onSaveReaderChapter"
         />

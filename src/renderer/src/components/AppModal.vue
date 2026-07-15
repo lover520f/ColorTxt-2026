@@ -55,7 +55,13 @@ const showCloseChrome = computed(
 const hasTitle = computed(() => Boolean(props.title.trim()));
 
 const showHeader = computed(
-  () => Boolean(hasTitle.value || showCloseChrome.value || slots.headerPrefix),
+  () =>
+    Boolean(
+      hasTitle.value ||
+        showCloseChrome.value ||
+        slots.headerPrefix ||
+        slots.headerActions,
+    ),
 );
 
 const insetCss = computed(() => {
@@ -169,20 +175,28 @@ defineExpose({
                 <template v-else>{{ title }}</template>
               </h2>
             </div>
-            <button
-              v-if="showCloseChrome"
-              type="button"
-              class="appModalClose"
-              aria-label="关闭"
-              title="关闭"
-              @click="close"
+            <div
+              v-if="slots.headerActions || showCloseChrome"
+              class="appModalHeaderEnd"
             >
-              <span
-                class="appModalCloseIcon"
-                aria-hidden="true"
-                v-html="icons.close"
-              />
-            </button>
+              <div v-if="slots.headerActions" class="appModalHeaderActions">
+                <slot name="headerActions" />
+              </div>
+              <button
+                v-if="showCloseChrome"
+                type="button"
+                class="appModalClose"
+                aria-label="关闭"
+                title="关闭"
+                @click="close"
+              >
+                <span
+                  class="appModalCloseIcon"
+                  aria-hidden="true"
+                  v-html="icons.close"
+                />
+              </button>
+            </div>
           </div>
           <div
             class="appModalBody"
@@ -298,6 +312,10 @@ defineExpose({
   min-width: 0;
 }
 
+.appModalPanelHeader:has(.appModalHeaderActions) {
+  padding-right: 90px;
+}
+
 .appModalPanel--fullscreen .appModalPanelHeader {
   margin-bottom: 0;
   padding: 10px;
@@ -330,6 +348,23 @@ defineExpose({
   color: var(--fg);
 }
 
+.appModalHeaderEnd {
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 48px;
+}
+
+.appModalHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 2px;
+}
+
 .appModalClose {
   flex-shrink: 0;
   width: 48px;
@@ -343,9 +378,7 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  position: absolute;
-  right: 0;
-  top: 0;
+  position: static;
 }
 
 .appModalClose:hover {

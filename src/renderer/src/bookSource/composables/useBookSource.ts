@@ -512,7 +512,7 @@ export function useBookSourceChapterContent() {
     cacheDir?: string;
     /** 默认 true；false 忽略缓存重新拉取 */
     preferCache?: boolean;
-  }): Promise<string | null> {
+  }): Promise<{ content: string; displayTitle: string } | null> {
     const seq = ++loadSeq;
     loading.value = true;
     error.value = "";
@@ -527,7 +527,10 @@ export function useBookSourceChapterContent() {
         error.value = res.message;
         return null;
       }
-      return res.content ?? "";
+      return {
+        content: res.content ?? "",
+        displayTitle: res.displayTitle?.trim() || payload.chapterTitle,
+      };
     } finally {
       if (seq === loadSeq) loading.value = false;
     }

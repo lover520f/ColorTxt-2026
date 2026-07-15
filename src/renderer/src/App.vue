@@ -10,6 +10,12 @@ import {
 } from "vue";
 import { nextTick, type ComponentPublicInstance } from "vue";
 import { getChapterMatchRules, type Chapter } from "./chapter";
+import {
+  appReplaceRulesChangedEvent,
+  type ReplaceRule,
+} from "@shared/bookSource/replaceRule";
+import { filterEnabledReplaceRules } from "@shared/bookSource/replaceRuleApply";
+import { listReplaceRulesLocal } from "./bookSource/replaceRuleLocalStore";
 import AppHeader, { type RecentFileItem } from "./components/AppHeader.vue";
 import VoiceReadToolbar from "./components/VoiceReadToolbar.vue";
 import ReaderChapterNavBar from "./components/ReaderChapterNavBar.vue";
@@ -317,8 +323,40 @@ watch(
   { immediate: true },
 );
 const showChapterRulePanel = ref(false);
+const showReplaceRulePanel = ref(false);
 const chapterRuleErrorText = ref("");
 const chapterRuleState = ref(getChapterMatchRules());
+/** 主窗口文本替换规则（localStorage，与找书分键） */
+const cachedReplaceRules = ref<ReplaceRule[]>([]);
+const textReplaceActive = computed(
+  () =>
+    filterEnabledReplaceRules(cachedReplaceRules.value, "", "", "content")
+      .length > 0 ||
+    filterEnabledReplaceRules(cachedReplaceRules.value, "", "", "title")
+      .length > 0,
+);
+
+function refreshReplaceRulesCache() {
+  cachedReplaceRules.value = listReplaceRulesLocal("app");
+}
+
+function onReplaceRulesChanged() {
+  refreshReplaceRulesCache();
+  if (!currentFile.value || readerEditMode.value || loading.value) return;
+  const anchor =
+    captureViewportRestoreAnchor() ?? {
+      physicalLine: captureViewportAnchorPhysicalLine(),
+      wrappedLineIndex: 0,
+    };
+  void withChapterListScrollSuppressed(async () => {
+    const ok = await stream.applyReaderDisplayFromPhysicalLines(anchor);
+    if (!ok) return;
+    await nextTick();
+    readerRef.value?.emitProbeLine?.();
+    await syncChaptersAfterViewportSettled();
+  });
+}
+
 const currentFile = ref<string | null>(null);
 const loading = ref(false);
 /** 打开文件时主进程流式读取的字节进度（0–100），无总大小时为 null */
@@ -386,6 +424,12 @@ onMounted(() => {
     sidebarTab.value = "files";
   }
   void refreshAiSidebarFlags();
+  refreshReplaceRulesCache();
+  window.addEventListener(appReplaceRulesChangedEvent, onReplaceRulesChanged);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(appReplaceRulesChangedEvent, onReplaceRulesChanged);
 });
 
 watch(showSettingsPanel, (open, wasOpen) => {
@@ -1059,6 +1103,7 @@ const stream = useTxtStreamPipeline({
   textConvertZh,
   textConvertLetter,
   textConvertDigit,
+  replaceRules: cachedReplaceRules,
   chapterMinCharCount,
   currentFileIsMarkdown,
   afterFullTextInstalled: () => afterStreamFullTextInstalled(),
@@ -1940,6 +1985,12 @@ function onApplyTextConvertDigitEdit(
 ) {
   void runEditFormatWithChapterSync(() =>
     readerRef.value?.applyEditFormatTextConvertDigits?.(mode),
+  );
+}
+
+function onApplyReplaceRuleFormat(rules: ReplaceRule[]) {
+  void runEditFormatWithChapterSync(() =>
+    readerRef.value?.applyEditFormatTextReplace?.(rules),
   );
 }
 
@@ -3123,6 +3174,7 @@ useAppShellThemeWatch({
         :pinned-other-fonts="pinnedOtherFonts"
         :monaco-advanced-wrapping="monacoAdvancedWrapping"
         :monaco-custom-highlight="monacoCustomHighlight"
+        :text-replace-active="textReplaceActive"
         :compress-blank-lines="compressBlankLines"
         :lead-indent-full-width="leadIndentFullWidth"
         :text-convert-zh="textConvertZh"
@@ -3162,6 +3214,7 @@ useAppShellThemeWatch({
           chapterRuleErrorText = '';
           showChapterRulePanel = true;
         "
+        @open-text-replace="showReplaceRulePanel = true"
         @open-github="openGithubRepo"
         @check-for-updates="requestCheckForUpdates"
         @open-shortcuts="showShortcutPanel = true"
@@ -3543,6 +3596,7 @@ useAppShellThemeWatch({
       v-model:show-settings-panel="showSettingsPanel"
       v-model:show-color-scheme-panel="showColorSchemePanel"
       v-model:show-chapter-rule-panel="showChapterRulePanel"
+      v-model:show-replace-rule-panel="showReplaceRulePanel"
       v-model:add-bookmark-open="addBookmarkOpen"
       v-model:remove-bookmark-open="removeBookmarkOpen"
       v-model:bookmark-note-input="bookmarkNoteInput"
@@ -3566,6 +3620,7 @@ useAppShellThemeWatch({
       :txtr-delimited-match-cross-line="txtrDelimitedMatchCrossLine"
       :chapter-rules="chapterRuleState.rules"
       :chapter-rule-error-text="chapterRuleErrorText"
+      :reader-edit-mode="readerEditMode"
       :editing-bookmark-line="editingBookmarkLine"
       :can-bookmark="canBookmark"
       :add-bookmark-dialog-preview="addBookmarkDialogPreview"
@@ -3605,6 +3660,7 @@ useAppShellThemeWatch({
       @apply-reader-palettes="onApplyReaderPalettes"
       @apply-highlight-colors="onApplyHighlightColors"
       @apply-lineation-colors="onApplyLineationColors"
+      @apply-replace-rule-format="onApplyReplaceRuleFormat"
     />
   </div>
 </template>

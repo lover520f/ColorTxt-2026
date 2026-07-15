@@ -44,6 +44,8 @@ const props = withDefaults(
     settingsShortcutLabel?: string;
     readerEditMode?: boolean;
     canEnterReaderEditMode?: boolean;
+    /** 有已启用的文本替换规则时工具栏按钮为激活态 */
+    textReplaceActive?: boolean;
   }>(),
   {
     inFullscreen: false,
@@ -60,6 +62,7 @@ const props = withDefaults(
     settingsShortcutLabel: "",
     readerEditMode: false,
     canEnterReaderEditMode: false,
+    textReplaceActive: false,
   },
 );
 
@@ -91,6 +94,7 @@ const emit = defineEmits<{
   toggleBookshelf: [];
   toggleReaderEdit: [];
   saveReaderChapter: [];
+  openTextReplace: [];
 }>();
 
 const vrFormatLock = computed(() => props.voiceReadHeaderLocked);
@@ -129,6 +133,11 @@ function bindMoreMenuPanel(el: HTMLElement | null) {
 function onOpenSettingsFromToolbar() {
   closeMoreMenu();
   emit("openSettings");
+}
+
+function onOpenTextReplace() {
+  closeMoreMenu();
+  emit("openTextReplace");
 }
 </script>
 
@@ -227,7 +236,8 @@ function onOpenSettingsFromToolbar() {
           :compress-blank-lines="compressBlankLines"
           :lead-indent-full-width="leadIndentFullWidth"
           :monaco-advanced-wrapping="monacoAdvancedWrapping"
-          :monaco-custom-highlight="monacoCustomHighlight"
+          show-text-replace
+          :text-replace-active="textReplaceActive"
           @select-text-convert-zh-read="emit('selectTextConvertZhRead', $event)"
           @select-text-convert-letter-read="emit('selectTextConvertLetterRead', $event)"
           @select-text-convert-digit-read="emit('selectTextConvertDigitRead', $event)"
@@ -239,9 +249,19 @@ function onOpenSettingsFromToolbar() {
           @format-edit-compress-blank-lines="emit('formatEditCompressBlankLines')"
           @format-edit-lead-indent-full-width="emit('formatEditLeadIndentFullWidth')"
           @toggle-monaco-advanced-wrapping="emit('toggleMonacoAdvancedWrapping')"
-          @toggle-monaco-custom-highlight="emit('toggleMonacoCustomHighlight')"
+          @open-text-replace="onOpenTextReplace"
         />
         <span class="toolbarDivider" aria-hidden="true" />
+        <IconButton
+          :icon-html="icons.palette"
+          multicolor
+          :active="monacoCustomHighlight"
+          :pressed="monacoCustomHighlight"
+          title="内容上色"
+          aria-label="内容上色"
+          :disabled="vrFormatLock"
+          @click="emit('toggleMonacoCustomHighlight')"
+        />
         <IconButton
           :icon-html="currentTheme === 'vs' ? icons.light : icons.dark"
           :title="currentTheme === 'vs' ? '当前亮色，点击切换暗色' : '当前暗色，点击切换亮色'"
@@ -309,7 +329,8 @@ function onOpenSettingsFromToolbar() {
           :compress-blank-lines="compressBlankLines"
           :lead-indent-full-width="leadIndentFullWidth"
           :monaco-advanced-wrapping="monacoAdvancedWrapping"
-          :monaco-custom-highlight="monacoCustomHighlight"
+          show-text-replace
+          :text-replace-active="textReplaceActive"
           @select-text-convert-zh-read="emit('selectTextConvertZhRead', $event)"
           @select-text-convert-letter-read="emit('selectTextConvertLetterRead', $event)"
           @select-text-convert-digit-read="emit('selectTextConvertDigitRead', $event)"
@@ -321,7 +342,7 @@ function onOpenSettingsFromToolbar() {
           @format-edit-compress-blank-lines="emit('formatEditCompressBlankLines')"
           @format-edit-lead-indent-full-width="emit('formatEditLeadIndentFullWidth')"
           @toggle-monaco-advanced-wrapping="emit('toggleMonacoAdvancedWrapping')"
-          @toggle-monaco-custom-highlight="emit('toggleMonacoCustomHighlight')"
+          @open-text-replace="onOpenTextReplace"
         />
       </div>
       <div

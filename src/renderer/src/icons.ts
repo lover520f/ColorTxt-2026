@@ -93,6 +93,7 @@ import nextIcon from "./assets/next.svg?raw";
 import speedIcon from "./assets/speed.svg?raw";
 import zoomInIcon from "./assets/zoom_in.svg?raw";
 import convertIcon from "./assets/conver.svg?raw";
+import replaceIcon from "./assets/replace.svg?raw";
 import noteIcon from "./assets/note.svg?raw";
 import quoteIcon from "./assets/quote.svg?raw";
 import deleteLineationIcon from "./assets/delete_lineation.svg?raw";
@@ -244,6 +245,8 @@ export const icons = {
   zoomIn: zoomInIcon,
   /** 简繁/全半角转换 */
   convert: convertIcon,
+  /** 文本替换 */
+  replace: replaceIcon,
   /** 角色卡「语音」默认图标 */
   speak: speakIcon,
   /** 角色卡「语音」播放动画帧 */
