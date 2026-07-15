@@ -214,6 +214,8 @@ export type BookSourceListItem = {
   customOrder: number;
   /** 配置了 loginUrl（Legado hasLoginUrl） */
   hasLoginUrl: boolean;
+  /** 配置了搜索 searchUrl */
+  hasSearchUrl: boolean;
   /** 配置了发现页 exploreUrl */
   hasExploreUrl: boolean;
   enabledExplore: boolean;

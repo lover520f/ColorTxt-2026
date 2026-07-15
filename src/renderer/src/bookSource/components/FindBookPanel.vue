@@ -29,6 +29,7 @@ import {
   removeFindBookSearchHistory,
 } from "../findBookSearchHistory";
 import {
+  countEligibleSearchSources,
   useBookSourceSearch,
 } from "../composables/useBookSource";
 import { useBookshelfCoverUrls } from "../composables/useBookshelfCoverUrls";
@@ -99,6 +100,7 @@ function onBookshelfSortChange(mode: string) {
 }
 
 const bookshelfPanelRef = ref<InstanceType<typeof FindBookshelfPanel> | null>(null);
+const discoverPanelRef = ref<InstanceType<typeof FindDiscoverPanel> | null>(null);
 const bookshelfToolbarMoreBtnRef = ref<HTMLElement | null>(null);
 const bookshelfToolbarMoreMenu = useAnchoredAppShellMenu({
   anchor: bookshelfToolbarMoreBtnRef,
@@ -243,9 +245,25 @@ function rerunSearchIfNeeded() {
   void search(k, buildSearchOptions());
 }
 
-const { searching, pageLoading, searchPage, searchHasMore, searchPhase, searchKey, progress, results, searchLogs, searchSourceErrors, searchSourceStats, search, loadMore, cancel } =
+const { searching, pageLoading, searchPage, searchHasMore, searchPhase, searchKey, progress, results, searchLogs, searchSourceErrors, searchSourceStats, noEnabledSearchSources, search, loadMore, cancel, clearShortCircuitSearch } =
   useBookSourceSearch();
 const { getCoverUrl, isCoverPending } = useBookshelfCoverUrls(results);
+
+/** 全局是否有可搜索的启用书源（未限定单一源时的空状态用） */
+const hasEnabledSearchSources = ref(true);
+
+async function refreshHasEnabledSearchSources() {
+  hasEnabledSearchSources.value =
+    (await countEligibleSearchSources()) > 0;
+  if (hasEnabledSearchSources.value) {
+    clearShortCircuitSearch();
+  }
+}
+
+async function onBookSourcesChanged() {
+  await refreshHasEnabledSearchSources();
+  void discoverPanelRef.value?.refreshSources?.();
+}
 
 const hasResults = computed(() => results.value.length > 0);
 const hasSearched = computed(() => Boolean(searchKey.value.trim()));
@@ -274,8 +292,18 @@ const showNoResults = computed(
     !hasResults.value &&
     hasSearched.value,
 );
+/** 未搜索空状态：有源邀请搜索，无源提示不可用 */
+const emptyIdleIcon = computed(() =>
+  hasEnabledSearchSources.value ? "(•◡•)و" : "(; '⌒' )",
+);
+const emptyIdleText = computed(() =>
+  hasEnabledSearchSources.value ? "想找什么书呀" : "没有可用搜索源哦",
+);
+/** 已搜索无结果：当前是否仍有可用搜索源 */
 const noResultsText = computed(() =>
-  progress.value.total === 0 ? "启用书源为空" : "未找到相关书籍",
+  hasEnabledSearchSources.value
+    ? "没有找到相关内容哦"
+    : "没有可用搜索源哦",
 );
 const showResults = computed(
   () =>
@@ -688,6 +716,7 @@ onMounted(() => {
     searchHistory.value = loadFindBookSearchHistory();
   }
   syncThemeFromStorage();
+  void refreshHasEnabledSearchSources();
   offThemeSync = listenPersistedSettingsSync(syncThemeFromStorage);
   window.addEventListener(persistedSettingsChangedEvent, syncThemeFromStorage);
   offActivateTab = window.colorTxt.onFindBookActivateTab((tab) => {
@@ -735,6 +764,15 @@ watch(mainTab, (tab) => {
   closeBookshelfToolbarMoreMenu();
   if (tab !== "bookshelf") {
     bookshelfPanelRef.value?.exitManage();
+  }
+  if (tab === "search") {
+    void refreshHasEnabledSearchSources();
+  }
+});
+
+watch(showBookSourcePanel, (open, wasOpen) => {
+  if (wasOpen && !open) {
+    void onBookSourcesChanged();
   }
 });
 
@@ -1168,10 +1206,11 @@ function onGoMain() {
           </p>
         </div>
         <div v-else-if="showEmpty" class="findBookEmpty">
-          <p class="findBookEmptyIcon">(; '⌒' )</p>
-          <p class="findBookEmptyText">没有内容哦</p>
+          <p class="findBookEmptyIcon">{{ emptyIdleIcon }}</p>
+          <p class="findBookEmptyText">{{ emptyIdleText }}</p>
         </div>
         <div v-else-if="showNoResults" class="findBookEmpty">
+          <p class="findBookEmptyIcon">(; '⌒' )</p>
           <p class="findBookEmptyText">{{ noResultsText }}</p>
         </div>
         <div v-else-if="showResults" class="findBookResults">
@@ -1197,6 +1236,7 @@ function onGoMain() {
       </template>
 
       <FindDiscoverPanel
+        ref="discoverPanelRef"
         v-show="mainTab === 'discover'"
         :filter="discoverFilter"
         :active="mainTab === 'discover'"
@@ -1239,7 +1279,11 @@ function onGoMain() {
 
     <DisclaimerPanel v-model="showDisclaimerPanel" />
 
-    <BookSourcePanel v-model="showBookSourcePanel" @search-source="onSearchFromSource" />
+    <BookSourcePanel
+      v-model="showBookSourcePanel"
+      @search-source="onSearchFromSource"
+      @sources-changed="onBookSourcesChanged"
+    />
   </AppModal>
 </template>
 
@@ -1448,7 +1492,7 @@ function onGoMain() {
 .findBookSearchBtn {
   flex-shrink: 0;
   border-radius: 0 999px 999px 0;
-  padding: 8px 16px;
+  padding: 7px 16px;
   white-space: nowrap;
   font-size: 14px;
   border: none;
@@ -1696,28 +1740,5 @@ function onGoMain() {
   text-align: center;
   font-size: 13px;
   color: var(--muted);
-}
-.findBookEmpty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  font-size: 14px;
-  color: var(--text-muted, #888);
-  gap: 8px;
-}
-.findBookEmptyIcon {
-  font-size: 28px;
-  margin: 0;
-}
-.findBookEmptyIcon + .findBookEmptyText {
-  font-size: 16px;
-}
-.findBookEmptyText--loading {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin: 0;
 }
 </style>

@@ -99,6 +99,23 @@ export function useBookSourceApi() {
   };
 }
 
+/** 可参与搜索的启用文本书源数量（可选限定 sourceUrls） */
+export async function countEligibleSearchSources(
+  options?: { sourceUrls?: string[] },
+): Promise<number> {
+  const all = await window.colorTxt.bookSourceList();
+  const scope = options?.sourceUrls?.length
+    ? new Set(options.sourceUrls)
+    : null;
+  return all.filter((s) => {
+    if (!s.enabled || !s.hasSearchUrl) return false;
+    const t = s.bookSourceType;
+    if (t !== 0 && t !== undefined && t !== null) return false;
+    if (scope && !scope.has(s.bookSourceUrl)) return false;
+    return true;
+  }).length;
+}
+
 export function useBookSourceSearch() {
   const searching = ref(false);
   const loadingMore = ref(false);
@@ -118,6 +135,8 @@ export function useBookSourceSearch() {
       failed: boolean;
     }>
   >([]);
+  /** 最近一次搜索因无启用搜索源而短路（未进 IPC） */
+  const noEnabledSearchSources = ref(false);
   let searchId = "";
   let searchSeq = 0;
   let unsub: (() => void) | null = null;
@@ -133,6 +152,7 @@ export function useBookSourceSearch() {
     searchHasMore.value = false;
     loadingMore.value = false;
     searchPage.value = 1;
+    noEnabledSearchSources.value = false;
   }
 
   async function search(
@@ -150,10 +170,21 @@ export function useBookSourceSearch() {
       searchId = "";
     }
 
+    const eligible = await countEligibleSearchSources(options);
+    if (seq !== searchSeq) return;
+
+    searchKey.value = k;
+    searchPhase.value = null;
+    searching.value = false;
+    reset();
+
+    if (eligible === 0) {
+      noEnabledSearchSources.value = true;
+      return;
+    }
+
     searching.value = true;
     searchPhase.value = "searching";
-    searchKey.value = k;
-    reset();
 
     const searchOptions =
       options?.sourceUrls?.length || options?.precisionSearch
@@ -244,6 +275,19 @@ export function useBookSourceSearch() {
     searchPhase.value = "stopped";
   }
 
+  /** 无启用源时的短路「已搜索」态：有源可用后清回未搜索空状态 */
+  function clearShortCircuitSearch() {
+    if (!noEnabledSearchSources.value) return;
+    searchSeq += 1;
+    unsub?.();
+    unsub = null;
+    searchId = "";
+    searching.value = false;
+    searchPhase.value = null;
+    searchKey.value = "";
+    reset();
+  }
+
   onBeforeUnmount(() => {
     unsub?.();
     if (searchId) void window.colorTxt.bookSourceSearchCancel(searchId);
@@ -262,10 +306,12 @@ export function useBookSourceSearch() {
     searchLogs,
     searchSourceErrors,
     searchSourceStats,
+    noEnabledSearchSources,
     search,
     loadMore,
     cancel,
     reset,
+    clearShortCircuitSearch,
   };
 }
 

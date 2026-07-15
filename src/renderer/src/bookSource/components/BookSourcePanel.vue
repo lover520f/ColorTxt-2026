@@ -45,6 +45,8 @@ const modelValue = defineModel<boolean>({ default: false });
 
 const emit = defineEmits<{
   searchSource: [item: BookSourceListItem];
+  /** 书源列表启用态 / 发现态 / 增删改后，供找书/发现刷新空状态 */
+  sourcesChanged: [];
 }>();
 
 const {
@@ -259,6 +261,15 @@ async function refresh() {
   items.value = await listSources();
 }
 
+async function refreshAndNotify() {
+  await refresh();
+  emit("sourcesChanged");
+}
+
+function notifySourcesChanged() {
+  emit("sourcesChanged");
+}
+
 watch(modelValue, (open) => {
   if (open) {
     void refresh();
@@ -334,7 +345,7 @@ async function onDelete() {
   if (!ok) return;
   await deleteSources(urls);
   clearSelection();
-  await refresh();
+  await refreshAndNotify();
 }
 
 async function onBatchToggleEnabled(enabled: boolean) {
@@ -342,7 +353,7 @@ async function onBatchToggleEnabled(enabled: boolean) {
   const urls = selectedUrlsInListOrder();
   if (!urls.length) return;
   await Promise.all(urls.map((url) => toggleSource(url, enabled)));
-  await refresh();
+  await refreshAndNotify();
 }
 
 async function onBatchToggleExplore(enabledExplore: boolean) {
@@ -354,7 +365,7 @@ async function onBatchToggleExplore(enabledExplore: boolean) {
     if (!source) continue;
     await saveSource({ ...source, enabledExplore });
   }
-  await refresh();
+  await refreshAndNotify();
 }
 
 async function onBatchMoveTop() {
@@ -450,6 +461,7 @@ async function onCheckSelected() {
 async function onToggle(item: BookSourceListItem, enabled: boolean) {
   await toggleSource(item.bookSourceUrl, enabled);
   item.enabled = enabled;
+  notifySourcesChanged();
 }
 
 function onEdit(item: BookSourceListItem) {
@@ -499,7 +511,7 @@ async function onRowMenuToggleExplore() {
   const source = await getSource(item.bookSourceUrl);
   if (!source) return;
   await saveSource({ ...source, enabledExplore: !item.enabledExplore });
-  await refresh();
+  await refreshAndNotify();
 }
 
 async function onRowMenuDelete() {
@@ -512,7 +524,7 @@ async function onRowMenuDelete() {
   const next = new Set(selected.value);
   next.delete(item.bookSourceUrl);
   selected.value = next;
-  await refresh();
+  await refreshAndNotify();
 }
 
 function onNewSource() {
@@ -544,7 +556,7 @@ async function onNetworkImport() {
 
 function onImportDone() {
   showImport.value = false;
-  void refresh();
+  void refreshAndNotify();
 }
 
 async function onLogin(item: BookSourceListItem) {
@@ -571,7 +583,7 @@ function onEditDone() {
   showEdit.value = false;
   editingUrl.value = null;
   editingDraft.value = null;
-  void refresh();
+  void refreshAndNotify();
 }
 </script>
 

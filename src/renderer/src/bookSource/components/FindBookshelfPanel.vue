@@ -354,12 +354,12 @@ defineExpose({ refresh, updateAll, enterManage, exitManage });
 <template>
   <div class="findBookshelfPanel">
     <div class="findBookshelfBody">
-      <div v-if="showEmptyShelf" class="findBookshelfEmpty">
-        <p class="findBookshelfEmptyIcon">(; '⌒' )</p>
-        <p class="findBookshelfEmptyText">书架还是空的</p>
+      <div v-if="showEmptyShelf" class="findBookEmpty">
+        <p class="findBookEmptyIcon">(•◡•)و</p>
+        <p class="findBookEmptyText">书架还空着，先去搜索书籍或从发现里添加吧</p>
       </div>
-      <div v-else-if="showNoFilterMatch" class="findBookshelfEmpty">
-        <p class="findBookshelfEmptyText">无匹配的书籍</p>
+      <div v-else-if="showNoFilterMatch" class="findBookEmpty">
+        <p class="findBookEmptyText">无匹配的书籍</p>
       </div>
       <ul v-else ref="bookshelfListRef" class="findBookResultsList">
         <FindBookshelfListItem
@@ -502,23 +502,6 @@ defineExpose({ refresh, updateAll, enterManage, exitManage });
   overflow: auto;
   padding: 10px;
   background: var(--bg);
-}
-.findBookshelfEmpty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  font-size: 14px;
-  color: var(--text-muted, #888);
-  gap: 8px;
-}
-.findBookshelfEmptyIcon {
-  font-size: 28px;
-  margin: 0;
-}
-.findBookshelfEmptyIcon + .findBookshelfEmptyText {
-  font-size: 16px;
 }
 .findBookshelfFooter {
   display: flex;

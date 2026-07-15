@@ -405,6 +405,8 @@ watch(
   },
   { immediate: true },
 );
+
+defineExpose({ refreshSources });
 </script>
 
 <template>
@@ -478,9 +480,10 @@ watch(
     </div>
 
     <div ref="discoverBodyRef" v-show="!showExploreList" class="findDiscoverBody">
-        <p v-if="!filteredSources.length" class="findDiscoverHint">
-          没有可用的发现书源
-        </p>
+        <div v-if="!filteredSources.length" class="findBookEmpty">
+          <p class="findBookEmptyIcon">(; '⌒' )</p>
+          <p class="findBookEmptyText">没有可用发现源哦</p>
+        </div>
         <ul v-else class="findDiscoverSourceList">
           <li
             v-for="source in filteredSources"

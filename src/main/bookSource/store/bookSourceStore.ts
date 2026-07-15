@@ -73,6 +73,7 @@ export function listBookSources(): BookSourceListItem[] {
       lastUpdateTime: row.last_update_time,
       customOrder: rec.customOrder ?? 0,
       hasLoginUrl: Boolean(rec.loginUrl?.trim()),
+      hasSearchUrl: Boolean(rec.searchUrl?.trim()),
       hasExploreUrl: Boolean(rec.exploreUrl?.trim()),
       enabledExplore: rec.enabledExplore !== false,
       respondTime: rec.respondTime,

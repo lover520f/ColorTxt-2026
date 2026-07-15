@@ -14,6 +14,7 @@ import {
 } from "../../services/shortcutService";
 import { mergeShortcutBindings } from "../../services/shortcutUtils";
 import { hasEscBeforeModalLayers } from "../../utils/modalStack";
+import { appAlert } from "../../services/appDialog";
 import type { FindBookSettingsTabId } from "../components/FindBookSettingsTabBar.vue";
 
 const defaultShortcutBindings = createDefaultShortcutBindings(
@@ -47,11 +48,22 @@ export function useFindBookPanelShortcuts(deps: {
 
   let unbindShortcuts: (() => void) | null = null;
 
+  /** 把「隐藏/显示阅读器」等系统级全局快捷键同步到主进程（找书独立启动时主窗口不会挂载） */
+  async function applyGlobalShortcutFromBindings() {
+    const accel = shortcutBindings.value.toggleAllWindowsVisibility?.trim();
+    if (!accel || !window.colorTxt?.setGlobalShortcut) return;
+    const r = await window.colorTxt.setGlobalShortcut(accel);
+    if (!r.ok) {
+      await appAlert(r.message || "系统级快捷键设置失败");
+    }
+  }
+
   function syncShortcutBindingsFromMain() {
     shortcutBindings.value = mergeShortcutBindings(
       defaultShortcutBindings,
       loadMainShortcutBindings(),
     );
+    void applyGlobalShortcutFromBindings();
   }
 
   function bindShortcuts() {
