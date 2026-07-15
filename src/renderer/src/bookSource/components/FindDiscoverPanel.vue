@@ -4,14 +4,15 @@ import IconButton from "../../components/IconButton.vue";
 import FindBookListItem from "./FindBookListItem.vue";
 import EditBookSourcePanel from "./EditBookSourcePanel.vue";
 import BookSourceCenterState from "./BookSourceCenterState.vue";
+import LoadingDotsBounce from "../../components/LoadingDotsBounce.vue";
 import { icons } from "../../icons";
 import {
   useBookSourceApi,
 } from "../composables/useBookSource";
+import { useBookshelfCoverUrls } from "../composables/useBookshelfCoverUrls";
 import type { BookSourceListItem, ExploreKind, SearchBookItem } from "@shared/bookSource/types";
 import { appLog } from "../../services/appDialog";
 import { legadoFlexChildStyle } from "@shared/bookSource/legadoFlexStyle";
-import { readerTxtLoadingHintText } from "../../constants/appUi";
 import "./findBookListShared.css";
 
 const props = defineProps<{
@@ -42,6 +43,7 @@ const exploreShow = ref<{
 } | null>(null);
 const explorePaneOpen = ref(false);
 const exploreBooks = ref<SearchBookItem[]>([]);
+const { getCoverUrl, isCoverPending } = useBookshelfCoverUrls(exploreBooks);
 const exploreLoading = ref(false);
 const exploreLoadingMore = ref(false);
 const explorePage = ref(1);
@@ -304,13 +306,16 @@ async function loadExplorePage(append: boolean, requestSeq?: number) {
     exploreError.value = "";
     if (append) {
       const seen = new Set(exploreBooks.value.map((b) => b.id));
+      const merged = [...exploreBooks.value];
       let added = 0;
       for (const item of items) {
         if (!seen.has(item.id)) {
-          exploreBooks.value.push(item);
+          seen.add(item.id);
+          merged.push(item);
           added += 1;
         }
       }
+      exploreBooks.value = merged;
       if (items.length === 0 || added === 0) {
         exploreHasMore.value = false;
       } else {
@@ -433,7 +438,7 @@ watch(
       </header>
       <div class="findDiscoverExploreBodyWrap">
         <BookSourceCenterState v-if="exploreLoading">
-          {{ readerTxtLoadingHintText }}
+          <span class="findDiscoverLoadingHint">加载中<LoadingDotsBounce /></span>
         </BookSourceCenterState>
         <BookSourceCenterState v-else-if="exploreError" error>
           加载失败
@@ -442,19 +447,32 @@ watch(
           暂无书籍
         </BookSourceCenterState>
         <div v-else class="findDiscoverExploreBody" @scroll="onExploreScroll">
-          <ul class="findBookResultsList">
-            <FindBookListItem
-              v-for="item in exploreBooks"
-              :key="item.id"
-              :item="item"
-              :show-origin="false"
-              @click="onOpenBook"
-            />
-          </ul>
-          <p v-if="exploreLoadingMore" class="findDiscoverHint">加载更多…</p>
-          <p v-else-if="exploreBooks.length && !exploreHasMore" class="findDiscoverHint">
-            没有更多了
-          </p>
+          <div class="findBookResults">
+            <ul class="findBookResultsList">
+              <FindBookListItem
+                v-for="item in exploreBooks"
+                :key="item.id"
+                :item="item"
+                :show-origin="false"
+                :cover-url="getCoverUrl(item) ?? ''"
+                :cover-pending="isCoverPending(item)"
+                @click="onOpenBook"
+              />
+            </ul>
+            <div
+              v-if="exploreLoadingMore"
+              class="findBookResultsLoading"
+              aria-live="polite"
+            >
+              加载中<LoadingDotsBounce />
+            </div>
+            <p
+              v-else-if="exploreBooks.length && !exploreHasMore"
+              class="findDiscoverHint"
+            >
+              没有更多了
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -585,6 +603,12 @@ watch(
   flex: 1;
   min-height: 0;
   background: var(--bg);
+}
+.findDiscoverLoadingHint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
 }
 .findDiscoverBody,
 .findDiscoverExploreBody {

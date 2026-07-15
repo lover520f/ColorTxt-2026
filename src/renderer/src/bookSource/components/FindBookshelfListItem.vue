@@ -7,14 +7,18 @@ import { formatBookAuthor } from "../bookSourceDisplay";
 import {
   formatBookshelfLastRead,
   formatBookshelfLatestChapter,
+  isBookshelfCaughtUpToLatest,
 } from "../findBookshelfDisplay";
 import { SORTABLE_ROW_HANDLE_CLASS } from "../../composables/useSortableReorder";
 import { icons } from "../../icons";
+import RefreshIcon from "../../components/RefreshIcon.vue";
 
 const props = withDefaults(
   defineProps<{
     item: BookshelfBook;
     coverUrl?: string;
+    /** 封面仍在代理解析中：显示占位，不显示默认封面 */
+    coverPending?: boolean;
     forceDefaultCover?: boolean;
     /** 最后阅读展示（含异步解析的章节名） */
     lastReadText?: string;
@@ -28,6 +32,7 @@ const props = withDefaults(
     selected?: boolean;
   }>(),
   {
+    coverPending: false,
     showDragHandle: false,
     updating: false,
     managing: false,
@@ -44,18 +49,35 @@ const emit = defineEmits<{
 
 const coverLoadFailed = ref(false);
 
-const displayCoverUrl = computed(() => props.coverUrl ?? props.item.coverUrl);
+const displayCoverUrl = computed(() => {
+  if (props.coverUrl !== undefined) {
+    const t = props.coverUrl.trim();
+    return t || undefined;
+  }
+  return props.item.coverUrl?.trim() || undefined;
+});
 
+/** 仅最终失败才用默认封面；解析中用占位 */
 const showDefaultCover = computed(
   () =>
     props.forceDefaultCover ||
-    !displayCoverUrl.value ||
-    coverLoadFailed.value,
+    coverLoadFailed.value ||
+    (!props.coverPending && !displayCoverUrl.value),
+);
+
+const showCoverPending = computed(
+  () =>
+    !showDefaultCover.value &&
+    !displayCoverUrl.value &&
+    props.coverPending,
 );
 
 const latestChapterText = computed(() => formatBookshelfLatestChapter(props.item));
 const lastReadText = computed(
   () => props.lastReadText ?? formatBookshelfLastRead(props.item),
+);
+const caughtUpToLatest = computed(() =>
+  isBookshelfCaughtUpToLatest(props.item, lastReadText.value),
 );
 const updateDisabled = computed(() => props.item.canUpdate === false);
 
@@ -73,6 +95,11 @@ function onClick() {
 function onCoverError() {
   coverLoadFailed.value = true;
   emit("coverError", props.item);
+}
+
+function onCoverLoad(e: Event) {
+  const img = e.target as HTMLImageElement;
+  if (!img.naturalWidth || !img.naturalHeight) onCoverError();
 }
 
 function onMoreClick(e: MouseEvent) {
@@ -94,6 +121,13 @@ function onRemoveClick(e: MouseEvent) {
     }"
     @click="onClick"
   >
+    <span
+      v-if="caughtUpToLatest"
+      class="findBookshelfCaughtUpBadge"
+      title="已读至最新章节"
+      aria-label="已读至最新章节"
+      v-html="icons.ok"
+    />
     <AppCheckbox
       v-if="managing"
       class="findBookshelfSelectCheckbox"
@@ -101,21 +135,29 @@ function onRemoveClick(e: MouseEvent) {
       :model-value="selected"
       :aria-label="`选择 ${item.name}`"
     />
-    <DefaultBookCover
-      v-if="showDefaultCover"
-      class="findBookListItemCover"
-      :title="item.name"
-      :author="item.author"
-    />
-    <img
-      v-else
-      class="findBookListItemCover"
-      :src="displayCoverUrl"
-      alt=""
-      loading="lazy"
-      referrerpolicy="no-referrer"
-      @error="onCoverError"
-    />
+    <div class="findBookshelfCoverWrap">
+      <DefaultBookCover
+        v-if="showDefaultCover"
+        class="findBookListItemCover"
+        :title="item.name"
+        :author="item.author"
+      />
+      <div
+        v-else-if="showCoverPending"
+        class="findBookListItemCover findBookListItemCover--pending"
+        aria-hidden="true"
+      />
+      <img
+        v-else
+        class="findBookListItemCover"
+        :src="displayCoverUrl"
+        alt=""
+        loading="lazy"
+        referrerpolicy="no-referrer"
+        @error="onCoverError"
+        @load="onCoverLoad"
+      />
+    </div>
     <div
       class="findBookListItemMain"
       :class="{ 'findBookListItemMain--managing': managing }"
@@ -179,11 +221,11 @@ function onRemoveClick(e: MouseEvent) {
       v-else-if="updating || updateDisabled"
       class="findBookshelfStatus"
     >
-      <span
+      <RefreshIcon
         v-if="updating"
-        class="findBookshelfStatusIcon iconSvg iconSvg--spinning"
-        aria-hidden="true"
-        v-html="icons.refresh"
+        class="findBookshelfStatusIcon"
+        :size="16"
+        spinning
       />
       <span v-else-if="updateDisabled" class="findBookshelfStatusTag">已禁止更新</span>
     </div>
@@ -267,11 +309,44 @@ function onRemoveClick(e: MouseEvent) {
 .findBookshelfDragHandleIcon :deep(svg path) {
   fill: currentColor;
 }
+.findBookshelfCoverWrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 76px;
+  height: 102px;
+}
 .findBookListItemCover {
   width: 76px;
   height: 102px;
   border-radius: 4px;
   flex-shrink: 0;
+}
+.findBookshelfCaughtUpBadge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 3px 0 0 3px;
+  border-radius: 7px 0 0 0;
+  background: var(--success);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  color: #fff;
+  pointer-events: none;
+  user-select: none;
+}
+.findBookshelfCaughtUpBadge :deep(svg) {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
+.findBookshelfCaughtUpBadge :deep(svg path) {
+  fill: currentColor;
 }
 img.findBookListItemCover {
   object-fit: cover;
@@ -402,26 +477,7 @@ img.findBookListItemCover {
   pointer-events: none;
 }
 .findBookshelfStatusIcon {
-  display: flex;
-  width: 16px;
-  height: 16px;
   color: var(--muted);
-}
-.findBookshelfStatusIcon :deep(svg) {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-.findBookshelfStatusIcon :deep(svg path) {
-  fill: currentColor;
-}
-.findBookshelfStatusIcon.iconSvg--spinning :deep(svg) {
-  animation: findBookshelfStatusSpin 0.65s linear infinite;
-}
-@keyframes findBookshelfStatusSpin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 .findBookshelfStatusTag {
   display: inline-block;

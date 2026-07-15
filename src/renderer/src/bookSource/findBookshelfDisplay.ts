@@ -1,3 +1,5 @@
+import { formatLegadoBookAuthor } from "@shared/bookSource/formatBookAuthor";
+
 /** 从 kind 标签中提取日期作为更新时间兜底 */
 export function extractUpdateTimeFromKind(kind?: string): string {
   const raw = kind?.trim();
@@ -40,9 +42,24 @@ export function formatBookshelfLastRead(book: BookshelfDisplayFields): string {
   return "暂无";
 }
 
-/** 作者行：去掉重复「作者：」前缀 */
+/**
+ * 最后阅读章节是否已是最新章节（标题比对；不含「更新时间」后缀）。
+ * `lastReadDisplay` 优先（可为异步解析的章节名）。
+ */
+export function isBookshelfCaughtUpToLatest(
+  book: Pick<BookshelfDisplayFields, "lastChapter" | "lastReadChapterTitle">,
+  lastReadDisplay?: string,
+): boolean {
+  const latest = book.lastChapter?.trim();
+  if (!latest) return false;
+  const read = (lastReadDisplay?.trim() || book.lastReadChapterTitle?.trim() || "");
+  if (!read || read === "暂无") return false;
+  return read === latest;
+}
+
+/** 作者行：对齐 Legado 作者净化 */
 export function formatBookshelfAuthor(author: string | undefined): string {
-  return author?.trim().replace(/^作者[：:]\s*/, "") || "未知";
+  return formatLegadoBookAuthor(author) || "未知";
 }
 
 /** 书架继续阅读：有进度用保存的下标，否则从目录数组末尾（第一章） */

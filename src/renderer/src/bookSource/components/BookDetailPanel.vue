@@ -192,7 +192,8 @@ const latestChapterIsVip = computed(() => {
 });
 const displayUpdateTime = computed(() => detail.value?.updateTime ?? "");
 const kindTags = computed(() => {
-  const wc = detail.value?.wordCount ?? props.item?.wordCount;
+  const wc =
+    detail.value?.wordCount?.trim() || props.item?.wordCount?.trim() || undefined;
   return getBookKindList({
     kind: detail.value?.kind ?? props.item?.kind,
     wordCount: wc,

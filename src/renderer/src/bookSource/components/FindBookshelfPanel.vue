@@ -40,7 +40,7 @@ const emit = defineEmits<{
 
 const { books, refresh, setOrder, remove, setCanUpdate, applyBooks } =
   useFindBookBookshelf();
-const { getCoverUrl, retryCover } = useBookshelfCoverUrls(books);
+const { getCoverUrl, isCoverPending, retryCover } = useBookshelfCoverUrls(books);
 const { getLastReadText } = useBookshelfLastReadTitles(
   books,
   () => props.active,
@@ -366,7 +366,8 @@ defineExpose({ refresh, updateAll, enterManage, exitManage });
           v-for="item in displayBooks"
           :key="item.id"
           :item="item"
-          :cover-url="getCoverUrl(item)"
+          :cover-url="getCoverUrl(item) ?? ''"
+          :cover-pending="isCoverPending(item)"
           :force-default-cover="!!coverFailedIds[item.id]"
           :last-read-text="getLastReadText(item)"
           :show-drag-handle="canDragReorder"

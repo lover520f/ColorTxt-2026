@@ -13,12 +13,14 @@ const props = withDefaults(
     item: SearchBookItem;
     /** 是否在标题行右侧显示书源名（搜索、书架为 true，发现分类为 false） */
     showOrigin?: boolean;
-    /** 封面 URL 覆盖（书架重新解析封面时使用） */
+    /** 封面 URL 覆盖（父级显式传入；空串表示暂无可用 URL） */
     coverUrl?: string;
+    /** 封面仍在代理解析中：显示占位，不显示默认封面 */
+    coverPending?: boolean;
     /** 外部强制显示默认封面（书架重试失败后） */
     forceDefaultCover?: boolean;
   }>(),
-  { showOrigin: true },
+  { showOrigin: true, coverPending: false },
 );
 
 const emit = defineEmits<{
@@ -28,21 +30,39 @@ const emit = defineEmits<{
 
 const coverLoadFailed = ref(false);
 
-const displayCoverUrl = computed(() => props.coverUrl ?? props.item.coverUrl);
+/**
+ * `coverUrl` 由父级显式传入时（含空串）以父级为准，勿回退到可能已失效的 item.coverUrl。
+ * 未传该 prop 时再用 item.coverUrl。
+ */
+const displayCoverUrl = computed(() => {
+  if (props.coverUrl !== undefined) {
+    const t = props.coverUrl.trim();
+    return t || undefined;
+  }
+  return props.item.coverUrl?.trim() || undefined;
+});
 
 const introText = computed(() => formatBookIntroForDisplay(props.item.intro));
 
 const kindTags = computed(() => getBookKindList(props.item));
 
+/** 仅最终失败才用默认封面；解析中用占位 */
 const showDefaultCover = computed(
   () =>
     props.forceDefaultCover ||
-    !displayCoverUrl.value ||
-    coverLoadFailed.value,
+    coverLoadFailed.value ||
+    (!props.coverPending && !displayCoverUrl.value),
+);
+
+const showCoverPending = computed(
+  () =>
+    !showDefaultCover.value &&
+    !displayCoverUrl.value &&
+    props.coverPending,
 );
 
 watch(
-  () => props.coverUrl,
+  () => [props.coverUrl, props.item.coverUrl, props.item.id] as const,
   () => {
     coverLoadFailed.value = false;
   },
@@ -56,6 +76,11 @@ function onCoverError() {
   coverLoadFailed.value = true;
   emit("coverError", props.item);
 }
+
+function onCoverLoad(e: Event) {
+  const img = e.target as HTMLImageElement;
+  if (!img.naturalWidth || !img.naturalHeight) onCoverError();
+}
 </script>
 
 <template>
@@ -66,6 +91,11 @@ function onCoverError() {
       :title="item.name"
       :author="item.author"
     />
+    <div
+      v-else-if="showCoverPending"
+      class="findBookListItemCover findBookListItemCover--pending"
+      aria-hidden="true"
+    />
     <img
       v-else
       class="findBookListItemCover"
@@ -74,6 +104,7 @@ function onCoverError() {
       loading="lazy"
       referrerpolicy="no-referrer"
       @error="onCoverError"
+      @load="onCoverLoad"
     />
     <div class="findBookListItemMain">
       <div v-if="showOrigin" class="findBookListItemHead">

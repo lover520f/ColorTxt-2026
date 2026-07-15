@@ -343,12 +343,13 @@ export function ensureLegadoIntroLeadingTitle(intro: string, detailName: string)
 /**
  * 详情页「最新章节」：对齐 Legado BookChapterList —
  * 有目录后用最新章节标题覆盖（不再保留规则拼接的时间等后缀）。
+ * ColorTxt 目录在无 `-` 前缀时 reverse 一次，最新章在数组头部。
  */
 export function resolveDetailLastChapterDisplay(
   detailLastChapter: string | undefined,
-  firstChapterTitle: string | undefined,
+  latestChapterTitle: string | undefined,
 ): string {
-  const fromToc = firstChapterTitle?.trim() ?? "";
+  const fromToc = latestChapterTitle?.trim() ?? "";
   if (fromToc) return fromToc;
   return formatLegadoLastChapterDisplay(detailLastChapter)?.trim() ?? "";
 }

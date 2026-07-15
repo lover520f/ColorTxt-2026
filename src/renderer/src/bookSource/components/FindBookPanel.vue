@@ -16,6 +16,7 @@ import FindBookshelfPanel from "./FindBookshelfPanel.vue";
 import FindBookListItem from "./FindBookListItem.vue";
 import FindBookSettingsPanel from "./FindBookSettingsPanel.vue";
 import DisclaimerPanel from "./DisclaimerPanel.vue";
+import LoadingDotsBounce from "../../components/LoadingDotsBounce.vue";
 import type { FindBookSettingsTabId } from "./FindBookSettingsTabBar.vue";
 import { useFindBookSettings } from "../composables/useFindBookSettings";
 import { useFindBookPanelShortcuts } from "../composables/useFindBookPanelShortcuts";
@@ -244,7 +245,7 @@ function rerunSearchIfNeeded() {
 
 const { searching, pageLoading, searchPage, searchHasMore, searchPhase, searchKey, progress, results, searchLogs, searchSourceErrors, searchSourceStats, search, loadMore, cancel } =
   useBookSourceSearch();
-const { getCoverUrl } = useBookshelfCoverUrls(results);
+const { getCoverUrl, isCoverPending } = useBookshelfCoverUrls(results);
 
 const hasResults = computed(() => results.value.length > 0);
 const hasSearched = computed(() => Boolean(searchKey.value.trim()));
@@ -254,6 +255,10 @@ const filteredSearchHistory = computed(() => {
   if (!key) return searchHistory.value;
   return searchHistory.value.filter((item) => item.includes(key));
 });
+/** 搜索进行中且尚未有任何条目时，结果区显示加载占位 */
+const showSearchLoading = computed(
+  () => !showHistory.value && searching.value && !hasResults.value,
+);
 const showEmpty = computed(
   () =>
     !showHistory.value &&
@@ -273,7 +278,10 @@ const noResultsText = computed(() =>
   progress.value.total === 0 ? "启用书源为空" : "未找到相关书籍",
 );
 const showResults = computed(
-  () => !showHistory.value && (searching.value || hasResults.value || hasSearched.value),
+  () =>
+    !showHistory.value &&
+    !showSearchLoading.value &&
+    (searching.value || hasResults.value || hasSearched.value),
 );
 
 const searchProgressPercent = computed(() => {
@@ -356,6 +364,24 @@ watch(
 function onOpenBookSources() {
   closeMoreMenu();
   showBookSourcePanel.value = true;
+}
+
+async function onOpenDownloadDir() {
+  closeMoreMenu();
+  const dir = effectiveDownloadDir.value.trim();
+  if (!dir) {
+    appToast("下载目录未配置", { kind: "warning" });
+    return;
+  }
+  const r = await window.colorTxt.openPath(dir);
+  if (!r.ok) {
+    appToast(r.error || "无法打开下载目录", { kind: "warning" });
+  }
+}
+
+function onQuitApp() {
+  closeMoreMenu();
+  window.colorTxt.quitApp();
 }
 
 function openSettings(tab: FindBookSettingsTabId = "download") {
@@ -988,6 +1014,15 @@ function onGoMain() {
           type="button"
           class="appShellMenuItem"
           role="menuitem"
+          @click="onOpenDownloadDir"
+        >
+          <span class="appShellMenuIconSlot" v-html="icons.folderOpen" />
+          <span class="appShellMenuLabel">打开下载目录</span>
+        </button>
+        <button
+          type="button"
+          class="appShellMenuItem"
+          role="menuitem"
           @click="openSettings('download')"
         >
           <span class="appShellMenuIconSlot" v-html="icons.setting" />
@@ -1022,6 +1057,15 @@ function onGoMain() {
         >
           <span class="appShellMenuIconSlot" v-html="icons.disclaimer" />
           <span class="appShellMenuLabel">免责声明</span>
+        </button>
+        <button
+          type="button"
+          class="appShellMenuItem"
+          role="menuitem"
+          @click="onQuitApp"
+        >
+          <span class="appShellMenuIconSlot" v-html="icons.quit" />
+          <span class="appShellMenuLabel">退出</span>
         </button>
       </AppShellMenuTeleport>
 
@@ -1118,6 +1162,11 @@ function onGoMain() {
           <p v-else-if="searchHistory.length" class="findBookHistoryEmpty">无匹配的搜索历史</p>
           <p v-else class="findBookHistoryEmpty">暂无搜索历史</p>
         </div>
+        <div v-else-if="showSearchLoading" class="findBookEmpty">
+          <p class="findBookEmptyText findBookEmptyText--loading">
+            加载中<LoadingDotsBounce />
+          </p>
+        </div>
         <div v-else-if="showEmpty" class="findBookEmpty">
           <p class="findBookEmptyIcon">(; '⌒' )</p>
           <p class="findBookEmptyText">没有内容哦</p>
@@ -1125,15 +1174,25 @@ function onGoMain() {
         <div v-else-if="showNoResults" class="findBookEmpty">
           <p class="findBookEmptyText">{{ noResultsText }}</p>
         </div>
-        <ul v-else-if="showResults" class="findBookResultsList">
-          <FindBookListItem
-            v-for="item in results"
-            :key="item.id"
-            :item="item"
-            :cover-url="getCoverUrl(item)"
-            @click="onOpenBook"
-          />
-        </ul>
+        <div v-else-if="showResults" class="findBookResults">
+          <ul class="findBookResultsList">
+            <FindBookListItem
+              v-for="item in results"
+              :key="item.id"
+              :item="item"
+              :cover-url="getCoverUrl(item) ?? ''"
+              :cover-pending="isCoverPending(item)"
+              @click="onOpenBook"
+            />
+          </ul>
+          <div
+            v-if="pageLoading && hasResults"
+            class="findBookResultsLoading"
+            aria-live="polite"
+          >
+            加载中<LoadingDotsBounce />
+          </div>
+        </div>
       </div>
       </template>
 
@@ -1654,5 +1713,11 @@ function onGoMain() {
 }
 .findBookEmptyIcon + .findBookEmptyText {
   font-size: 16px;
+}
+.findBookEmptyText--loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
 }
 </style>

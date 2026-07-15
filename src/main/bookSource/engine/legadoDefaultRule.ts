@@ -1,6 +1,34 @@
 import * as cheerio from "cheerio";
 import type { Cheerio, CheerioAPI } from "cheerio";
 
+/**
+ * Cheerio/HTML5 会剥离脱离 `<table>` 的 `<tr>` / `<td>`（Jsoup 仍可保留单元格）。
+ * `getElements` 序列化出的 `<tr>…</tr>` 再 `cheerio.load` 会导致 `td.N@text` 等规则全空
+ *（如搜索列表字数栏 `247k`）。
+ */
+export function wrapOrphanTableFragments(html: string): string {
+  const t = html.trim();
+  if (!t) return html;
+  if (/^<!doctype/i.test(t) || /^<html[\s>]/i.test(t) || /^<table[\s>]/i.test(t)) {
+    return html;
+  }
+  if (/^<(thead|tbody|tfoot|colgroup)[\s>]/i.test(t)) {
+    return `<table>${t}</table>`;
+  }
+  if (/^<tr[\s>]/i.test(t)) {
+    return `<table><tbody>${t}</tbody></table>`;
+  }
+  if (/^<(td|th)[\s>]/i.test(t)) {
+    return `<table><tbody><tr>${t}</tr></tbody></table>`;
+  }
+  return html;
+}
+
+/** 解析 HTML 片段/整页；自动包裹孤立的表格片段 */
+export function loadCheerioHtml(html: string): CheerioAPI {
+  return cheerio.load(wrapOrphanTableFragments(html));
+}
+
 export type RuleRegexSuffix = {
   pattern: string;
   replacement: string;
@@ -64,6 +92,11 @@ export function splitRuleRegexSuffix(rule: string): {
     }
     let replacement = tail.slice(end + 2);
     let replaceFirst = false;
+    // 误把整段「…##repl@js:…」传入时，勿将 @js 吃进 replacement（应对齐先 splitSourceRule）
+    const jsInRepl = replacement.search(/(?:@js:|<js>|@webjs:)/i);
+    if (jsInRepl >= 0) {
+      replacement = replacement.slice(0, jsInRepl);
+    }
     // Legado `##pat##repl###`：末尾 ### 表示仅替换首个匹配（非字面量 ##）
     if (replacement.endsWith("###")) {
       replaceFirst = true;
@@ -380,7 +413,7 @@ export function legadoCollectResultTexts(
   }
   if (!extract || !selectorSegs.length) return [];
 
-  const $ = cheerio.load(html);
+  const $ = loadCheerioHtml(html);
   const body = $("body");
   let roots: any[] = body.length ? body.toArray() : $.root().children().toArray();
   if (!roots.length) return [];
@@ -559,7 +592,7 @@ export function extractFromContentRoot(
   list: boolean,
 ): unknown {
   const html = typeof content === "string" ? content : String(content ?? "");
-  const $ = cheerio.load(html);
+  const $ = loadCheerioHtml(html);
   const root = cheerioContentRoot($);
   if (!root.length) return list ? [] : "";
   if (list) {
@@ -617,7 +650,7 @@ export function elementsToHtmlList(
 
 /** SF 详情页 `.tag-list`：各 `<li>` 内 `span.text` 为标签文案 */
 export function extractTagListLabelsFromHtml(html: string): string {
-  const $ = cheerio.load(html);
+  const $ = loadCheerioHtml(html);
   const list = $(".tag-list").first();
   if (!list.length) return "";
   const out: string[] = [];
@@ -654,7 +687,7 @@ export function normalizeTagListTextRule(rule: string): string | null {
 
 /** 从 `.tag-list` 容器读取 Legado 式合并文本（空格分隔子节点） */
 export function tagListContainerTextFromHtml(html: string): string {
-  const $ = cheerio.load(html);
+  const $ = loadCheerioHtml(html);
   const text = legadoElementText($(".tag-list").first()).replace(/\s+/g, " ").trim();
   return text;
 }

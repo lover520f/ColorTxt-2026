@@ -12,6 +12,7 @@ import {
   isLegadoExtractType,
   isLegadoAttrExtract,
   hasLegadoSegmentIndex,
+  loadCheerioHtml,
   parseLegadoSelectorSegment,
   pickElements,
   queryLegadoSelectorSegment,
@@ -319,6 +320,10 @@ export class AnalyzeRule {
   async getString(rule: string | undefined | null, mContent?: unknown): Promise<string> {
     if (!rule?.trim()) return "";
     const parseRule = await this.applyPutFromFullRule(rule, mContent);
+    // 对齐 Legado：先按 @js/<js> 切段，再对各段做 ##（勿先拆 ## 以免把 @js 吃进 replacement）
+    if (/(?:@js:|<js>|@webjs:)/i.test(parseRule)) {
+      return (await this.getStringChain(parseRule, mContent)).trim();
+    }
     // ## 作用于整条 a||b||c；须先拆 ## 再按 || 取首个非空
     const { baseRule: orBase, regex: orRegex } = splitRuleRegexSuffix(parseRule);
     if (shouldSplitOrAlternatives(orBase)) {
@@ -357,6 +362,11 @@ export class AnalyzeRule {
     if (!rule?.trim()) return [];
     const content = mContent ?? this.content;
     const parseRule = await this.applyPutFromFullRule(rule, content);
+    // 对齐 Legado：含 @js 时整条走规则链（段内 ## 由 getOne 处理）
+    if (/(?:@js:|<js>|@webjs:)/i.test(parseRule)) {
+      const s = await this.getStringChain(parseRule, content);
+      return s ? splitStringListLines(s) : [];
+    }
 
     if (shouldSplitOrAlternatives(parseRule)) {
       for (const alt of parseRule.split("||").map((s) => s.trim()).filter(Boolean)) {
@@ -425,6 +435,10 @@ export class AnalyzeRule {
     if (!rule?.trim()) return [];
     const content = mContent ?? this.content;
     const parseRule = this.applyPutFromFullRuleSync(rule, content);
+    if (/(?:@js:|<js>|@webjs:)/i.test(parseRule)) {
+      const s = this.getStringChainSync(parseRule, content);
+      return s ? splitStringListLines(s) : [];
+    }
 
     if (shouldSplitOrAlternatives(parseRule)) {
       for (const alt of parseRule.split("||").map((s) => s.trim()).filter(Boolean)) {
@@ -1559,7 +1573,7 @@ export class AnalyzeRule {
     if (hasLegadoSegmentIndex(parsed)) return [];
 
     const html = typeof content === "string" ? content : String(content ?? "");
-    const $ = cheerio.load(html);
+    const $ = loadCheerioHtml(html);
     const els = isLegadoAttrSelectorSegment(selector)
       ? queryLegadoAttrSelector($, selector)
       : queryLegadoSelectorSegment($, $("body"), selector, true);
@@ -1582,7 +1596,7 @@ export class AnalyzeRule {
     }
 
     const html = typeof content === "string" ? content : String(content ?? "");
-    const $ = cheerio.load(html);
+    const $ = loadCheerioHtml(html);
     let atParts = trimmed.split("@").filter(Boolean);
 
     let jsSuffix: string | null = null;
@@ -1670,7 +1684,8 @@ export class AnalyzeRule {
         }
         current = found;
       } else {
-        current = segIndexed ? found : pickElements(found, { index: 0 });
+        // list 模式中间段保留全部匹配（对齐 Legado getElements）；单值模式再取首个
+        current = list || segIndexed ? found : pickElements(found, { index: 0 });
       }
     }
 
@@ -1712,7 +1727,7 @@ export class AnalyzeRule {
 
   private byCss(rule: string, content: unknown, list: boolean): unknown {
     const html = typeof content === "string" ? content : String(content ?? "");
-    const $ = cheerio.load(html);
+    const $ = loadCheerioHtml(html);
     let sel = rule.replace(/^@@/, "").replace(/^@css:/, "").trim();
     if (!sel) return list ? [] : "";
 

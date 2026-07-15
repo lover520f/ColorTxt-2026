@@ -1,15 +1,14 @@
-/** 书籍列表作者行：无「作者：」前缀时补上 */
+import { formatLegadoBookAuthor } from "@shared/bookSource/formatBookAuthor";
+
+/** 书籍列表作者行：净化后补「作者：」前缀（对齐 Legado 展示） */
 export function formatBookAuthor(author: string | undefined): string {
-  const a = author?.trim() || "未知";
-  if (/^作者[：:]/.test(a)) return a;
+  const a = formatLegadoBookAuthor(author) || "未知";
   return `作者：${a}`;
 }
 
-/** 默认封面作者标签：「xx　著」 */
+/** 默认封面作者标签 */
 export function formatCoverAuthor(author: string | undefined): string {
-  const a = author?.trim().replace(/^作者[：:]\s*/, "") || "未知";
-  // return `${a} 著`;
-  return a;
+  return formatLegadoBookAuthor(author) || "未知";
 }
 
 export {

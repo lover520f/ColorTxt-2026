@@ -1,6 +1,6 @@
-import * as cheerio from "cheerio";
 import type { AnyNode, Element as DomElement } from "domhandler";
 import type { Cheerio, CheerioAPI } from "cheerio";
+import { loadCheerioHtml } from "./legadoDefaultRule";
 
 /**
  * Legado / Rhino `org.jsoup.*` 兼容层（cheerio 实现）。
@@ -184,7 +184,7 @@ function wrapElements($: CheerioAPI, selection: Cheerio<AnyNode>): JsoupElements
 }
 
 function parseHtml(html: unknown): JsoupElement {
-  const $ = cheerio.load(String(html ?? ""), { xml: false });
+  const $ = loadCheerioHtml(String(html ?? ""));
   // Document：select 作用于整页（对齐 Jsoup.parse(html).select）
   const doc: JsoupElement = {
     select(cssQuery: string) {

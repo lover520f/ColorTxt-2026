@@ -9,6 +9,7 @@
   "homepage": "https://github.com/ssnangua/ColorTxt",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:find": "electron-vite dev -- --find-book",
     "build": "electron-vite build && electron-rebuild -f -w better-sqlite3,opencc && node scripts/prune-pack-deps.mjs && electron-builder --publish never",
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit",

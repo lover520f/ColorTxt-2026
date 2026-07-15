@@ -2,6 +2,7 @@ import type { BookSourceRecord, SearchBookItem, BookDetail, BookChapter, BookInf
 import { splitBookMetaTags } from "@shared/bookSource/bookMetaTags";
 import { normalizeBookSourceBaseUrl, resolveAbsoluteUrl } from "@shared/bookSource/url";
 import { wordCountFormat } from "@shared/bookSource/wordCountFormat";
+import { formatLegadoBookAuthor } from "@shared/bookSource/formatBookAuthor";
 import {
   splitUrlAndRuleVariables,
   extractUrlFetchOptionsSuffix,
@@ -463,7 +464,9 @@ async function parseInfoSearchItem(
   if (!nameRaw || isLikelyBadDetailName(nameRaw)) return null;
   const authorRaw = (await resolveBookInfoField(ar, rule.author)).trim();
   const author =
-    authorRaw && !isLikelyBadDetailName(authorRaw) ? authorRaw : "未知";
+    authorRaw && !isLikelyBadDetailName(authorRaw)
+      ? formatLegadoBookAuthor(authorRaw) || "未知"
+      : "未知";
   const name = stripEmbeddedAuthorFromDetailName(nameRaw, author);
   const requestedAbs = resolveAbsoluteUrl(
     requestUrl || normalizeBookSourceBaseUrl(source.bookSourceUrl),
@@ -523,7 +526,8 @@ async function parseSearchItem(
   try {
     const name = await ar.getString(rule.name, el);
     if (!name) return null;
-    const author = (await ar.getString(rule.author, el)) || "未知";
+    const author =
+      formatLegadoBookAuthor(await ar.getString(rule.author, el)) || "未知";
     const hasBookUrlRule = Boolean(rule.bookUrl?.trim());
     let bookUrl = await ar.getUrl(rule.bookUrl ?? "", el);
     if (!bookUrl) {
@@ -799,8 +803,11 @@ export async function getBookInfo(
   await applyBookInfoInitContent(ar, rule.init, res.body, base);
   const detailNameRaw = (await resolveBookInfoField(ar, rule.name)).trim();
   const detailAuthorRaw = (await resolveBookInfoField(ar, rule.author)).trim();
-  const detailAuthor =
-    isLikelyBadDetailName(detailAuthorRaw) || !detailAuthorRaw ? author : detailAuthorRaw;
+  const detailAuthor = formatLegadoBookAuthor(
+    isLikelyBadDetailName(detailAuthorRaw) || !detailAuthorRaw
+      ? author
+      : detailAuthorRaw,
+  ) || "未知";
   let detailName = isLikelyBadDetailName(detailNameRaw) ? name : detailNameRaw;
   detailName = stripEmbeddedAuthorFromDetailName(detailName, detailAuthor);
   const kindParts = rule.kind ? await resolveBookInfoKindParts(ar, rule.kind) : [];
