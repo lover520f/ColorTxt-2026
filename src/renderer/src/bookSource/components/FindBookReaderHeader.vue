@@ -42,6 +42,8 @@ const props = withDefaults(
     inBookshelf?: boolean;
     /** 设置菜单项右侧快捷键文案（如 F5） */
     settingsShortcutLabel?: string;
+    readerEditMode?: boolean;
+    canEnterReaderEditMode?: boolean;
   }>(),
   {
     inFullscreen: false,
@@ -56,6 +58,8 @@ const props = withDefaults(
     voiceReadHeaderLocked: false,
     inBookshelf: false,
     settingsShortcutLabel: "",
+    readerEditMode: false,
+    canEnterReaderEditMode: false,
   },
 );
 
@@ -71,15 +75,22 @@ const emit = defineEmits<{
   decreaseLineHeight: [];
   toggleCompressBlankLines: [];
   toggleLeadIndentFullWidth: [];
+  formatEditCompressBlankLines: [];
+  formatEditLeadIndentFullWidth: [];
   selectTextConvertZhRead: [mode: TextConvertZhMode];
   selectTextConvertLetterRead: [mode: TextConvertWidthMode];
   selectTextConvertDigitRead: [mode: TextConvertWidthMode];
+  applyTextConvertZhEdit: [mode: Exclude<TextConvertZhMode, "off">];
+  applyTextConvertLetterEdit: [mode: Exclude<TextConvertWidthMode, "off">];
+  applyTextConvertDigitEdit: [mode: Exclude<TextConvertWidthMode, "off">];
   toggleMonacoAdvancedWrapping: [];
   toggleMonacoCustomHighlight: [];
   voiceReadToggle: [];
   timedScrollToggle: [];
   openSettings: [];
   toggleBookshelf: [];
+  toggleReaderEdit: [];
+  saveReaderChapter: [];
 }>();
 
 const vrFormatLock = computed(() => props.voiceReadHeaderLocked);
@@ -123,21 +134,39 @@ function onOpenSettingsFromToolbar() {
 
 <template>
   <header class="findBookReaderHeader">
-    <button
-      type="button"
-      class="btn findBookReaderBookshelfBtn"
-      size="large"
-      :class="{ 'findBookReaderBookshelfBtn--remove': inBookshelf }"
-      :aria-label="bookshelfBtnLabel"
-      @click="emit('toggleBookshelf')"
-    >
-      <span
-        class="findBookReaderBookshelfBtnIcon"
-        aria-hidden="true"
-        v-html="icons.bookshelf"
+    <div class="findBookReaderHeaderStart">
+      <button
+        type="button"
+        class="btn findBookReaderBookshelfBtn"
+        size="large"
+        :class="{ 'findBookReaderBookshelfBtn--remove': inBookshelf }"
+        :aria-label="bookshelfBtnLabel"
+        @click="emit('toggleBookshelf')"
+      >
+        <span
+          class="findBookReaderBookshelfBtnIcon"
+          aria-hidden="true"
+          v-html="icons.bookshelf"
+        />
+        {{ bookshelfBtnLabel }}
+      </button>
+      <IconButton
+        :icon-html="icons.edit"
+        :active="readerEditMode"
+        :pressed="readerEditMode"
+        title="编辑模式"
+        aria-label="切换编辑模式"
+        :disabled="!readerEditMode && !canEnterReaderEditMode"
+        @click="emit('toggleReaderEdit')"
       />
-      {{ bookshelfBtnLabel }}
-    </button>
+      <IconButton
+        v-if="readerEditMode"
+        :icon-html="icons.save"
+        title="保存到缓存"
+        aria-label="保存到缓存"
+        @click="emit('saveReaderChapter')"
+      />
+    </div>
     <div class="themePicker">
       <div class="headerQuickRow">
         <IconButton
@@ -190,7 +219,7 @@ function onOpenSettingsFromToolbar() {
         <HeaderFormatToolbar
           v-if="showFormatToolbarInHeader"
           class="hdrLockable"
-          :reader-edit-mode="false"
+          :reader-edit-mode="readerEditMode"
           :disabled="vrFormatLock"
           :text-convert-zh="textConvertZh"
           :text-convert-letter="textConvertLetter"
@@ -202,8 +231,13 @@ function onOpenSettingsFromToolbar() {
           @select-text-convert-zh-read="emit('selectTextConvertZhRead', $event)"
           @select-text-convert-letter-read="emit('selectTextConvertLetterRead', $event)"
           @select-text-convert-digit-read="emit('selectTextConvertDigitRead', $event)"
+          @apply-text-convert-zh-edit="emit('applyTextConvertZhEdit', $event)"
+          @apply-text-convert-letter-edit="emit('applyTextConvertLetterEdit', $event)"
+          @apply-text-convert-digit-edit="emit('applyTextConvertDigitEdit', $event)"
           @toggle-compress-blank-lines="emit('toggleCompressBlankLines')"
           @toggle-lead-indent-full-width="emit('toggleLeadIndentFullWidth')"
+          @format-edit-compress-blank-lines="emit('formatEditCompressBlankLines')"
+          @format-edit-lead-indent-full-width="emit('formatEditLeadIndentFullWidth')"
           @toggle-monaco-advanced-wrapping="emit('toggleMonacoAdvancedWrapping')"
           @toggle-monaco-custom-highlight="emit('toggleMonacoCustomHighlight')"
         />
@@ -267,7 +301,7 @@ function onOpenSettingsFromToolbar() {
         />
         <HeaderFormatToolbar
           v-if="compactFormatToolbar"
-          :reader-edit-mode="false"
+          :reader-edit-mode="readerEditMode"
           :disabled="vrFormatLock"
           :text-convert-zh="textConvertZh"
           :text-convert-letter="textConvertLetter"
@@ -279,8 +313,13 @@ function onOpenSettingsFromToolbar() {
           @select-text-convert-zh-read="emit('selectTextConvertZhRead', $event)"
           @select-text-convert-letter-read="emit('selectTextConvertLetterRead', $event)"
           @select-text-convert-digit-read="emit('selectTextConvertDigitRead', $event)"
+          @apply-text-convert-zh-edit="emit('applyTextConvertZhEdit', $event)"
+          @apply-text-convert-letter-edit="emit('applyTextConvertLetterEdit', $event)"
+          @apply-text-convert-digit-edit="emit('applyTextConvertDigitEdit', $event)"
           @toggle-compress-blank-lines="emit('toggleCompressBlankLines')"
           @toggle-lead-indent-full-width="emit('toggleLeadIndentFullWidth')"
+          @format-edit-compress-blank-lines="emit('formatEditCompressBlankLines')"
+          @format-edit-lead-indent-full-width="emit('formatEditLeadIndentFullWidth')"
           @toggle-monaco-advanced-wrapping="emit('toggleMonacoAdvancedWrapping')"
           @toggle-monaco-custom-highlight="emit('toggleMonacoCustomHighlight')"
         />
@@ -318,6 +357,13 @@ function onOpenSettingsFromToolbar() {
   padding: 10px;
   min-height: 0;
   overflow: visible;
+}
+.findBookReaderHeaderStart {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 0;
 }
 .findBookReaderBookshelfBtnIcon {
   display: inline-flex;

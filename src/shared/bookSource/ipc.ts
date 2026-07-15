@@ -48,6 +48,8 @@ export const BOOK_SOURCE_IPC = {
   getChapterContent: "bookSource:getChapterContent",
   /** 查询哪些章节 URL 已有离线正文缓存 */
   chapterCacheStatus: "bookSource:chapterCacheStatus",
+  /** 写入/覆盖单章正文离线缓存（阅读器编辑保存） */
+  saveChapterCache: "bookSource:saveChapterCache",
   /** 清除某本书的章节正文离线缓存 */
   clearChapterCache: "bookSource:clearChapterCache",
   /** 清除缓存目录下的全部章节正文离线缓存 */
@@ -241,6 +243,13 @@ export type BookSourceIpcApi = {
     chapterUrls: string[];
     cacheDir?: string;
   }) => Promise<{ cachedUrls: string[] }>;
+  bookSourceSaveChapterCache: (payload: {
+    name: string;
+    bookUrl: string;
+    chapterUrl: string;
+    content: string;
+    cacheDir?: string;
+  }) => Promise<{ ok: boolean; message?: string }>;
   bookSourceClearChapterCache: (payload: {
     name: string;
     bookUrl: string;

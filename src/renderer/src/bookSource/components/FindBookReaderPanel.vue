@@ -49,8 +49,12 @@ import { hasEscBeforeModalLayers } from "../../utils/modalStack";
 import { formatPhysicalPlainTextForReader } from "../../reader/readerDisplayPipeline";
 import { applyTextDisplayConverts } from "../../services/textConvertApply";
 import { applyAppShellTheme, type AppShellTheme } from "../../utils/appShellThemeSync";
-import { appLog } from "../../services/appDialog";
+import { appConfirm, appLog } from "../../services/appDialog";
 import { appToast } from "../../services/appToast";
+import type {
+  TextConvertWidthMode,
+  TextConvertZhMode,
+} from "@shared/textConvertTypes";
 import type { BookSourceEditTab } from "../editBookSourceFields";
 import { useChapterCacheMarks } from "../composables/useChapterCacheMarks";
 import { confirmClearBookChapterCache } from "../services/clearBookChapterCache";
@@ -71,7 +75,6 @@ import {
   displayIndexForReadingOrder,
   readingOrderIndexFromDisplay,
 } from "../chapterReadingOrder";
-import type { Chapter } from "../../chapter";
 import {
   FIND_BOOK_WINDOW_TITLE,
   formatFindBookWindowTitle,
@@ -141,6 +144,7 @@ const viewportEndLine = ref(1);
 const viewportVisualProgressPercent = ref(0);
 const viewportAtBottom = ref(false);
 const readerEditMode = ref(false);
+const readerEditorDirty = ref(false);
 const loading = ref(false);
 /** 仅切到未缓存章节时为 true，控制侧栏 loading 图标与「加载中」提示 */
 const showChapterLoadingUi = ref(false);
@@ -168,6 +172,8 @@ const {
   monacoSmoothScrolling,
   stickyChapterTitleEnabled,
   chapterNavToolbarEnabled,
+  readerEditShowLineNumbers,
+  readerEditMinimap,
   fullscreenReaderWidthPercent,
   chapterMinCharCount,
   timedScrollSettings,
@@ -649,20 +655,7 @@ async function renderChapterText(
   const rawTitle = heading.trim();
   // 正文若已带章节名（旧缓存 / ##{{title}} 未生效），先剥离再拼回一行，
   // 避免「橙色章节装饰行 + 正文里又一行黑字标题」
-  let bodyText = body;
-  if (rawTitle) {
-    try {
-      const titlePat = rawTitle
-        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-        .replace(/\s+/g, "\\s*");
-      bodyText = bodyText.replace(
-        new RegExp(`^(?:\\s|\\p{P})*${titlePat}\\s*`, "u"),
-        "",
-      );
-    } catch {
-      /* ignore */
-    }
-  }
+  let bodyText = stripLeadingChapterTitleFromBody(body, rawTitle);
   let text = rawTitle ? `${rawTitle}\n${bodyText}` : bodyText;
   text = await applyTextDisplayConverts(text, convertOpts);
   const formatted = formatPhysicalPlainTextForReader(text, {
@@ -684,16 +677,126 @@ async function renderChapterText(
   if (rawTitle) {
     const lineNumber =
       formatted.chapterTitleDisplayLineByPhysical.get(1) ?? 1;
-    const sticky: Chapter = {
-      title: rawTitle,
-      lineNumber,
-      charCount: rawTitle.length,
-      headingLevel: 1,
-    };
-    reader.setChapters([sticky]);
+    reader.setChapters([
+      {
+        title: rawTitle,
+        lineNumber,
+        headingLevel: 1,
+      },
+    ]);
   } else {
     reader.setChapters([]);
   }
+}
+
+function stripLeadingChapterTitleFromBody(body: string, title: string): string {
+  const rawTitle = title.trim();
+  if (!rawTitle) return body;
+  try {
+    const titlePat = rawTitle
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\s+/g, "\\s*");
+    return body.replace(
+      new RegExp(`^(?:\\s|\\p{P})*${titlePat}\\s*`, "u"),
+      "",
+    );
+  } catch {
+    return body;
+  }
+}
+
+/** 编辑态展示：缓存原文（章节名 + 正文），不经压缩空行等阅读管线 */
+function buildEditSourceText(): string {
+  const rawTitle = lastChapterTitle.value.trim();
+  const body = lastChapterBody.value;
+  return rawTitle ? `${rawTitle}\n${body}` : body;
+}
+
+const canEnterReaderEditMode = computed(
+  () =>
+    Boolean(readerContentKey.value) &&
+    !chapterContentBusy.value &&
+    !readerBootLoading.value,
+);
+
+async function confirmIfReaderEditDiscard(): Promise<boolean> {
+  if (!readerEditMode.value || !readerEditorDirty.value) return true;
+  return appConfirm(
+    "当前章节已修改但尚未保存，确定要放弃这些改动吗？",
+    "修改未保存",
+  );
+}
+
+function onReaderEditDirtyChange(dirty: boolean) {
+  readerEditorDirty.value = dirty;
+}
+
+async function onToggleReaderEdit() {
+  if (readerEditMode.value) {
+    if (!(await confirmIfReaderEditDiscard())) return;
+    readerEditorDirty.value = false;
+    readerEditMode.value = false;
+    if (lastChapterBody.value || lastChapterTitle.value) {
+      await renderChapterText(lastChapterTitle.value, lastChapterBody.value, {
+        resetScroll: false,
+      });
+    }
+    return;
+  }
+  if (!canEnterReaderEditMode.value) {
+    appToast("请等待当前章节加载完成后再进入编辑模式。");
+    return;
+  }
+  voiceRead.exitVoiceRead();
+  timedScroll.stopTimedScroll();
+  const editText = buildEditSourceText();
+  const reader = readerRef.value;
+  if (reader) {
+    await reader.setFullText(editText, { heavy: false, resetScroll: false });
+    if (lastChapterTitle.value.trim()) {
+      reader.setChapters([
+        {
+          title: lastChapterTitle.value.trim(),
+          lineNumber: 1,
+          headingLevel: 1,
+        },
+      ]);
+    } else {
+      reader.setChapters([]);
+    }
+  }
+  readerEditMode.value = true;
+  await nextTick();
+  readerRef.value?.markReaderEditSaved?.();
+  readerEditorDirty.value = false;
+}
+
+async function onSaveReaderChapter() {
+  if (!readerEditMode.value) return;
+  const ch = displayChapters.value[currentDisplayIndex.value];
+  const bookUrl = props.detail.bookUrl?.trim() || props.item.bookUrl?.trim();
+  if (!ch?.url?.trim() || !bookUrl) {
+    appToast("无法保存：缺少章节信息", { kind: "warning" });
+    return;
+  }
+  const text = readerRef.value?.getAllText() ?? "";
+  const body = stripLeadingChapterTitleFromBody(text, lastChapterTitle.value);
+  const r = await window.colorTxt.bookSourceSaveChapterCache({
+    name: props.detail.name || "",
+    bookUrl,
+    chapterUrl: ch.url,
+    content: body,
+    cacheDir: effectiveCacheDir.value.trim() || undefined,
+  });
+  if (!r.ok) {
+    appToast(r.message || "保存到缓存失败", { kind: "warning" });
+    return;
+  }
+  lastChapterBody.value = body;
+  markChapterCached(ch.url);
+  readerRef.value?.markReaderEditSaved?.();
+  readerEditorDirty.value = false;
+  appToast("已保存到缓存", { kind: "success", duration: 1200 });
 }
 
 async function loadChapterAtDisplayIndex(
@@ -702,6 +805,11 @@ async function loadChapterAtDisplayIndex(
 ) {
   const ch = displayChapters.value[index];
   if (!ch) return;
+  if (!(await confirmIfReaderEditDiscard())) return;
+  if (readerEditMode.value) {
+    readerEditMode.value = false;
+    readerEditorDirty.value = false;
+  }
   const contentIndex = contentIndexFor(ch);
   if (contentIndex < 0) return;
   const preferCache = options?.preferCache !== false;
@@ -928,6 +1036,7 @@ const isTimedScrollActive = timedScroll.isTimedScrollActive;
 const canStartTimedScroll = timedScroll.canStartTimedScroll;
 
 async function refreshCurrentChapterDisplay() {
+  if (readerEditMode.value) return;
   if (!lastChapterBody.value) return;
   await renderChapterText(lastChapterTitle.value, lastChapterBody.value, {
     resetScroll: false,
@@ -935,12 +1044,22 @@ async function refreshCurrentChapterDisplay() {
 }
 
 async function toggleCompressBlankLines() {
+  if (readerEditMode.value) {
+    void readerRef.value?.applyEditFormatCompressBlankLines?.(
+      compressBlankKeepOneBlank.value,
+    );
+    return;
+  }
   compressBlankLines.value = !compressBlankLines.value;
   persistReaderUiPrefs();
   await refreshCurrentChapterDisplay();
 }
 
 async function toggleLeadIndentFullWidth() {
+  if (readerEditMode.value) {
+    void readerRef.value?.applyEditFormatLeadIndentFullWidth?.();
+    return;
+  }
   leadIndentFullWidth.value = !leadIndentFullWidth.value;
   persistReaderUiPrefs();
   await refreshCurrentChapterDisplay();
@@ -967,7 +1086,36 @@ async function setTextConvertDigitRead(mode: typeof textConvertDigit.value) {
   await refreshCurrentChapterDisplay();
 }
 
-function onBack() {
+function onFormatEditCompressBlankLines() {
+  void readerRef.value?.applyEditFormatCompressBlankLines?.(
+    compressBlankKeepOneBlank.value,
+  );
+}
+
+function onFormatEditLeadIndentFullWidth() {
+  void readerRef.value?.applyEditFormatLeadIndentFullWidth?.();
+}
+
+function onApplyTextConvertZhEdit(mode: Exclude<TextConvertZhMode, "off">) {
+  void readerRef.value?.applyEditFormatTextConvertZh?.(mode);
+}
+
+function onApplyTextConvertLetterEdit(
+  mode: Exclude<TextConvertWidthMode, "off">,
+) {
+  void readerRef.value?.applyEditFormatTextConvertLetters?.(mode);
+}
+
+function onApplyTextConvertDigitEdit(
+  mode: Exclude<TextConvertWidthMode, "off">,
+) {
+  void readerRef.value?.applyEditFormatTextConvertDigits?.(mode);
+}
+
+async function onBack() {
+  if (!(await confirmIfReaderEditDiscard())) return;
+  readerEditMode.value = false;
+  readerEditorDirty.value = false;
   voiceRead.exitVoiceRead();
   timedScroll.stopTimedScroll();
   cancelChapterLoad();
@@ -1316,6 +1464,8 @@ watch(
       if (offlineCaching.value) void cancelOfflineCache();
       loading.value = false;
       showChapterLoadingUi.value = false;
+      readerEditMode.value = false;
+      readerEditorDirty.value = false;
       readerContentKey.value = null;
       lastChapterBody.value = "";
       lastChapterTitle.value = "";
@@ -1556,6 +1706,8 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
           :can-timed-scroll="canStartTimedScroll"
           :voice-read-header-locked="isVoiceReadScrollLocked"
           :settings-shortcut-label="settingsShortcutLabel"
+          :reader-edit-mode="readerEditMode"
+          :can-enter-reader-edit-mode="canEnterReaderEditMode"
           @change-theme="onChangeTheme"
           @toggle-sidebar="showSidebar = !showSidebar"
           @toggle-fullscreen="toggleFullscreen"
@@ -1567,15 +1719,22 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
           @decrease-line-height="readerUi.decreaseLineHeight"
           @toggle-compress-blank-lines="toggleCompressBlankLines"
           @toggle-lead-indent-full-width="toggleLeadIndentFullWidth"
+          @format-edit-compress-blank-lines="onFormatEditCompressBlankLines"
+          @format-edit-lead-indent-full-width="onFormatEditLeadIndentFullWidth"
           @select-text-convert-zh-read="setTextConvertZhRead"
           @select-text-convert-letter-read="setTextConvertLetterRead"
           @select-text-convert-digit-read="setTextConvertDigitRead"
+          @apply-text-convert-zh-edit="onApplyTextConvertZhEdit"
+          @apply-text-convert-letter-edit="onApplyTextConvertLetterEdit"
+          @apply-text-convert-digit-edit="onApplyTextConvertDigitEdit"
           @toggle-monaco-advanced-wrapping="readerUi.toggleMonacoAdvancedWrapping"
           @toggle-monaco-custom-highlight="readerUi.toggleMonacoCustomHighlight"
           @voice-read-toggle="voiceRead.toggleVoiceReadToolbar"
           @timed-scroll-toggle="timedScroll.toggleTimedScroll"
           @open-settings="emit('openSettings')"
           @toggle-bookshelf="onToggleBookshelf"
+          @toggle-reader-edit="onToggleReaderEdit"
+          @save-reader-chapter="onSaveReaderChapter"
         />
       </div>
 
@@ -1787,11 +1946,15 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
             :lineation-colors="currentTheme === 'vs' ? lineationColorsLight : lineationColorsDark"
             :highlight-words-by-index="highlightWordsByIndexGlobal"
             :reader-fullscreen="isFullscreenView"
-            :reader-edit-mode="false"
+            :reader-edit-mode="readerEditMode"
+            :reader-edit-show-line-numbers="readerEditShowLineNumbers"
+            :reader-edit-minimap="readerEditMinimap"
             :monaco-font-family="monacoFontFamily"
             @viewport-top-line-change="readerUi.onViewportTopLineChange"
             @viewport-end-line-change="readerUi.onViewportEndLineChange"
             @viewport-visual-progress-change="readerUi.onViewportVisualProgressChange"
+            @reader-edit-dirty-change="onReaderEditDirtyChange"
+            @reader-edit-save-request="onSaveReaderChapter"
           />
           <VoiceReadToolbar
             :visible="isVoiceReadActive"

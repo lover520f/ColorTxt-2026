@@ -6,6 +6,7 @@ import FindBookSettingsTabBar, {
   type FindBookSettingsTabId,
 } from "./FindBookSettingsTabBar.vue";
 import FindBookSettingsDownloadPanel from "./FindBookSettingsDownloadPanel.vue";
+import FindBookSettingsEditPanel from "./FindBookSettingsEditPanel.vue";
 import {
   clampFindBookReaderLineHeight,
   defaultTimedScrollIntervalMs,
@@ -15,6 +16,8 @@ import {
   defaultCompressBlankKeepOneBlank,
   defaultFullscreenReaderWidthPercent,
   defaultMonacoSmoothScrolling,
+  defaultReaderEditMinimap,
+  defaultReaderEditShowLineNumbers,
   defaultReaderFontSize,
   defaultReaderLineHeightMultiple,
   defaultStickyChapterTitleEnabled,
@@ -64,6 +67,8 @@ const draftLineHeightMultiple = ref(defaultReaderLineHeightMultiple);
 const draftMonacoSmoothScrolling = ref(defaultMonacoSmoothScrolling);
 const draftStickyChapterTitleEnabled = ref(defaultStickyChapterTitleEnabled);
 const draftChapterNavToolbarEnabled = ref(defaultFindBookChapterNavToolbarEnabled);
+const draftReaderEditShowLineNumbers = ref(defaultReaderEditShowLineNumbers);
+const draftReaderEditMinimap = ref(defaultReaderEditMinimap);
 const draftCompressBlankKeepOneBlank = ref(defaultCompressBlankKeepOneBlank);
 const draftTxtrDelimitedMatchCrossLine = ref(defaultTxtrDelimitedMatchCrossLine);
 const draftFullscreenReaderWidthPercent = ref(defaultFullscreenReaderWidthPercent);
@@ -84,6 +89,8 @@ function syncDraftFromStore() {
   draftMonacoSmoothScrolling.value = fb.monacoSmoothScrolling.value;
   draftStickyChapterTitleEnabled.value = fb.stickyChapterTitleEnabled.value;
   draftChapterNavToolbarEnabled.value = fb.chapterNavToolbarEnabled.value;
+  draftReaderEditShowLineNumbers.value = fb.readerEditShowLineNumbers.value;
+  draftReaderEditMinimap.value = fb.readerEditMinimap.value;
   draftCompressBlankKeepOneBlank.value = fb.compressBlankKeepOneBlank.value;
   draftTxtrDelimitedMatchCrossLine.value = fb.txtrDelimitedMatchCrossLine.value;
   draftFullscreenReaderWidthPercent.value = fb.fullscreenReaderWidthPercent.value;
@@ -113,8 +120,14 @@ function resetReadingDraft() {
   draftTimedScrollIntervalMs.value = defaultTimedScrollIntervalMs;
 }
 
+function resetEditDraft() {
+  draftReaderEditShowLineNumbers.value = defaultReaderEditShowLineNumbers;
+  draftReaderEditMinimap.value = defaultReaderEditMinimap;
+}
+
 function onResetCurrentTab() {
   if (activeTab.value === "download") resetDownloadDraft();
+  else if (activeTab.value === "edit") resetEditDraft();
   else resetReadingDraft();
 }
 
@@ -136,6 +149,8 @@ function onConfirm() {
   fb.monacoSmoothScrolling.value = draftMonacoSmoothScrolling.value;
   fb.stickyChapterTitleEnabled.value = draftStickyChapterTitleEnabled.value;
   fb.chapterNavToolbarEnabled.value = draftChapterNavToolbarEnabled.value;
+  fb.readerEditShowLineNumbers.value = draftReaderEditShowLineNumbers.value;
+  fb.readerEditMinimap.value = draftReaderEditMinimap.value;
   fb.compressBlankKeepOneBlank.value = draftCompressBlankKeepOneBlank.value;
   fb.txtrDelimitedMatchCrossLine.value = draftTxtrDelimitedMatchCrossLine.value;
   fb.fullscreenReaderWidthPercent.value = draftFullscreenReaderWidthPercent.value;
@@ -219,6 +234,14 @@ watch(draftFontSize, (size) => {
               v-model:draft-timed-scroll-range="draftTimedScrollRange"
               v-model:draft-timed-scroll-interval-ms="draftTimedScrollIntervalMs"
               :monaco-custom-highlight="fb.monacoCustomHighlight.value"
+            />
+
+            <FindBookSettingsEditPanel
+              v-show="activeTab === 'edit'"
+              v-model:draft-reader-edit-show-line-numbers="
+                draftReaderEditShowLineNumbers
+              "
+              v-model:draft-reader-edit-minimap="draftReaderEditMinimap"
             />
           </div>
         </div>

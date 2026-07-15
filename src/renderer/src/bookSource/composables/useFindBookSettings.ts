@@ -35,6 +35,8 @@ function createFindBookSettingsStore() {
   const monacoSmoothScrolling = ref(initial.monacoSmoothScrolling);
   const stickyChapterTitleEnabled = ref(initial.stickyChapterTitleEnabled);
   const chapterNavToolbarEnabled = ref(initial.chapterNavToolbarEnabled);
+  const readerEditShowLineNumbers = ref(initial.readerEditShowLineNumbers);
+  const readerEditMinimap = ref(initial.readerEditMinimap);
   const fullscreenReaderWidthPercent = ref(initial.fullscreenReaderWidthPercent);
   const sidebarWidth = ref(initial.sidebarWidth);
   const timedScrollSettings = ref(initial.timedScrollSettings);
@@ -73,6 +75,8 @@ function createFindBookSettingsStore() {
         monacoSmoothScrolling: monacoSmoothScrolling.value,
         stickyChapterTitleEnabled: stickyChapterTitleEnabled.value,
         chapterNavToolbarEnabled: chapterNavToolbarEnabled.value,
+        readerEditShowLineNumbers: readerEditShowLineNumbers.value,
+        readerEditMinimap: readerEditMinimap.value,
         fullscreenReaderWidthPercent: fullscreenReaderWidthPercent.value,
         sidebarWidth: sidebarWidth.value,
         timedScrollSettings: timedScrollSettings.value,
@@ -108,6 +112,8 @@ function createFindBookSettingsStore() {
     monacoSmoothScrolling,
     stickyChapterTitleEnabled,
     chapterNavToolbarEnabled,
+    readerEditShowLineNumbers,
+    readerEditMinimap,
     fullscreenReaderWidthPercent,
     sidebarWidth,
     timedScrollSettings,

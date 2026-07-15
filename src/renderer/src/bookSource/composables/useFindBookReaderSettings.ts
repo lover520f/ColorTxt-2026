@@ -278,6 +278,8 @@ export function useFindBookReaderSettings() {
     monacoSmoothScrolling: fb.monacoSmoothScrolling,
     stickyChapterTitleEnabled: fb.stickyChapterTitleEnabled,
     chapterNavToolbarEnabled: fb.chapterNavToolbarEnabled,
+    readerEditShowLineNumbers: fb.readerEditShowLineNumbers,
+    readerEditMinimap: fb.readerEditMinimap,
     fullscreenReaderWidthPercent: fb.fullscreenReaderWidthPercent,
     chapterMinCharCount,
     timedScrollSettings: fb.timedScrollSettings,

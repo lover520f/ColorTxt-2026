@@ -1,5 +1,5 @@
 <script setup lang="ts">
-export type FindBookSettingsTabId = "download" | "reading";
+export type FindBookSettingsTabId = "download" | "reading" | "edit";
 
 defineProps<{
   activeTab: FindBookSettingsTabId;
@@ -32,6 +32,16 @@ const emit = defineEmits<{
         @click="emit('update:activeTab', 'reading')"
       >
         阅读
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tabBtn"
+        :class="{ active: activeTab === 'edit' }"
+        :aria-selected="activeTab === 'edit'"
+        @click="emit('update:activeTab', 'edit')"
+      >
+        编辑
       </button>
     </div>
   </div>

@@ -3373,11 +3373,12 @@ watch(
       applyReaderMonacoModeOptions(false);
       return;
     }
-    if (!phys) return;
-    if (readerEditLoadedPhysicalKey !== phys) {
+    // 有磁盘路径：优先整文件载入（主阅读器）；无路径：对内存正文进入编辑（找书章节缓存）
+    if (phys && readerEditLoadedPhysicalKey !== phys) {
       await loadReaderEditFromDisk();
       return;
     }
+    if (!phys) readerEditLoadedPhysicalKey = "";
     applyReaderMonacoModeOptions(true);
     teardownReaderEditContentListener();
     const m = model.value;

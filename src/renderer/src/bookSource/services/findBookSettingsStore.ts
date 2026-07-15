@@ -7,6 +7,8 @@ import {
   defaultMonacoAdvancedWrapping,
   defaultMonacoCustomHighlight,
   defaultMonacoSmoothScrolling,
+  defaultReaderEditMinimap,
+  defaultReaderEditShowLineNumbers,
   defaultReaderFontSize,
   defaultStickyChapterTitleEnabled,
   defaultTxtrDelimitedMatchCrossLine,
@@ -93,6 +95,8 @@ function seedFromMainSettings(
   copyIfUndef("monacoAdvancedWrapping", main.monacoAdvancedWrapping);
   copyIfUndef("monacoSmoothScrolling", main.monacoSmoothScrolling);
   copyIfUndef("stickyChapterTitleEnabled", main.stickyChapterTitleEnabled);
+  copyIfUndef("readerEditShowLineNumbers", main.readerEditShowLineNumbers);
+  copyIfUndef("readerEditMinimap", main.readerEditMinimap);
   copyIfUndef("fullscreenReaderWidthPercent", main.fullscreenReaderWidthPercent);
   if (out.sidebarWidth === undefined && typeof main.sidebarWidth === "number") {
     out.sidebarWidth = Math.max(
@@ -143,6 +147,8 @@ export function snapshotFindBookSettingsFromStore(state: {
   monacoSmoothScrolling: boolean;
   stickyChapterTitleEnabled: boolean;
   chapterNavToolbarEnabled: boolean;
+  readerEditShowLineNumbers: boolean;
+  readerEditMinimap: boolean;
   fullscreenReaderWidthPercent: number;
   sidebarWidth: number;
   timedScrollSettings: TimedScrollSettings;
@@ -169,6 +175,8 @@ export function snapshotFindBookSettingsFromStore(state: {
     monacoSmoothScrolling: state.monacoSmoothScrolling,
     stickyChapterTitleEnabled: state.stickyChapterTitleEnabled,
     chapterNavToolbarEnabled: state.chapterNavToolbarEnabled,
+    readerEditShowLineNumbers: state.readerEditShowLineNumbers,
+    readerEditMinimap: state.readerEditMinimap,
     fullscreenReaderWidthPercent: state.fullscreenReaderWidthPercent,
     sidebarWidth: state.sidebarWidth,
     timedScroll: state.timedScrollSettings,
@@ -250,6 +258,14 @@ export function createInitialFindBookSettingsState() {
       typeof data.chapterNavToolbarEnabled === "boolean"
         ? data.chapterNavToolbarEnabled
         : defaultFindBookChapterNavToolbarEnabled,
+    readerEditShowLineNumbers:
+      typeof data.readerEditShowLineNumbers === "boolean"
+        ? data.readerEditShowLineNumbers
+        : defaultReaderEditShowLineNumbers,
+    readerEditMinimap:
+      typeof data.readerEditMinimap === "boolean"
+        ? data.readerEditMinimap
+        : defaultReaderEditMinimap,
     fullscreenReaderWidthPercent:
       typeof data.fullscreenReaderWidthPercent === "number"
         ? data.fullscreenReaderWidthPercent

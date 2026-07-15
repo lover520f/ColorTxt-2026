@@ -63,6 +63,10 @@ export type PersistedFindBookSettings = {
   monacoSmoothScrolling?: boolean;
   stickyChapterTitleEnabled?: boolean;
   chapterNavToolbarEnabled?: boolean;
+  /** 编辑模式：显示行号（默认关闭） */
+  readerEditShowLineNumbers?: boolean;
+  /** 编辑模式：启用小地图（默认关闭） */
+  readerEditMinimap?: boolean;
   fullscreenReaderWidthPercent?: number;
   sidebarWidth?: number;
   timedScroll?: Partial<TimedScrollSettings>;

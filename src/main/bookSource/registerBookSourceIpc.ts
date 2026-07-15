@@ -51,6 +51,7 @@ import {
   filterCachedChapterUrls,
   clearBookChapterCache,
   clearAllChapterCache,
+  saveChapterCache,
 } from "./engine/chapterCache";
 import { fetchCoverDisplayUrl } from "./engine/coverImage";
 import {
@@ -623,6 +624,44 @@ export function registerBookSourceIpcHandlers(): void {
       cacheDir,
     );
     return { cachedUrls };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.saveChapterCache, async (_e, payload: unknown) => {
+    const p = payload as {
+      name?: string;
+      bookUrl?: string;
+      chapterUrl?: string;
+      content?: string;
+      cacheDir?: string;
+    };
+    if (
+      typeof p?.bookUrl !== "string" ||
+      !p.bookUrl.trim() ||
+      typeof p?.chapterUrl !== "string" ||
+      !p.chapterUrl.trim() ||
+      typeof p?.content !== "string"
+    ) {
+      return { ok: false, message: "参数无效" };
+    }
+    const cacheDir =
+      typeof p.cacheDir === "string" && p.cacheDir.trim()
+        ? p.cacheDir.trim()
+        : undefined;
+    try {
+      await saveChapterCache(
+        typeof p.name === "string" ? p.name : "",
+        p.bookUrl.trim(),
+        p.chapterUrl.trim(),
+        p.content,
+        cacheDir,
+      );
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
   });
 
   ipcMain.handle(BOOK_SOURCE_IPC.clearChapterCache, async (_e, payload: unknown) => {
