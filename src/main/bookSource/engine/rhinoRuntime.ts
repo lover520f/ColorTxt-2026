@@ -1,13 +1,25 @@
+import vm from "node:vm";
 import type { BookSourceRecord } from "@shared/bookSource/types";
 import type { JsExtensionHost } from "./jsExtensions";
-import { prepareLegadoAsyncJs, prepareLegadoJs } from "./legadoAsyncJs";
+import {
+  inlineBookSourceCommentEvals,
+  prepareLegadoAsyncJs,
+  prepareLegadoJs,
+} from "./legadoAsyncJs";
 import {
   wrapLegadoBookForJs,
   wrapLegadoChapterForJs,
   type LegadoVariableSync,
 } from "./legadoRuleEntity";
-import { createJavaImporter, createPackagesStub } from "./legadoJavaShims";
+import { createJavaImporter, createOrgPackage, createPackagesStub } from "./legadoJavaShims";
 import { runInBookSourceJsScope } from "./sharedJsScope";
+import {
+  BOOK_SOURCE_JS_TIMEOUT_MS,
+  raceWithJsTimeout,
+  runWithJsEvalDeadline,
+  runWithJsEvalDeadlineAsync,
+  toBookSourceJsTimeoutError,
+} from "./bookSourceJsTimeout";
 
 export type JsEvalContext = {
   source?: BookSourceRecord;
@@ -26,36 +38,53 @@ export type JsEvalContext = {
   chapterVariableSync?: LegadoVariableSync;
 };
 
-const AsyncFunction = Object.getPrototypeOf(async function () {
-  /* noop */
-}).constructor as new (...args: string[]) => (...args: unknown[]) => Promise<unknown>;
-
-function invokeJsBindings(
+function buildVmSandbox(
   java: Record<string, unknown>,
   ctx: Omit<JsEvalContext, "host"> & { host: JsExtensionHost },
-): unknown[] {
+): Record<string, unknown> {
   const host = ctx.host;
   const book = wrapLegadoBookForJs(ctx.book, ctx.bookVariableSync);
   const chapter = wrapLegadoChapterForJs(ctx.chapter, ctx.chapterVariableSync);
   const result = ctx.result ?? "";
   const src = ctx.src !== undefined ? ctx.src : result;
-  return [
+  const sandbox: Record<string, unknown> = {
+    String,
+    Number,
+    Boolean,
+    Array,
+    Object,
+    JSON,
+    Math,
+    Date,
+    RegExp,
+    Error,
+    parseInt,
+    parseFloat,
+    isNaN,
+    isFinite,
+    encodeURIComponent,
+    decodeURIComponent,
+    encodeURI,
+    decodeURI,
     java,
-    host.sourceWrapper,
+    source: host.sourceWrapper,
     book,
     chapter,
     result,
-    ctx.baseUrl ?? "",
-    ctx.key ?? "",
-    ctx.page ?? 1,
-    host.cookieBindings,
-    host.cacheBindings,
+    baseUrl: ctx.baseUrl ?? "",
+    key: ctx.key ?? "",
+    page: ctx.page ?? 1,
+    cookie: host.cookieBindings,
+    cache: host.cacheBindings,
     src,
-    function JavaImporter() {
+    JavaImporter: function JavaImporter() {
       return createJavaImporter((msg) => host.log(msg));
     },
-    createPackagesStub(),
-  ];
+    Packages: createPackagesStub(),
+    org: createOrgPackage(),
+  };
+  sandbox.globalThis = sandbox;
+  return sandbox;
 }
 
 function shouldUseBookSourceJsScope(
@@ -66,6 +95,17 @@ function shouldUseBookSourceJsScope(
   return Boolean(source);
 }
 
+function runVmScript(code: string, sandbox: Record<string, unknown>): unknown {
+  vm.createContext(sandbox);
+  try {
+    return vm.runInContext(code, sandbox, {
+      timeout: BOOK_SOURCE_JS_TIMEOUT_MS,
+    });
+  } catch (e) {
+    throw toBookSourceJsTimeoutError(e);
+  }
+}
+
 export function evalJs(
   script: string,
   ctx: Omit<JsEvalContext, "host"> & { host?: JsExtensionHost },
@@ -74,35 +114,25 @@ export function evalJs(
   const host = ctx.host;
   if (!host) return "";
   try {
-    const body = prepareLegadoJs(script);
-    if (shouldUseBookSourceJsScope(ctx.source, options.useSharedJsScope)) {
-      return runInBookSourceJsScope(
-        ctx.source!,
-        host,
-        `(function(){ ${body} })()`,
-        ctx,
+    return runWithJsEvalDeadline(() => {
+      const inlined = inlineBookSourceCommentEvals(
+        script,
+        ctx.source?.bookSourceComment,
       );
-    }
-    const fn = new Function(
-      "java",
-      "source",
-      "book",
-      "chapter",
-      "result",
-      "baseUrl",
-      "key",
-      "page",
-      "cookie",
-      "cache",
-      "src",
-      "JavaImporter",
-      "Packages",
-      `return (function(){ ${body} })();`,
-    );
-    return fn(...invokeJsBindings(ctx.java ?? host.javaBindings, { ...ctx, host }));
+      const body = prepareLegadoJs(inlined);
+      const code = `(function(){ ${body} })()`;
+      if (shouldUseBookSourceJsScope(ctx.source, options.useSharedJsScope)) {
+        return runInBookSourceJsScope(ctx.source!, host, code, ctx);
+      }
+      const sandbox = buildVmSandbox(ctx.java ?? host.javaBindings, {
+        ...ctx,
+        host,
+      });
+      return runVmScript(code, sandbox);
+    });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    host.log(`JS 错误: ${msg}`);
+    const err = toBookSourceJsTimeoutError(e);
+    host.log(`JS 错误: ${err.message}`);
     return "";
   }
 }
@@ -117,36 +147,44 @@ export async function evalJsAsync(
   if (!host) return "";
   const legadoAsync = options.legadoAsync !== false;
   try {
-    if (shouldUseBookSourceJsScope(ctx.source, options.useSharedJsScope)) {
-      const body = legadoAsync ? prepareLegadoAsyncJs(script) : prepareLegadoJs(script);
-      const code = legadoAsync ? body : `(function(){ ${body} })()`;
-      const result = runInBookSourceJsScope(ctx.source!, host, code, ctx, {
-        async: legadoAsync,
+    return await runWithJsEvalDeadlineAsync(async () => {
+      const inlined = inlineBookSourceCommentEvals(
+        script,
+        ctx.source?.bookSourceComment,
+      );
+
+      if (shouldUseBookSourceJsScope(ctx.source, options.useSharedJsScope)) {
+        const body = legadoAsync
+          ? prepareLegadoAsyncJs(inlined)
+          : prepareLegadoJs(inlined);
+        const code = legadoAsync ? body : `(function(){ ${body} })()`;
+        const result = runInBookSourceJsScope(ctx.source!, host, code, ctx, {
+          async: legadoAsync,
+        });
+        if (!legadoAsync) return result;
+        // sharedJsScope 异步路径已内嵌 raceWithJsTimeout
+        return await (result as Promise<unknown>);
+      }
+
+      const body = legadoAsync
+        ? prepareLegadoAsyncJs(inlined)
+        : prepareLegadoJs(inlined);
+      const sandbox = buildVmSandbox(ctx.java ?? host.javaBindings, {
+        ...ctx,
+        host,
       });
-      return legadoAsync ? await (result as Promise<unknown>) : result;
-    }
-    const body = legadoAsync ? prepareLegadoAsyncJs(script) : prepareLegadoJs(script);
-    const fn = new AsyncFunction(
-      "java",
-      "source",
-      "book",
-      "chapter",
-      "result",
-      "baseUrl",
-      "key",
-      "page",
-      "cookie",
-      "cache",
-      "src",
-      "JavaImporter",
-      "Packages",
-      legadoAsync ? `return ${body};` : `return (function(){ ${body} })();`,
-    );
-    return await fn(...invokeJsBindings(ctx.java ?? host.javaBindings, { ...ctx, host }));
+      // prepareLegadoAsyncJs 已是 (async () => { ... })()；同步则包 IIFE
+      const code = legadoAsync ? body : `(function(){ ${body} })()`;
+      const runResult = runVmScript(code, sandbox);
+      if (!legadoAsync) return runResult;
+      return await raceWithJsTimeout(
+        Promise.resolve(runResult as Promise<unknown>),
+      );
+    });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    host.log(`JS 错误: ${msg}`);
-    throw e;
+    const err = toBookSourceJsTimeoutError(e);
+    host.log(`JS 错误: ${err.message}`);
+    throw err;
   }
 }
 

@@ -47,7 +47,11 @@ import {
   getChapterList,
 } from "./engine/webBook";
 import { getChapterContentWithCache } from "./engine/getChapterContentWithCache";
-import { filterCachedChapterUrls, clearBookChapterCache } from "./engine/chapterCache";
+import {
+  filterCachedChapterUrls,
+  clearBookChapterCache,
+  clearAllChapterCache,
+} from "./engine/chapterCache";
 import { fetchCoverDisplayUrl } from "./engine/coverImage";
 import {
   appendBookSourceErrorLog,
@@ -540,6 +544,7 @@ export function registerBookSourceIpcHandlers(): void {
       chapterIndex?: number;
       nextChapterUrl?: string;
       cacheDir?: string;
+      preferCache?: boolean;
     };
     if (
       typeof p?.bookSourceUrl !== "string" ||
@@ -570,6 +575,7 @@ export function registerBookSourceIpcHandlers(): void {
         typeof p.cacheDir === "string" && p.cacheDir.trim()
           ? p.cacheDir.trim()
           : undefined;
+      const preferCache = p.preferCache !== false;
       const { content, fromCache } = await getChapterContentWithCache(
         source,
         p.chapterUrl,
@@ -577,7 +583,7 @@ export function registerBookSourceIpcHandlers(): void {
         chapter,
         logs,
         p.nextChapterUrl,
-        { cacheDir },
+        { cacheDir, preferCache },
       );
       return { content, fromCache, logs };
     } catch (e) {
@@ -639,6 +645,19 @@ export function registerBookSourceIpcHandlers(): void {
     );
     return { ok: true, cleared };
   });
+
+  ipcMain.handle(
+    BOOK_SOURCE_IPC.clearAllChapterCache,
+    async (_e, payload: unknown) => {
+      const p = (payload ?? {}) as { cacheDir?: string };
+      const cacheDir =
+        typeof p.cacheDir === "string" && p.cacheDir.trim()
+          ? p.cacheDir.trim()
+          : undefined;
+      const { cleared } = await clearAllChapterCache(cacheDir);
+      return { ok: true, cleared };
+    },
+  );
 
   ipcMain.handle(BOOK_SOURCE_IPC.getSourceVariable, (_e, sourceUrl: unknown) => {
     if (typeof sourceUrl !== "string" || !sourceUrl.trim()) return "";

@@ -3,7 +3,10 @@
  * 阅读与整书下载共用。
  */
 import type { BookSourceRecord } from "@shared/bookSource/types";
-import { getChapterContent } from "./webBook";
+import {
+  getChapterContent,
+  stripLeadingDuplicateChapterTitle,
+} from "./webBook";
 import { readChapterCache, saveChapterCache } from "./chapterCache";
 
 export type ChapterContentBook = {
@@ -41,7 +44,26 @@ export async function getChapterContentWithCache(
       cacheDir,
     );
     if (cached != null) {
-      return { content: cached, fromCache: true };
+      // 旧缓存可能仍含章节名；与联网路径一样剥离，必要时回写
+      const stripped = stripLeadingDuplicateChapterTitle(
+        cached,
+        chapter.title,
+        bookName,
+      );
+      if (stripped !== cached) {
+        try {
+          await saveChapterCache(
+            bookName,
+            bookUrl,
+            chapterUrl,
+            stripped,
+            cacheDir,
+          );
+        } catch {
+          /* ignore rewrite failures */
+        }
+      }
+      return { content: stripped, fromCache: true };
     }
   }
 

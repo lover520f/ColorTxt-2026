@@ -104,6 +104,7 @@ import okIcon from "./assets/ok.svg?raw";
 import lockIcon from "./assets/lock.svg?raw";
 import disclaimerIcon from "./assets/disclaimer.svg?raw";
 import desktopShortcutIcon from "./assets/desktop_shortcut.svg?raw";
+import cacheIcon from "./assets/cache.svg?raw";
 
 /** 角色卡「语音」播放动画帧：speak_0 → speak_1 → speak */
 export const speakIconAnimFrames = [
@@ -254,4 +255,6 @@ export const icons = {
   disclaimer: disclaimerIcon,
   /** 生成桌面快捷方式 */
   desktopShortcut: desktopShortcutIcon,
+  /** 离线缓存 */
+  cache: cacheIcon,
 } as const;

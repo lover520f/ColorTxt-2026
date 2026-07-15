@@ -15,7 +15,7 @@ import FindDiscoverPanel from "./FindDiscoverPanel.vue";
 import FindBookshelfPanel from "./FindBookshelfPanel.vue";
 import FindBookListItem from "./FindBookListItem.vue";
 import FindBookSettingsPanel from "./FindBookSettingsPanel.vue";
-import DisclaimerPanel from "../../components/DisclaimerPanel.vue";
+import DisclaimerPanel from "./DisclaimerPanel.vue";
 import type { FindBookSettingsTabId } from "./FindBookSettingsTabBar.vue";
 import { useFindBookSettings } from "../composables/useFindBookSettings";
 import { useFindBookPanelShortcuts } from "../composables/useFindBookPanelShortcuts";
@@ -36,6 +36,7 @@ import { appLog } from "../../services/appDialog";
 import { appToast } from "../../services/appToast";
 import type { BookshelfBook } from "../findBookBookshelf";
 import {
+  buildBookDetailFromShelf,
   hasCachedBookshelfToc,
   loadBookshelfReaderPayload,
 } from "../bookshelfOpenReader";
@@ -49,11 +50,9 @@ import {
   type BookshelfSortMode,
 } from "../findBookshelfSort";
 import { bookshelfUpdateBusy, getBookshelfUpdateLogText } from "../composables/useBookshelfUpdate";
-import BookSourceCenterState from "./BookSourceCenterState.vue";
 import {
   persistKey,
   persistedSettingsChangedEvent,
-  readerTxtLoadingHintText,
 } from "../../constants/appUi";
 import {
   loadPersistedSettingsData,
@@ -181,7 +180,9 @@ const bookReaderPanelRef = ref<InstanceType<typeof FindBookReaderPanel> | null>(
   null,
 );
 const readerInitialChapterIndex = ref(0);
-const bookshelfReaderOpening = ref(false);
+/** 书架未缓存目录时先打开阅读器，后台拉目录 */
+const readerTocLoading = ref(false);
+let bookshelfReaderOpenGen = 0;
 const readerDetail = ref<BookDetail | null>(null);
 const readerChapters = ref<BookChapter[]>([]);
 const selectedBook = ref<SearchBookItem | null>(null);
@@ -417,7 +418,9 @@ function bookshelfBookIdentity(item: SearchBookItem): string {
 }
 
 function resetReaderLayer() {
+  bookshelfReaderOpenGen += 1;
   showBookReader.value = false;
+  readerTocLoading.value = false;
   readerDetail.value = null;
   readerChapters.value = [];
   readerInitialChapterIndex.value = 0;
@@ -439,25 +442,60 @@ async function onReadBookshelfBook(item: SearchBookItem) {
   }
   selectedBook.value = item;
   const shelfBook = item as BookshelfBook;
-  if (!hasCachedBookshelfToc(shelfBook)) {
-    bookshelfReaderOpening.value = true;
+  const openGen = ++bookshelfReaderOpenGen;
+
+  // 已有目录缓存：直接打开阅读器
+  if (hasCachedBookshelfToc(shelfBook)) {
+    try {
+      const { payload, books, message } =
+        await loadBookshelfReaderPayload(shelfBook);
+      if (openGen !== bookshelfReaderOpenGen) return;
+      if (books) applyBooks(books);
+      if (!payload) {
+        appToast(message ?? "打开阅读器失败", { kind: "warning" });
+        return;
+      }
+      onReadChapter({
+        index: payload.chapterIndex,
+        detail: payload.detail,
+        chapters: payload.chapters,
+      });
+    } catch {
+      if (openGen === bookshelfReaderOpenGen) {
+        appToast("打开阅读器失败", { kind: "warning" });
+      }
+    }
+    return;
   }
+
+  // 未读/无目录缓存：先打开阅读器，目录加载放进面板内
+  readerDetail.value = buildBookDetailFromShelf(shelfBook);
+  readerChapters.value = [];
+  readerInitialChapterIndex.value = 0;
+  readerTocLoading.value = true;
+  showBookReader.value = true;
+
   try {
-    const { payload, books, message } = await loadBookshelfReaderPayload(shelfBook);
+    const { payload, books, message } =
+      await loadBookshelfReaderPayload(shelfBook);
+    if (openGen !== bookshelfReaderOpenGen) return;
     if (books) applyBooks(books);
     if (!payload) {
       appToast(message ?? "打开阅读器失败", { kind: "warning" });
+      resetReaderLayer();
       return;
     }
-    onReadChapter({
-      index: payload.chapterIndex,
-      detail: payload.detail,
-      chapters: payload.chapters,
-    });
+    readerDetail.value = payload.detail;
+    readerChapters.value = payload.chapters;
+    readerInitialChapterIndex.value = payload.chapterIndex;
   } catch {
+    if (openGen !== bookshelfReaderOpenGen) return;
     appToast("打开阅读器失败", { kind: "warning" });
+    resetReaderLayer();
   } finally {
-    bookshelfReaderOpening.value = false;
+    if (openGen === bookshelfReaderOpenGen) {
+      readerTocLoading.value = false;
+    }
   }
 }
 
@@ -501,6 +539,15 @@ function onOpenBookDetailFromReader() {
   raiseOrOpenBookDetail();
 }
 
+/** 阅读器侧栏重新获取目录后同步 */
+function onReaderTocRefreshed(payload: {
+  detail: BookDetail;
+  chapters: BookChapter[];
+}) {
+  readerDetail.value = payload.detail;
+  readerChapters.value = payload.chapters;
+}
+
 /** 一侧清除缓存后，同步另一侧目录勾标 */
 function onChapterCacheCleared() {
   bookDetailPanelRef.value?.clearChapterCacheMarks?.();
@@ -509,8 +556,12 @@ function onChapterCacheCleared() {
 
 /** 关闭阅读器后，若详情仍开着则刷新其目录缓存勾标 */
 watch(showBookReader, (open, wasOpen) => {
-  if (wasOpen && !open && showBookDetail.value) {
-    void bookDetailPanelRef.value?.refreshChapterCacheStatus?.();
+  if (wasOpen && !open) {
+    bookshelfReaderOpenGen += 1;
+    readerTocLoading.value = false;
+    if (showBookDetail.value) {
+      void bookDetailPanelRef.value?.refreshChapterCacheStatus?.();
+    }
   }
 });
 
@@ -984,14 +1035,6 @@ function onGoMain() {
         @open-book-info="onOpenBook"
         @managing-change="bookshelfManaging = $event"
       />
-      <div
-        v-if="bookshelfReaderOpening && mainTab === 'bookshelf'"
-        class="findBookBookshelfReaderOpening"
-        aria-live="polite"
-        aria-busy="true"
-      >
-        <BookSourceCenterState>{{ readerTxtLoadingHintText }}</BookSourceCenterState>
-      </div>
 
       <template v-if="mainTab === 'search'">
       <div v-if="showSearchStatus" class="findBookStatus">
@@ -1122,14 +1165,17 @@ function onGoMain() {
       :detail="readerDetail"
       :chapters="readerChapters"
       :initial-chapter-index="readerInitialChapterIndex"
+      :toc-loading="readerTocLoading"
       @open-settings="onOpenSettingsFromReader"
       @open-book-detail="onOpenBookDetailFromReader"
       @chapter-cache-cleared="onChapterCacheCleared"
+      @toc-refreshed="onReaderTocRefreshed"
     />
 
     <FindBookSettingsPanel
       v-model="showSettingsPanel"
       :initial-tab="settingsInitialTab"
+      @chapter-cache-cleared="onChapterCacheCleared"
     />
 
     <DisclaimerPanel v-model="showDisclaimerPanel" />
@@ -1417,15 +1463,6 @@ function onGoMain() {
 }
 .findBookBookshelfToolbarMore {
   flex-shrink: 0;
-}
-.findBookBookshelfReaderOpening {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
 }
 .findBookShell {
   display: flex;

@@ -171,7 +171,7 @@ export function isLegadoInlineRule(expr: string): boolean {
 }
 
 export function extractUrlFetchOptionsSuffix(url: string): string {
-  const m = /,\s*(?=\{)/.exec(url);
+  const m = /,\s*(?=\{(?!\{))/.exec(url);
   if (m?.index == null || m.index <= 0) return "";
   return url.slice(m.index);
 }
@@ -181,6 +181,8 @@ export type LegadoUrlFetchOptions = {
   method?: string;
   body?: string;
   charset?: string;
+  /** Legado UrlOption.type：非空时 getStrResponse 返回 hex 编码正文 */
+  type?: string;
 };
 
 function stringifyLegadoHeaderMap(obj: Record<string, unknown>): Record<string, string> {
@@ -204,7 +206,12 @@ function isLegadoFlatHeaderMap(obj: Record<string, unknown>): boolean {
     "redirect",
     "proxy",
     "webView",
+    "webJs",
     "js",
+    "type",
+    "retry",
+    "webViewDelayTime",
+    "serverID",
   ]);
   if (keys.some((k) => reserved.has(k))) return false;
   return keys.every(
@@ -219,18 +226,45 @@ export function parseLegadoUrlSuffixJson(raw: string): LegadoUrlFetchOptions {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    const pickUrlOptionFields = (
+      headers?: Record<string, string>,
+    ): LegadoUrlFetchOptions => ({
+      headers,
+      method: typeof parsed.method === "string" ? parsed.method : undefined,
+      body: parsed.body != null ? String(parsed.body) : undefined,
+      charset: typeof parsed.charset === "string" ? parsed.charset : undefined,
+      type: typeof parsed.type === "string" ? parsed.type : undefined,
+    });
+
     if (
       parsed.headers &&
       typeof parsed.headers === "object" &&
       !Array.isArray(parsed.headers)
     ) {
-      return {
-        headers: stringifyLegadoHeaderMap(parsed.headers as Record<string, unknown>),
-        method: typeof parsed.method === "string" ? parsed.method : undefined,
-        body: parsed.body != null ? String(parsed.body) : undefined,
-        charset: typeof parsed.charset === "string" ? parsed.charset : undefined,
-      };
+      return pickUrlOptionFields(
+        stringifyLegadoHeaderMap(parsed.headers as Record<string, unknown>),
+      );
     }
+
+    // Lofter 等常见仅有 method/body 的 UrlOption（无 headers）
+    const hasReservedOptionKey = [
+      "method",
+      "body",
+      "charset",
+      "type",
+      "webView",
+      "webJs",
+      "js",
+      "retry",
+      "webViewDelayTime",
+      "serverID",
+      "origin",
+    ].some((k) => Object.prototype.hasOwnProperty.call(parsed, k));
+    if (hasReservedOptionKey) {
+      return pickUrlOptionFields();
+    }
+
     if (isLegadoFlatHeaderMap(parsed)) {
       return { headers: stringifyLegadoHeaderMap(parsed) };
     }

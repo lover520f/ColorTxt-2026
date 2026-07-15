@@ -108,6 +108,28 @@ const AT_JS_OPEN = /^@js:/i;
 const AT_WEBJS_OPEN = /^@webjs:/i;
 
 /**
+ * 去掉 `<js>`/`</js>`、`@js:`、`js:` 标记。
+ * 书源规则常带前导换行/空格，必须先 trim 再判（否则会留下字面量标签导致语法错误）。
+ */
+export function stripLegadoJsRuleMarkers(rule: string): string {
+  let s = rule.trim();
+  if (/^<js>/i.test(s)) {
+    s = s.replace(/^<js>/i, "").replace(/<\/js>\s*$/i, "").trim();
+  } else if (/^@js:/i.test(s)) {
+    s = s.replace(/^@js:\s*/i, "").trim();
+  } else if (/^js:/i.test(s)) {
+    s = s.replace(/^js:\s*/i, "").trim();
+  }
+  return s;
+}
+
+/** 是否为 JS 规则块（允许前导空白） */
+export function isLegadoJsRule(rule: string): boolean {
+  const t = rule.trim();
+  return /^<js>/i.test(t) || /^@js:/i.test(t) || /^js:/i.test(t);
+}
+
+/**
  * @js: 脚本体换行后的下一段 Legado 规则行。
  * 须排除：
  * - JS 单行注释（//java.log、// 中文说明等）

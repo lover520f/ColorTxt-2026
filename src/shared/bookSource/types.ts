@@ -193,6 +193,8 @@ export type BookSourceGetChapterContentPayload = {
   nextChapterUrl?: string;
   /** 章节正文离线缓存根目录；空则用默认 userData/book_cache */
   cacheDir?: string;
+  /** 默认 true；false 时忽略本地缓存，重新联网拉取并覆盖写入 */
+  preferCache?: boolean;
 };
 
 export type BookSourceImportStatus = "new" | "update" | "exists";
@@ -287,6 +289,7 @@ export type BookSourceDownloadProgressEvent = {
 export type BookSourceDownloadDoneEvent = {
   downloadId: string;
   type: "done";
+  /** 整书导出路径；仅离线缓存时为空字符串 */
   filePath: string;
   bookName: string;
 };
@@ -307,9 +310,12 @@ export type BookSourceDownloadRequest = {
   bookSourceUrl: string;
   name: string;
   author: string;
+  /** 整书 .txt 输出目录；cacheOnly 时可为空 */
   outputDir: string;
   /** 章节正文离线缓存根目录；空则用默认 userData/book_cache */
   cacheDir?: string;
+  /** 仅缓存章节正文，不导出整书文件 */
+  cacheOnly?: boolean;
 };
 
 export function isTextBookSource(source: BookSourceRecord): boolean {

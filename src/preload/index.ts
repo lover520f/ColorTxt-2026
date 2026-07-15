@@ -1066,6 +1066,11 @@ const api = {
       BOOK_SOURCE_IPC.clearChapterCache,
       payload,
     ) as ReturnType<BookSourceIpcApi["bookSourceClearChapterCache"]>,
+  bookSourceClearAllChapterCache: (payload?: { cacheDir?: string }) =>
+    ipcRenderer.invoke(
+      BOOK_SOURCE_IPC.clearAllChapterCache,
+      payload,
+    ) as ReturnType<BookSourceIpcApi["bookSourceClearAllChapterCache"]>,
   bookSourceGetSourceVariable: (sourceUrl: string) =>
     ipcRenderer.invoke(BOOK_SOURCE_IPC.getSourceVariable, sourceUrl) as ReturnType<
       BookSourceIpcApi["bookSourceGetSourceVariable"]

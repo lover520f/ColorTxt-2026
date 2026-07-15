@@ -107,6 +107,14 @@
       {
         "from": "resources/icon_find.ico",
         "to": "icon_find.ico"
+      },
+      {
+        "from": "resources/user.png",
+        "to": "user.png"
+      },
+      {
+        "from": "resources/user.ico",
+        "to": "user.ico"
       }
     ],
     "files": [

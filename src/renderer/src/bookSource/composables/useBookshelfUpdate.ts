@@ -71,7 +71,15 @@ async function withSourceUpdateLock<T>(
 }
 
 function formatLastChapter(raw: string | undefined): string {
-  return raw?.replace(/[·•][^\n]*$/, "").trim() ?? "";
+  const s = raw?.trim() ?? "";
+  if (!s) return "";
+  return s
+    .replace(/[·•][^\n]*$/, "")
+    .replace(
+      /\s+(?:\d+\s*(?:分钟|小时|天|周|个月|月|年)前|刚刚|\d{4}[./-]\d{1,2}[./-]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)\s*$/u,
+      "",
+    )
+    .trim();
 }
 
 function resolveLatestChapterTitle(chapters: BookChapter[]): string {
@@ -86,11 +94,10 @@ function buildInfoPatch(
   >,
   chapters: BookChapter[],
 ): BookshelfBookInfoPatch {
-  let lastChapter = formatLastChapter(detail.lastChapter);
+  // 对齐 Legado：有目录时以最新章节标题为准
   const tocTitle = resolveLatestChapterTitle(chapters);
-  if (tocTitle && (!lastChapter || /^\d{4}[./-]\d{1,2}[./-]\d{1,2}(\s+\d{1,2}:\d{2})?$/.test(lastChapter))) {
-    lastChapter = tocTitle;
-  }
+  const lastChapter =
+    tocTitle || formatLastChapter(detail.lastChapter) || book.lastChapter;
   const patch: BookshelfBookInfoPatch = {
     name: detail.name?.trim() || book.name,
     author: detail.author?.trim() || book.author,

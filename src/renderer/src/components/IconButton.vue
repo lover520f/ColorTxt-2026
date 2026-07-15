@@ -1,8 +1,8 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    /** SVG 字符串，与 icons.xxx 一致 */
-    iconHtml: string;
+    /** SVG 字符串，与 icons.xxx 一致；有默认插槽时可省略 */
+    iconHtml?: string;
     title?: string;
     /** 图标按钮无文字时建议设置，便于读屏 */
     ariaLabel?: string;
@@ -34,7 +34,11 @@ defineEmits<{ click: [e: MouseEvent] }>();
     :disabled="disabled"
     @click="$emit('click', $event)"
   >
+    <span v-if="$slots.default" class="icon" :class="{ 'icon--multicolor': multicolor }">
+      <slot />
+    </span>
     <span
+      v-else
       class="icon"
       :class="{ 'icon--multicolor': multicolor }"
       v-html="iconHtml"

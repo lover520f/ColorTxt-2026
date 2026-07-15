@@ -1,6 +1,7 @@
-import { BrowserView, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserView, BrowserWindow, ipcMain } from "electron";
 import type { WebContents } from "electron";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { BookSourceRecord } from "@shared/bookSource/types";
 import {
   BOOK_SOURCE_IPC,
@@ -20,11 +21,21 @@ import {
   setCookieFromResponse,
   cookieHeaderForUrl,
 } from "./cookieManager";
+import { WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT } from "../../windowBounds";
 
 const FOOTER_PADDING = 10;
 /** 内边距 10px × 2 + 按钮行高约 32px */
 const FOOTER_HEIGHT = FOOTER_PADDING * 2 + 32;
 const VERIFICATION_ACTION_CHANNEL = "bookSource:verificationAction";
+
+/** 书源登录/验证窗口图标 */
+function resolveLoginVerificationIconPath(): string {
+  const fileName =
+    process.platform === "win32" ? "user.ico" : "user.png";
+  return app.isPackaged
+    ? path.join(process.resourcesPath, fileName)
+    : path.join(app.getAppPath(), "resources", fileName);
+}
 
 /** 对齐 Legado SourceVerificationHelp：用户取消验证 */
 export class VerificationCancelledError extends Error {
@@ -363,12 +374,15 @@ async function openVerificationWindowAsync(
 
   let finished = false;
   const win = new BrowserWindow({
+    title: title || "验证",
     width: 960,
     height: 720,
-    title: title || "验证",
+    minWidth: WINDOW_MIN_WIDTH,
+    minHeight: WINDOW_MIN_HEIGHT,
     autoHideMenuBar: true,
     show: true,
     center: true,
+    icon: resolveLoginVerificationIconPath(),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

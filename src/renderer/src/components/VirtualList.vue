@@ -206,10 +206,13 @@ function getScrollHostContentViewport(el: HTMLElement) {
   return { contentH, maxScroll };
 }
 
-function applyScrollTop(nextScrollTop: number, behavior: ScrollBehavior = "auto") {
+function applyScrollTop(
+  nextScrollTop: number,
+  behavior: ScrollBehavior = "auto",
+): Promise<void> {
   const el = getScrollHost();
-  if (!el) return;
-  if (Math.abs(nextScrollTop - el.scrollTop) < 0.5) return;
+  if (!el) return Promise.resolve();
+  if (Math.abs(nextScrollTop - el.scrollTop) < 0.5) return Promise.resolve();
 
   if (behavior === "smooth") {
     cancelPendingSmoothScroll?.();
@@ -222,7 +225,7 @@ function applyScrollTop(nextScrollTop: number, behavior: ScrollBehavior = "auto"
       if (useExternalScroll.value) syncFromExternal();
       else listScrollOffset.value = nextScrollTop;
       cancelPendingSmoothScroll = null;
-      return;
+      return Promise.resolve();
     }
 
     const targetTop = nextScrollTop;
@@ -233,54 +236,61 @@ function applyScrollTop(nextScrollTop: number, behavior: ScrollBehavior = "auto"
       Math.max(160, Math.sqrt(Math.abs(dist)) * 14),
     );
 
-    let cancelled = false;
-    let rafId = 0;
-    const t0 = performance.now();
+    return new Promise<void>((resolve) => {
+      let cancelled = false;
+      let rafId = 0;
+      const t0 = performance.now();
 
-    const finish = (root: HTMLElement) => {
-      root.scrollTop = targetTop;
-      if (useExternalScroll.value) syncFromExternal();
-      else listScrollOffset.value = targetTop;
-      cancelPendingSmoothScroll = null;
-    };
-
-    const tick = (now: number) => {
-      if (cancelled) return;
-      const root = getScrollHost();
-      if (!root) {
+      const finish = (root: HTMLElement) => {
+        root.scrollTop = targetTop;
+        if (useExternalScroll.value) syncFromExternal();
+        else listScrollOffset.value = targetTop;
         cancelPendingSmoothScroll = null;
-        return;
-      }
-      const t = Math.min(1, (now - t0) / durationMs);
-      const eased = 1 - (1 - t) * (1 - t);
-      root.scrollTop = startTop + dist * eased;
-      if (useExternalScroll.value) syncFromExternal();
-      else listScrollOffset.value = root.scrollTop;
-      if (t < 1 - 1e-6) {
-        rafId = requestAnimationFrame(tick);
-      } else {
-        finish(root);
-      }
-    };
+        resolve();
+      };
 
-    cancelPendingSmoothScroll = () => {
-      cancelled = true;
-      cancelAnimationFrame(rafId);
-    };
+      const tick = (now: number) => {
+        if (cancelled) return;
+        const root = getScrollHost();
+        if (!root) {
+          cancelPendingSmoothScroll = null;
+          resolve();
+          return;
+        }
+        const t = Math.min(1, (now - t0) / durationMs);
+        const eased = 1 - (1 - t) * (1 - t);
+        root.scrollTop = startTop + dist * eased;
+        if (useExternalScroll.value) syncFromExternal();
+        else listScrollOffset.value = root.scrollTop;
+        if (t < 1 - 1e-6) {
+          rafId = requestAnimationFrame(tick);
+        } else {
+          finish(root);
+        }
+      };
 
-    rafId = requestAnimationFrame(tick);
-    return;
+      cancelPendingSmoothScroll = () => {
+        cancelled = true;
+        cancelAnimationFrame(rafId);
+        cancelPendingSmoothScroll = null;
+        resolve();
+      };
+
+      rafId = requestAnimationFrame(tick);
+    });
   }
 
   el.scrollTop = nextScrollTop;
   if (useExternalScroll.value) syncFromExternal();
   else listScrollOffset.value = nextScrollTop;
+  return Promise.resolve();
 }
 
 /**
  * 将指定下标滚入视口。
  * - center：垂直居中
  * - auto：仅在必要时滚动
+ * @returns 平滑滚动结束（或即时滚动完成）时 resolve 的 Promise
  */
 function scrollToIndex(
   index: number,
@@ -289,9 +299,9 @@ function scrollToIndex(
     behavior?: ScrollBehavior;
     force?: boolean;
   },
-) {
+): Promise<void> {
   const el = getScrollHost();
-  if (!el || props.itemCount <= 0) return;
+  if (!el || props.itemCount <= 0) return Promise.resolve();
   const stride = props.rowStride;
   const n = props.itemCount;
   const idx = Math.max(0, Math.min(Math.floor(index), n - 1));
@@ -304,7 +314,7 @@ function scrollToIndex(
   let listOffsetTop = 0;
   if (useExternalScroll.value) {
     const root = listRootEl.value;
-    if (!root) return;
+    if (!root) return Promise.resolve();
     listOffsetTop = measureListOffsetInHost(el, root);
   }
 
@@ -340,10 +350,10 @@ function scrollToIndex(
   }
 
   if (!options?.force && Math.abs(nextScrollTop - el.scrollTop) < 0.5) {
-    return;
+    return Promise.resolve();
   }
 
-  applyScrollTop(nextScrollTop, behavior);
+  return applyScrollTop(nextScrollTop, behavior);
 }
 
 defineExpose({

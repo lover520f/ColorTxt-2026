@@ -126,9 +126,9 @@ const TAG_CHILD_SELECTOR_NAMES = new Set(
     "a", "abbr", "article", "aside", "b", "blockquote", "body", "button", "caption",
     "code", "dd", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "form",
     "h1", "h2", "h3", "h4", "h5", "h6", "header", "i", "img", "input", "label", "li",
-    "main", "nav", "object", "ol", "p", "pre", "section", "select", "small", "span",
-    "strong", "sub", "sup", "table", "tbody", "td", "textarea", "tfoot", "th", "thead",
-    "tr", "u", "ul", "video",
+    "main", "nav", "object", "ol", "optgroup", "option", "p", "pre", "section", "select",
+    "small", "span", "strong", "sub", "sup", "table", "tbody", "td", "textarea", "tfoot",
+    "th", "thead", "tr", "u", "ul", "video",
   ].map((s) => s.toLowerCase()),
 );
 

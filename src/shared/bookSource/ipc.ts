@@ -50,6 +50,8 @@ export const BOOK_SOURCE_IPC = {
   chapterCacheStatus: "bookSource:chapterCacheStatus",
   /** 清除某本书的章节正文离线缓存 */
   clearChapterCache: "bookSource:clearChapterCache",
+  /** 清除缓存目录下的全部章节正文离线缓存 */
+  clearAllChapterCache: "bookSource:clearAllChapterCache",
   getSourceVariable: "bookSource:getSourceVariable",
   setSourceVariable: "bookSource:setSourceVariable",
   getBookVariable: "bookSource:getBookVariable",
@@ -242,6 +244,9 @@ export type BookSourceIpcApi = {
   bookSourceClearChapterCache: (payload: {
     name: string;
     bookUrl: string;
+    cacheDir?: string;
+  }) => Promise<{ ok: boolean; cleared?: boolean; message?: string }>;
+  bookSourceClearAllChapterCache: (payload?: {
     cacheDir?: string;
   }) => Promise<{ ok: boolean; cleared?: boolean; message?: string }>;
   bookSourceGetSourceVariable: (sourceUrl: string) => Promise<string>;

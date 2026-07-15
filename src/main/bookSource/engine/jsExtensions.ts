@@ -28,7 +28,9 @@ import { appendBookSourceErrorLog } from "./bookSourceErrorLog";
 import { getVerificationResult, isVerificationCancelled, getVerificationCodeResult } from "./sourceVerification";
 import { toLegadoStrResponse, toLegadoConnectionResponse, toLegadoJsoupResponse } from "./legadoStrResponse";
 import { sourceVariableCacheKey } from "./legadoCompositeRule";
+import { assertJsEvalAlive, isBookSourceJsTimeoutError } from "./bookSourceJsTimeout";
 import {
+  aesBase64DecodeToString,
   aesDecodeToString,
   createSymmetricCrypto,
 } from "./legadoCrypto";
@@ -260,6 +262,7 @@ export function createJsExtensionHost(
     header: source.header ?? "",
     loginUrl: source.loginUrl ?? "",
     loginCheckJs: source.loginCheckJs ?? "",
+    bookSourceComment: source.bookSourceComment ?? "",
     getLoginInfoMap: loginInfoMap,
     getLoginHeaderMap: () => {
       const map = parseLoginHeaderMap(getLoginHeader(source.bookSourceUrl));
@@ -368,8 +371,11 @@ export function createJsExtensionHost(
     base64Decode: (s: unknown) =>
       Buffer.from(String(s), "base64").toString("utf8"),
     hexDecodeToString: (hex: unknown) => {
-      const h = String(hex).trim();
+      const h = String(hex ?? "").trim().replace(/\s+/g, "");
       if (!h) return "";
+      if (!/^[0-9a-fA-F]+$/.test(h) || h.length % 2 !== 0) {
+        throw new Error(`hexDecodeToString: invalid hex input (${h.slice(0, 24)})`);
+      }
       return Buffer.from(h, "hex").toString("utf8");
     },
     md5Encode: (s: unknown) =>
@@ -389,6 +395,12 @@ export function createJsExtensionHost(
       transformation: unknown,
       iv: unknown,
     ) => aesDecodeToString(data, key, transformation, iv),
+    aesBase64DecodeToString: (
+      data: unknown,
+      key: unknown,
+      transformation: unknown,
+      iv: unknown,
+    ) => aesBase64DecodeToString(data, key, transformation, iv),
     digestHex: (data: unknown, algorithm: unknown) =>
       digestHex(data, algorithm),
     HMacHex: (data: unknown, algorithm: unknown, key: unknown) =>
@@ -603,6 +615,7 @@ async function legadoHttpRequest(
   header?: unknown,
   redirect: "follow" | "manual" = "manual",
 ): Promise<ReturnType<typeof toLegadoConnectionResponse>> {
+  assertJsEvalAlive();
   const startTime = Date.now();
   const headers = parseHeaderArg(header);
   const res = await fetchStrResponse(urlStr, {
@@ -614,6 +627,7 @@ async function legadoHttpRequest(
     logs: host.logs,
     redirect,
   });
+  assertJsEvalAlive();
   return toLegadoConnectionResponse(res, {
     statusCode: res.statusCode,
     startTime,
@@ -626,10 +640,14 @@ async function hostAjaxAll(
   urlList: unknown,
   skipRateLimit?: unknown,
 ): Promise<ReturnType<typeof toLegadoStrResponse>[]> {
-  return ajaxAllStrResponses(host, urlList, skipRateLimit);
+  assertJsEvalAlive();
+  const results = await ajaxAllStrResponses(host, urlList, skipRateLimit);
+  assertJsEvalAlive();
+  return results;
 }
 
 async function hostAjax(host: JsExtensionHost, url: unknown): Promise<string> {
+  assertJsEvalAlive();
   let urlStr: string;
   let options: { headers?: Record<string, string>; method?: string; body?: string } = {};
   if (Array.isArray(url)) {
@@ -654,8 +672,10 @@ async function hostAjax(host: JsExtensionHost, url: unknown): Promise<string> {
       host,
       logs: host.logs,
     });
+    assertJsEvalAlive();
     return res.body;
   } catch (e) {
+    if (isBookSourceJsTimeoutError(e)) throw e;
     appendBookSourceErrorLog(host.logs, e, {
       phase: "java.ajax",
       sourceName: host.source.bookSourceName,

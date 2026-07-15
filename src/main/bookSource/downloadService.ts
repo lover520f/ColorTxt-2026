@@ -185,7 +185,22 @@ async function runDownload(
     }
 
     if (session.cancelled) {
-      emit({ downloadId, type: "error", message: "已停止下载" });
+      emit({
+        downloadId,
+        type: "error",
+        message: req.cacheOnly ? "已停止离线缓存" : "已停止下载",
+      });
+      return;
+    }
+
+    // 仅离线缓存：跳过整书导出
+    if (req.cacheOnly) {
+      emit({
+        downloadId,
+        type: "done",
+        filePath: "",
+        bookName: detail.name,
+      });
       return;
     }
 

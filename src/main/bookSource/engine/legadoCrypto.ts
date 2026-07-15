@@ -142,3 +142,20 @@ export function aesDecodeToString(
     iv,
   ).decryptStr(data);
 }
+
+/** Legado：java.aesBase64DecodeToString — 密文强制按 Base64 解码后再 AES 解密 */
+export function aesBase64DecodeToString(
+  data: unknown,
+  key: unknown,
+  transformation: unknown,
+  iv: unknown,
+): string {
+  const text = String(data ?? "").trim().replace(/-/g, "+").replace(/_/g, "/");
+  if (!text) return "";
+  const buf = Buffer.from(text, "base64");
+  return createSymmetricCrypto(
+    transformation ?? "AES/CBC/PKCS5Padding",
+    key,
+    iv,
+  ).decryptStr(buf);
+}

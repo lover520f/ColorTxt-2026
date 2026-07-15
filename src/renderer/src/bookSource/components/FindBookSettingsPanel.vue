@@ -33,6 +33,7 @@ import {
   resolveDefaultBookSourceChapterCacheDirSync,
   resolveDefaultBookSourceDownloadDirSync,
 } from "../../utils/defaultCacheDirs";
+import { confirmClearAllChapterCache } from "../services/clearBookChapterCache";
 import "../../styles/settingsPanel.css";
 
 const modelValue = defineModel<boolean>({ default: false });
@@ -43,6 +44,10 @@ const props = withDefaults(
   }>(),
   { initialTab: "download" },
 );
+
+const emit = defineEmits<{
+  chapterCacheCleared: [];
+}>();
 
 const fb = useFindBookSettings();
 const activeTab = ref<FindBookSettingsTabId>("download");
@@ -142,6 +147,13 @@ function onConfirm() {
   modelValue.value = false;
 }
 
+async function onClearCache() {
+  const cleared = await confirmClearAllChapterCache({
+    cacheDir: draftCacheDir.value.trim() || undefined,
+  });
+  if (cleared) emit("chapterCacheCleared");
+}
+
 watch(
   () => modelValue.value,
   (open) => {
@@ -191,6 +203,7 @@ watch(draftFontSize, (size) => {
                 draftDownloadAddToMainFileList
               "
               v-model:draft-download-default-category="draftDownloadDefaultCategory"
+              @clear-cache="onClearCache"
             />
 
             <SettingsReadingPanel

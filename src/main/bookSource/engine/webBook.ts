@@ -676,6 +676,8 @@ function bookInfoInitFailed(body: string, initRule?: string | null): boolean {
   if (!init) return false;
   // JS init（如 Lofter `<js>…</js>`）由 init 规则处理，不能按 JSONPath 校验
   if (/^<js>/i.test(init) || /^@js:/i.test(init)) {
+    // data:;base64 + UrlOption.type 会先得到 hex 正文，交由 init JS hexDecode，不能当失败
+    if (/^[0-9a-fA-F]+$/.test(t) && t.length % 2 === 0) return false;
     if (!t.startsWith("{") && !t.startsWith("[")) return true;
     try {
       const data = JSON.parse(t) as Record<string, unknown>;
@@ -979,13 +981,24 @@ async function applyContentReplaceRegex(
     for (const line of lines) {
       if (line.startsWith("##")) {
         const { regex } = splitRuleRegexSuffix(line);
-        if (regex?.pattern) out = applyContentRuleRegex(out, regex);
+        if (regex?.pattern) {
+          out = applyContentRuleRegex(out, {
+            pattern: expandContentRegexPlaceholders(ar, regex.pattern),
+            replacement: expandContentRegexPlaceholders(
+              ar,
+              regex.replacement ?? "",
+            ),
+            replaceFirst: regex.replaceFirst,
+          });
+        }
         continue;
       }
       const segs = line.split("##");
       if (segs.length >= 2 && segs[0]) {
         try {
-          out = out.replace(new RegExp(segs[0]!, "g"), segs[1] ?? "");
+          const pat = expandContentRegexPlaceholders(ar, segs[0]!);
+          const repl = expandContentRegexPlaceholders(ar, segs[1] ?? "");
+          out = out.replace(new RegExp(pat, "g"), repl);
         } catch {
           /* ignore invalid regex */
         }
@@ -994,6 +1007,19 @@ async function applyContentReplaceRegex(
     return out;
   }
   return ar.getString(replaceRegex, normalized);
+}
+
+/** 正文 replaceRegex 行内 {{title}} 等占位 */
+function expandContentRegexPlaceholders(ar: AnalyzeRule, text: string): string {
+  return text
+    .replace(/\{\{([\s\S]*?)\}\}/g, (_, expr: string) => {
+      const key = String(expr).trim();
+      if (key === "book.name") return ar.getStored("bookName");
+      return ar.getStored(key);
+    })
+    .replace(/@get:\{([^}]+)\}/gi, (_, key: string) =>
+      ar.getStored(String(key).trim()),
+    );
 }
 
 /** 正文 replaceRegex：对齐 Legado，`.` 默认不匹配换行 */
@@ -1132,7 +1158,7 @@ export async function getChapterList(
           logs.push(
             `目录接口错误: ${parsed.errors.title ?? parsed.errors.details ?? "验签或权限失败"}`,
           );
-        } else if (!parsed.data?.chapter_lists) {
+        } else if (!parsed.data?.chapter_lists && /fanqie|fqnovel|novel\/api/i.test(base)) {
           logs.push("目录接口未返回 chapter_lists 字段");
         }
       } catch {
@@ -1169,17 +1195,21 @@ export async function getChapterList(
   };
   await collect(body, res.url, redirectUrl);
   if (rule.nextTocUrl?.trim()) {
+    // nextTocUrl 里常按 baseUrl 匹配 UrlOption（如 limit=500）；须用带 option 的原 toc URL，不能只用 res.url
+    const tocRuleBaseUrl = resolvedTocUrl || fetchTocUrl || res.url;
     const ar = new AnalyzeRule(source, logs, host)
-      .setContent(body, res.url)
+      .setContent(body, tocRuleBaseUrl)
       .setRedirectUrl(redirectUrl)
       .setBook(book)
       .setRuleData({ variable: { ...variables } });
     const nextList = await ar.getUrlList(rule.nextTocUrl);
+    /** 须保留 UrlOption（Lofter offset=… 在 POST body）；仅剥末尾空白 */
+    const tocVisitKey = (u: string) => u.trim();
     if (nextList.length === 1) {
       let next = nextList[0]!;
-      const visited = new Set<string>([redirectUrl]);
-      while (next && !visited.has(next)) {
-        visited.add(next);
+      const visited = new Set<string>([tocVisitKey(resolvedTocUrl), tocVisitKey(fetchTocUrl)]);
+      while (next && !visited.has(tocVisitKey(next))) {
+        visited.add(tocVisitKey(next));
         const nextRes = await new AnalyzeUrl({
           mUrl: next,
           baseUrl: bookPageUrl,
@@ -1190,7 +1220,7 @@ export async function getChapterList(
         }).getStrResponse();
         await collect(nextRes.body, nextRes.url, nextRes.url);
         const arNext = new AnalyzeRule(source, logs, host)
-          .setContent(nextRes.body, nextRes.url)
+          .setContent(nextRes.body, next)
           .setRedirectUrl(nextRes.url)
           .setBook(book)
           .setRuleData({ variable: { ...variables } });
@@ -1399,7 +1429,39 @@ export async function getChapterContent(
     }
   }
 
+  // 对齐 Legado ContentProcessor：去掉正文开头与章节名重复的标题行
+  content = stripLeadingDuplicateChapterTitle(
+    content,
+    String(chapter.title ?? ""),
+    String(book.name ?? ""),
+  );
+
   return content.trim();
+}
+
+/**
+ * Legado ContentProcessor「去除重复标题」：正文开头与章节名重复的一行。
+ * 离线缓存读取路径也会调用，避免旧缓存仍带标题。
+ */
+export function stripLeadingDuplicateChapterTitle(
+  content: string,
+  chapterTitle: string,
+  bookName = "",
+): string {
+  const title = chapterTitle.trim();
+  if (!title || !content || content === "null") return content;
+  try {
+    const escapeRegex = (s: string) =>
+      s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const titlePat = escapeRegex(title).replace(/\s+/g, "\\s*");
+    const namePat = bookName.trim() ? escapeRegex(bookName.trim()) : "";
+    const prefix = namePat
+      ? `^(?:\\s|\\p{P}|${namePat})*${titlePat}\\s*`
+      : `^(?:\\s|\\p{P})*${titlePat}\\s*`;
+    return content.replace(new RegExp(prefix, "u"), "");
+  } catch {
+    return content;
+  }
 }
 
 function isTruthy(s: string): boolean {

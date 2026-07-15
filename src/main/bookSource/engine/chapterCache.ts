@@ -150,3 +150,16 @@ export async function clearBookChapterCache(
     return { cleared: false };
   }
 }
+
+/** 清空章节正文离线缓存根目录下的全部内容 */
+export async function clearAllChapterCache(
+  cacheDir?: string,
+): Promise<{ cleared: boolean }> {
+  const root = resolveCacheRoot(cacheDir);
+  try {
+    await rm(root, { recursive: true, force: true });
+    return { cleared: true };
+  } catch {
+    return { cleared: false };
+  }
+}

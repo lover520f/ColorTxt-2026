@@ -5,6 +5,8 @@ function isSuspiciousMetaTag(tag: string): boolean {
   if (/^\$\.?\.?[\w[*]/.test(t) || /\{\{/.test(t)) return true;
   if (/@(?:text|html|href|src|json)\b/i.test(t) && /[#.:>]/.test(t)) return true;
   if (/\s&&\s*$/.test(t) || t.includes("@text&&")) return true;
+  // 误把 HTML 整页写进 kind 时，过滤标签碎片
+  if (/^<\/?[a-zA-Z!]/.test(t) || /^<!doctype/i.test(t)) return true;
   return false;
 }
 

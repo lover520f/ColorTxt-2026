@@ -17,15 +17,6 @@ function ipcPlain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function formatDetailLastChapter(raw: string | undefined): string {
-  return raw?.replace(/[·•][^\n]*$/, "").trim() ?? "";
-}
-
-function isDateOnlyLastChapter(raw: string | undefined): boolean {
-  const s = raw?.trim() ?? "";
-  return /^\d{4}[./-]\d{1,2}[./-]\d{1,2}(\s+\d{1,2}:\d{2})?$/.test(s);
-}
-
 export function useBookSourceApi() {
   const api = window.colorTxt;
 
@@ -287,6 +278,8 @@ export function useBookSourceDownload(onDone?: (filePath: string) => void) {
     chapterUrl: "",
   });
   let downloadId = "";
+  /** 每次开始/取消递增，用于丢弃取消后迟到的进度与完成事件 */
+  let sessionGen = 0;
   let unsub: (() => void) | null = null;
   let pendingResolve: ((path: string | null) => void) | null = null;
 
@@ -306,8 +299,11 @@ export function useBookSourceDownload(onDone?: (filePath: string) => void) {
     item: SearchBookItem,
     outputDir: string,
     cacheDir?: string,
+    options?: { cacheOnly?: boolean },
   ): Promise<string | null> {
     if (downloading.value) return null;
+    const cacheOnly = options?.cacheOnly === true;
+    const gen = ++sessionGen;
     downloading.value = true;
     downloadProgress.value = {
       current: 0,
@@ -320,7 +316,7 @@ export function useBookSourceDownload(onDone?: (filePath: string) => void) {
       pendingResolve = resolve;
       unsub = window.colorTxt.onBookSourceDownloadEvent(
         (ev: BookSourceDownloadEvent) => {
-          if (ev.downloadId !== downloadId) return;
+          if (gen !== sessionGen || ev.downloadId !== downloadId) return;
           if (ev.type === "progress") {
             downloadProgress.value = {
               current: ev.current,
@@ -329,8 +325,13 @@ export function useBookSourceDownload(onDone?: (filePath: string) => void) {
               chapterUrl: ev.chapterUrl ?? "",
             };
           } else if (ev.type === "done") {
-            onDone?.(ev.filePath);
-            finish(ev.filePath);
+            // cacheOnly 时 filePath 为空字符串，仍视为成功（与 null 取消/失败区分）
+            if (!cacheOnly) {
+              if (ev.filePath) onDone?.(ev.filePath);
+              finish(ev.filePath || null);
+            } else {
+              finish("");
+            }
           } else if (ev.type === "error") {
             finish(null);
           }
@@ -342,27 +343,37 @@ export function useBookSourceDownload(onDone?: (filePath: string) => void) {
           bookSourceUrl: item.origin,
           name: item.name,
           author: item.author,
-          outputDir,
+          outputDir: cacheOnly ? "" : outputDir,
           cacheDir: cacheDir?.trim() || undefined,
+          cacheOnly,
         })
         .then((r) => {
+          if (gen !== sessionGen) {
+            // 已取消：忽略迟到的 id，并通知主进程停止
+            void window.colorTxt.bookSourceDownloadCancel(r.downloadId);
+            return;
+          }
           downloadId = r.downloadId;
         })
         .catch(() => {
-          finish(null);
+          if (gen === sessionGen) finish(null);
         });
     });
   }
 
-  /** 请求停止；主进程丢弃已下内容，不落盘 */
+  /** 立即退出忙碌态并请求主进程停止（不必等当前章节网络结束） */
   async function cancel() {
-    if (downloadId) await window.colorTxt.bookSourceDownloadCancel(downloadId);
+    const id = downloadId;
+    sessionGen += 1;
+    downloadId = "";
+    unsub?.();
+    unsub = null;
+    if (downloading.value || pendingResolve) finish(null);
+    if (id) void window.colorTxt.bookSourceDownloadCancel(id);
   }
 
   onBeforeUnmount(() => {
-    unsub?.();
-    if (downloadId) void window.colorTxt.bookSourceDownloadCancel(downloadId);
-    if (pendingResolve) finish(null);
+    void cancel();
   });
 
   return { downloading, downloadProgress, download, cancel };
@@ -411,13 +422,10 @@ export function useBookSourceDetail() {
       }
       chapters.value = tocRes.chapters ?? [];
       if (detail.value && chapters.value.length) {
-        const firstTitle = chapters.value.find((ch) => !ch.isVolume)?.title?.trim();
-        if (firstTitle) {
-          const seed = formatDetailLastChapter(detail.value.lastChapter);
-          const preferToc = !seed || isDateOnlyLastChapter(seed);
-          if (preferToc) {
-            detail.value = { ...detail.value, lastChapter: firstTitle };
-          }
+        // 对齐 Legado：拉完目录后用最新章节标题覆盖 ruleBookInfo.lastChapter
+        const latestTitle = chapters.value.find((ch) => !ch.isVolume)?.title?.trim();
+        if (latestTitle) {
+          detail.value = { ...detail.value, lastChapter: latestTitle };
         }
       }
       if (!chapters.value.length && !error.value && logs.value.length) {
@@ -456,6 +464,8 @@ export function useBookSourceChapterContent() {
     chapterIndex: number;
     nextChapterUrl?: string;
     cacheDir?: string;
+    /** 默认 true；false 忽略缓存重新拉取 */
+    preferCache?: boolean;
   }): Promise<string | null> {
     const seq = ++loadSeq;
     loading.value = true;

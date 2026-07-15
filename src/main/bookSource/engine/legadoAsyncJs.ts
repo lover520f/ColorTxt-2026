@@ -16,11 +16,17 @@ export function fixRhinoBareArrayArrowParams(script: string): string {
 }
 
 function hasLegadoTopLevelStatements(script: string): boolean {
-  return (
-    /(?:^|\n)\s*(?:const|let|var|function|for|while|if|try|class|import|export)\b/.test(
+  if (
+    /(?:^|\n)\s*(?:const|let|var|function|for|while|if|try|class|import|export|eval)\b/.test(
       script,
-    ) || /(?:^|\n)\s*[\w$]+\s*=\s*/.test(script)
-  );
+    )
+  ) {
+    return true;
+  }
+  if (/(?:^|\n)\s*[\w$]+\s*=\s*/.test(script)) return true;
+  // 多语句：`eval(...); run(...)` 等，勿整体包成 return (a; b)
+  const withoutTrailingSemi = script.replace(/;\s*$/, "");
+  return /;\s*\S/.test(withoutTrailingSemi);
 }
 
 /** @deprecated java.getStringList/getElements 已改为同步 API，不再注入 await */
@@ -47,15 +53,51 @@ function findTrailingExpressionStartLine(lines: string[], endLineIdx: number): n
 
 function findMatchingBrace(src: string, openIdx: number): number {
   let depth = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let inTemplate = false;
+  let escape = false;
   for (let i = openIdx; i < src.length; i++) {
     const ch = src[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escape = true;
+      continue;
+    }
+    if (inSingle) {
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+    if (inTemplate) {
+      if (ch === "`") inTemplate = false;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+    if (ch === "`") {
+      inTemplate = true;
+      continue;
+    }
     if (ch === "{") depth++;
     else if (ch === "}") {
       depth--;
       if (depth === 0) return i;
     }
   }
-  return src.length - 1;
+  return -1;
 }
 
 function findMatchingParen(src: string, openIdx: number): number {
@@ -189,9 +231,18 @@ export function ensureLegadoScriptReturn(script: string): string {
     return trimmed;
   }
 
+  // 单行模板字符串：`${...}` 含 `}`，不可当多行表达式回溯（否则会误 return 上一句变量）
+  const lastExpr = last.replace(/;\s*$/, "");
+  if (lastExpr.startsWith("`") && lastExpr.endsWith("`")) {
+    const indent = lines[i].match(/^\s*/)?.[0] ?? "";
+    lines[i] = `${indent}return ${lastExpr};`;
+    return lines.join("\n");
+  }
+
   // 顶层 if/for 等语句后的单行返回值（如 loginCheckJs 末尾 result）勿回溯到 if 行
+  // 不用 `}` 触发回溯：否则 `/files/...${sid}/...` 一类模板会被当成多行并跳到上一句
   const looksMultilineExpr =
-    /[}\])]/.test(last) &&
+    /[)\]]/.test(last) &&
     !/^(if|else|for|while|function|try|catch|class)\b/.test(last);
   const startLine = looksMultilineExpr
     ? findTrailingExpressionStartLine(lines, i)
@@ -214,13 +265,121 @@ export function ensureLegadoScriptReturn(script: string): string {
   return lines.join("\n");
 }
 
-/** `if (...) { foo() } else { bar() }` 分支内补 return（对齐 Legado/Rhino 返回值） */
+/** `if (...) { foo() } else { bar() }` 以及分支末尾裸表达式补 return（对齐 Legado/Rhino） */
 export function ensureLegadoIfElseBranchReturn(script: string): string {
-  if (/\breturn\s+[\w$]+\(\)/.test(script)) return script;
-  return script.replace(
+  let s = script.replace(
     /(\bif\s*\([\s\S]*?\)\s*\{\s*)([\w$]+\(\))(\s*\}\s*else\s*\{\s*)([\w$]+\(\))(\s*\})/g,
     "$1return $2$3return $4$5",
   );
+  // `if (cond) { ...; expr } else { ...; expr }`（Lofter 目录等）
+  return injectReturnIntoIfElseBranchEnds(s);
+}
+
+/** 在顶层 if/else 花括号块末尾表达式前插入 return（不改写已有 return） */
+function injectReturnIntoIfElseBranchEnds(script: string): string {
+  let result = script;
+  // 反复扫描，直到无法再改写
+  for (let pass = 0; pass < 8; pass++) {
+    let changed = false;
+    const ifRe = /\bif\s*\(/g;
+    let m: RegExpExecArray | null;
+    while ((m = ifRe.exec(result))) {
+      const startIdx = m.index;
+      const parenOpen = m.index + m[0].length - 1;
+      const parenClose = findMatchingParen(result, parenOpen);
+      if (parenClose < 0) {
+        ifRe.lastIndex = startIdx + 1;
+        continue;
+      }
+
+      let braceOpen = parenClose + 1;
+      while (braceOpen < result.length && /\s/.test(result[braceOpen]!)) braceOpen++;
+      if (result[braceOpen] !== "{") {
+        ifRe.lastIndex = startIdx + 1;
+        continue;
+      }
+
+      const braceClose = findMatchingBrace(result, braceOpen);
+      if (braceClose < 0) {
+        ifRe.lastIndex = startIdx + 1;
+        continue;
+      }
+
+      const injected = injectTrailingReturnInBraceBlock(result, braceOpen, braceClose);
+      if (injected.changed) {
+        result = injected.text;
+        changed = true;
+        ifRe.lastIndex = Math.max(injected.nextIndex, startIdx + 1);
+        continue;
+      }
+
+      // else / else if 紧随其后
+      let after = braceClose + 1;
+      while (after < result.length && /\s/.test(result[after]!)) after++;
+      if (!/^else\b/.test(result.slice(after))) {
+        ifRe.lastIndex = Math.max(braceClose + 1, startIdx + 1);
+        continue;
+      }
+      after += 4;
+      while (after < result.length && /\s/.test(result[after]!)) after++;
+      if (result[after] === "{") {
+        const elseClose = findMatchingBrace(result, after);
+        if (elseClose >= 0) {
+          const elseInj = injectTrailingReturnInBraceBlock(result, after, elseClose);
+          if (elseInj.changed) {
+            result = elseInj.text;
+            changed = true;
+            ifRe.lastIndex = Math.max(elseInj.nextIndex, startIdx + 1);
+            continue;
+          }
+        }
+      }
+      ifRe.lastIndex = Math.max(braceClose + 1, startIdx + 1);
+    }
+    if (!changed) break;
+  }
+  return result;
+}
+
+function injectTrailingReturnInBraceBlock(
+  src: string,
+  braceOpen: number,
+  braceClose: number,
+): { text: string; changed: boolean; nextIndex: number } {
+  const inner = src.slice(braceOpen + 1, braceClose);
+  const innerLines = inner.split("\n");
+  let li = innerLines.length - 1;
+  while (li >= 0) {
+    const t = innerLines[li]?.trim() ?? "";
+    if (!t || t === "}" || t === "{") {
+      li--;
+      continue;
+    }
+    if (/^(function|async function|if|else|for|while|try|catch|switch)\b/.test(t)) {
+      break;
+    }
+    if (t.startsWith("return ")) break;
+
+    const indent = innerLines[li]?.match(/^\s*/)?.[0] ?? "";
+    const expr = t.replace(/;\s*$/, "");
+    // 仅对简单返回值补 return，避免误改 intro 等含模板字符串 / 长表达式的分支
+    // （Lofter 目录：`result` / `"[{'title':'暂无目录'}]"`）
+    const simpleIdent = /^[\w$]+$/.test(expr);
+    const simpleString = /^(["'`])(?:\\.|(?!\1).)*\1$/.test(expr);
+    if (!simpleIdent && !simpleString) {
+      break;
+    }
+    innerLines[li] = `${indent}return ${expr};`;
+    const newInner = innerLines.join("\n");
+    const text =
+      src.slice(0, braceOpen + 1) + newInner + src.slice(braceClose);
+    return {
+      text,
+      changed: true,
+      nextIndex: braceOpen + 1 + newInner.length + 1,
+    };
+  }
+  return { text: src, changed: false, nextIndex: braceClose + 1 };
 }
 
 /** `if(result){ eval(result) }` → 补 return eval(result)（Legado/Rhino 会返回 eval 结果） */
@@ -233,7 +392,14 @@ export function ensureLegadoIfEvalReturn(script: string): string {
 
 /** 同步/异步 Legado JS 通用预处理 */
 export function prepareLegadoJs(script: string): string {
-  let s = script.trim().replace(/^@js:\s*/i, "");
+  let s = script.trim();
+  if (/^<js>/i.test(s)) {
+    s = s.replace(/^<js>/i, "").replace(/<\/js>\s*$/i, "").trim();
+  } else if (/^@js:/i.test(s)) {
+    s = s.replace(/^@js:\s*/i, "").trim();
+  } else if (/^js:/i.test(s)) {
+    s = s.replace(/^js:\s*/i, "").trim();
+  }
   s = fixRhinoBareArrayArrowParams(s);
   s = ensureLegadoWithBlockReturn(s);
   s = ensureLegadoIfElseBranchReturn(s);
@@ -242,10 +408,15 @@ export function prepareLegadoJs(script: string): string {
   return s;
 }
 
-/** 仅将函数体内含 await 的 function 提升为 async function（避免 urlEncode 等同步 helper 变 Promise） */
+/** 仅将函数体内含 await 的 function / 箭头函数提升为 async（避免 urlEncode 等同步 helper 变 Promise） */
 export function promoteFunctionsToAsyncForAwait(script: string): string {
   if (!/\bawait\b/.test(script)) return script;
+  return promoteArrowAssignmentsToAsync(
+    promoteClassicFunctionsToAsync(script),
+  );
+}
 
+function promoteClassicFunctionsToAsync(script: string): string {
   let out = "";
   let pos = 0;
   const headRe =
@@ -278,12 +449,47 @@ export function promoteFunctionsToAsyncForAwait(script: string): string {
   return out;
 }
 
-/** 收集脚本中已声明的 async function 名 */
+/** `getData = (uri) => { await ... }` / `run = Path => { await getData() }` */
+function promoteArrowAssignmentsToAsync(script: string): string {
+  let out = "";
+  let pos = 0;
+  const headRe =
+    /\b(?:(?:var|let|const)\s+)?([A-Za-z_$][\w$]*)\s*=\s*(async\s+)?((?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{)/g;
+
+  let m: RegExpExecArray | null;
+  while ((m = headRe.exec(script))) {
+    out += script.slice(pos, m.index);
+    if (m[2]) {
+      out += m[0];
+      pos = m.index + m[0].length;
+      headRe.lastIndex = pos;
+      continue;
+    }
+    const braceIdx = m.index + m[0].length - 1;
+    const endBrace = findMatchingBrace(script, braceIdx);
+    const fullFn = script.slice(m.index, endBrace + 1);
+    if (/\bawait\b/.test(fullFn)) {
+      out += fullFn.replace(
+        /^((?:(?:var|let|const)\s+)?[A-Za-z_$][\w$]*\s*=\s*)/,
+        "$1async ",
+      );
+    } else {
+      out += fullFn;
+    }
+    pos = endBrace + 1;
+    headRe.lastIndex = pos;
+  }
+  out += script.slice(pos);
+  return out;
+}
+
+/** 收集脚本中已声明的 async function / async 箭头赋值名 */
 export function collectAsyncFunctionNames(script: string): string[] {
   const names = new Set<string>();
   const patterns = [
     /\basync\s+function\s+([A-Za-z_$][\w$]*)\s*\(/g,
     /\b(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*async\s+function\b/g,
+    /\b(?:(?:var|let|const)\s+)?([A-Za-z_$][\w$]*)\s*=\s*async\s+(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g,
   ];
   for (const re of patterns) {
     let m: RegExpExecArray | null;
@@ -292,6 +498,34 @@ export function collectAsyncFunctionNames(script: string): string[] {
     }
   }
   return [...names];
+}
+
+/**
+ * 将 `eval(String(source.bookSourceComment))` 展开为注释正文，使 prepare 可改写其中的
+ * java.ajaxAll 等异步调用，并保持与 Legado `eval` 相同作用域（run / host 等泄漏到外层）。
+ */
+export function inlineBookSourceCommentEvals(
+  script: string,
+  sourceComment: string | null | undefined,
+): string {
+  if (sourceComment == null || sourceComment === "") return script;
+  if (!/\beval\s*\(\s*(?:String\s*\(\s*)?source\.bookSourceComment/.test(script)) {
+    return script;
+  }
+  // 注释自身再 eval 自身时避免死循环
+  if (/\beval\s*\(\s*(?:String\s*\(\s*)?source\.bookSourceComment/.test(sourceComment)) {
+    return script;
+  }
+  return script
+    .replace(
+      /\beval\s*\(\s*String\s*\(\s*source\.bookSourceComment\s*\)\s*\)\s*;?/g,
+      // 必须用函数替换：字符串替换会把注释里的 $$ 吃成 $（MDN: $$ → $）
+      () => `${sourceComment}\n`,
+    )
+    .replace(
+      /\beval\s*\(\s*source\.bookSourceComment\s*\)\s*;?/g,
+      () => `${sourceComment}\n`,
+    );
 }
 
 /**
@@ -316,7 +550,7 @@ export function awaitAsyncFunctionCalls(script: string): string {
 /** 交替提升 async 与补 await，直到嵌套调用链稳定 */
 export function promoteLegadoAsyncCallChain(script: string): string {
   let s = script;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 8; i++) {
     const next = awaitAsyncFunctionCalls(promoteFunctionsToAsyncForAwait(s));
     if (next === s) break;
     s = next;
@@ -328,7 +562,7 @@ const JAVA_HTTP_CHAIN_MEMBER =
   /^(matchAll|match|trim|replace|split|slice|substring|indexOf|includes|startsWith|body|header|headers|code|url|raw)\s*\(/;
 
 function wrapAwaitJavaHttpMemberAccess(script: string): string {
-  const methods = ["ajax", "connect", "get", "post"] as const;
+  const methods = ["ajax", "connect"] as const;
   let s = script;
 
   for (const method of methods) {
@@ -379,24 +613,71 @@ export function prepareLegadoAsyncJs(script: string): string {
   const asyncJavaCalls = [
     "startBrowserAwait",
     "ajax",
+    "ajaxAll",
     "connect",
-    "get",
-    "post",
+    // 注意：勿把 get/post 算作异步 HTTP——java.get/put 是变量 API；
+    // 误 await java.get('url') 且替换串含 `$` 时还会污染后续脚本（如 resul）。
     "getVerificationCode",
   ] as const;
   for (const name of asyncJavaCalls) {
-    if (!new RegExp(`\\bawait\\s+java\\.${name}\\s*\\(`).test(s)) {
-      s = s.replace(
-        new RegExp(`\\bjava\\.${name}\\s*\\(`, "g"),
-        `await java.${name}(`,
-      );
-    }
+    s = s.replace(
+      new RegExp(`(?<!await\\s{1,4})\\bjava\\.${name}\\s*\\(`, "g"),
+      `await java.${name}(`,
+    );
   }
+
+  // java.ajaxAll([...])[i] → (await java.ajaxAll([...]))[i]
+  s = s.replace(
+    /await\s+java\.ajaxAll\(((?:[^()]|\([^()]*\))*)\)\s*\[/g,
+    "(await java.ajaxAll($1))[",
+  );
 
   s = wrapAwaitJavaHttpMemberAccess(s);
 
   s = s.replace(/\bawait\s+await\s+/g, "await ");
   s = promoteLegadoAsyncCallChain(s);
+  // await run("data").map(...) → (await run("data")).map(...)
+  s = wrapAwaitCallMemberAccess(s);
 
   return `(async () => { ${s} })()`;
+}
+
+/**
+ * `await fn(...).member` 实际是 `await (fn(...).member)`（. 优先于 await）。
+ * 异步 fn 返回 Promise 时须写成 `(await fn(...)).member`。
+ */
+function wrapAwaitCallMemberAccess(script: string): string {
+  let s = script;
+  while (true) {
+    let wrapAt = -1;
+    let wrapClose = -1;
+
+    for (let pos = 0; pos < s.length; ) {
+      const m = /\bawait\s+[A-Za-z_$][\w$]*\s*\(/.exec(s.slice(pos));
+      if (!m) break;
+      const start = pos + m.index!;
+      pos = start + 1;
+
+      const openParen = start + m[0].length - 1;
+      const closeParen = findMatchingParen(s, openParen);
+      if (closeParen < 0) continue;
+
+      const after = s.slice(closeParen + 1);
+      if (!after.startsWith(".") || !/^[A-Za-z_$]/.test(after.slice(1))) {
+        continue;
+      }
+
+      const alreadyWrapped =
+        start > 0 && s[start - 1] === "(" && s[closeParen + 1] === ")";
+      if (alreadyWrapped) continue;
+
+      wrapAt = start;
+      wrapClose = closeParen;
+    }
+
+    if (wrapAt < 0) break;
+    s = `${s.slice(0, wrapAt)}(${s.slice(wrapAt, wrapClose + 1)})${s.slice(wrapClose + 1)}`;
+  }
+
+  return s;
 }

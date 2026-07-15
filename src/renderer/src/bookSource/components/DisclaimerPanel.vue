@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import AppModal from "./AppModal.vue";
-import { APP_DISPLAY_NAME } from "../constants/appUi";
+import AppModal from "../../components/AppModal.vue";
+import { APP_DISPLAY_NAME } from "../../constants/appUi";
 
 const modelValue = defineModel<boolean>({ default: false });
 

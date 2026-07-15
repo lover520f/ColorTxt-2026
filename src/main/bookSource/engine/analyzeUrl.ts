@@ -43,9 +43,12 @@ export type UrlFetchOptions = {
   webView?: boolean;
   webViewDelayTime?: number;
   headers?: Record<string, string>;
+  /** Legado UrlOption.type：非空时响应正文改为 hex 字符串 */
+  type?: string;
 };
 
-const PARAM_JSON_PATTERN = /,\s*(?=\{)/;
+/** URL 后缀 JSON 选项：`,` + `{`，但勿匹配 Mustache 模板 `{{...}}` */
+const PARAM_JSON_PATTERN = /,\s*(?=\{(?!\{))/;
 
 const EMPTY_BODY_MD5_STUB = "D41D8CD98F00B204E9800998ECF8427E";
 
@@ -82,7 +85,12 @@ function resolveGetRequestUrl(
   method: string,
 ): string {
   const plainUrl = url.split(",")[0].trim();
-  if (method !== "GET") return urlNoQuery;
+  // Legado POST：urlNoQuery 可带 query（product 等），勿剥成光 path
+  if (method !== "GET") {
+    if (urlNoQuery.includes("?")) return urlNoQuery.split(",")[0].trim();
+    if (plainUrl.includes("?")) return plainUrl;
+    return urlNoQuery.split(",")[0].trim();
+  }
   if (hasGorgonHeader(headers) && plainUrl.includes("?")) return plainUrl;
   if (fieldMap.size > 0) return buildQueryUrl(urlNoQuery, fieldMap);
   if (plainUrl.includes("?")) return plainUrl;
@@ -123,6 +131,7 @@ export function splitUrlFetchOptions(ruleUrl: string): {
     method: parsed.method,
     body: parsed.body,
     charset: parsed.charset,
+    type: parsed.type,
   });
   return { urlPart: ruleUrl.slice(0, m.index), options };
 }
@@ -225,6 +234,64 @@ function toFetchBody(body: string | Buffer | undefined): BodyInit | undefined {
   if (body == null) return undefined;
   if (Buffer.isBuffer(body)) return new Uint8Array(body);
   return body;
+}
+
+/** 书源 HTTP 正文上限，防止异常响应把主进程内存撑爆（界面卡死） */
+const BOOK_SOURCE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+
+async function readResponseBytesCapped(
+  res: Response,
+  maxBytes: number,
+  meta: { logs?: string[]; url?: string; sourceName?: string },
+): Promise<Buffer> {
+  const lenHeader = res.headers.get("content-length");
+  if (lenHeader) {
+    const n = Number(lenHeader);
+    if (Number.isFinite(n) && n > maxBytes) {
+      try {
+        res.body?.cancel();
+      } catch {
+        /* ignore */
+      }
+      const msg = `响应过大 (${n} > ${maxBytes} bytes): ${meta.url ?? ""}`;
+      meta.logs?.push(`[HTTP] ${msg}`);
+      throw new Error(msg);
+    }
+  }
+
+  if (!res.body) {
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        try {
+          await reader.cancel();
+        } catch {
+          /* ignore */
+        }
+        const msg = `响应超过 ${maxBytes} bytes，已中止: ${meta.url ?? ""}`;
+        meta.logs?.push(`[HTTP] ${msg}`);
+        throw new Error(msg);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* ignore */
+    }
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c)));
 }
 
 function decodeResponseBody(
@@ -491,6 +558,25 @@ export class AnalyzeUrl {
     const charset = this.urlFetchOptions.charset;
     this.method =
       this.urlFetchOptions.method?.toUpperCase() === "POST" ? "POST" : "GET";
+
+    // Legado：POST 保留 URL 上的 query（如 Lofter ?product=…），表单在 body；
+    // GET 才把 query 拆进 fieldMap。
+    if (this.method === "POST") {
+      this.url = u;
+      this.urlNoQuery = u;
+      this.fieldMap = new Map();
+      if (this.urlFetchOptions.body != null) {
+        const postBody = this.urlFetchOptions.body;
+        if (!isJsonOrXml(postBody)) {
+          this.fieldMap = analyzeFields(postBody, charset);
+          this.body = null;
+        } else {
+          this.body = postBody;
+        }
+      }
+      return;
+    }
+
     const qPos = u.indexOf("?");
     if (qPos >= 0) {
       this.urlNoQuery = u.slice(0, qPos);
@@ -507,15 +593,6 @@ export class AnalyzeUrl {
       this.urlNoQuery = u;
       this.url = u;
     }
-    if (this.method === "POST" && this.urlFetchOptions.body != null) {
-      const postBody = this.urlFetchOptions.body;
-      if (!isJsonOrXml(postBody)) {
-        this.fieldMap = analyzeFields(postBody, charset);
-        this.body = null;
-      } else {
-        this.body = postBody;
-      }
-    }
   }
 
   private parseDataUrl(u: string): void {
@@ -524,7 +601,7 @@ export class AnalyzeUrl {
       this.url = u;
       return;
     }
-    const type = m[1] ?? "";
+    const dataType = m[1] ?? "";
     const meta = m[2] ?? "";
     let payload = m[3] ?? "";
     if (meta.includes("base64")) {
@@ -532,9 +609,17 @@ export class AnalyzeUrl {
     }
     this.body = payload;
     this.url = u;
-    this.type = type;
+    this.type = dataType;
   }
   type?: string;
+
+  /** Legado：UrlOption.type 非空时 body 为 hex（供 java.hexDecodeToString） */
+  private applyTypeHexBody(body: string): string {
+    const optionType = this.urlFetchOptions.type?.trim();
+    if (!optionType) return body;
+    return Buffer.from(body, "utf8").toString("hex");
+  }
+
   async getStrResponse(opts?: { skipRateLimit?: boolean }): Promise<StrResponse> {
     return withSourceRateLimit(
       this.source,
@@ -545,8 +630,15 @@ export class AnalyzeUrl {
 
   private async getStrResponseInner(): Promise<StrResponse> {
     await this.ensureUrlReady();
-    if (this.body != null && this.url.startsWith("data:")) {
-      return { url: this.url, body: this.body, headers: {} };
+    if (this.url.startsWith("data:")) {
+      if (this.body == null) {
+        throw new Error(`无效 data URL（缺少正文）: ${this.url.slice(0, 96)}`);
+      }
+      return {
+        url: this.url,
+        body: this.applyTypeHexBody(this.body),
+        headers: {},
+      };
     }
 
     const webJs =
@@ -563,7 +655,10 @@ export class AnalyzeUrl {
         host: this.host,
         delayMs: this.urlFetchOptions.webViewDelayTime ?? undefined,
       });
-      return { url: this.url, body: webBody, headers: {} };
+      const body = this.urlFetchOptions.type?.trim()
+        ? this.applyTypeHexBody(webBody)
+        : webBody;
+      return { url: this.url, body, headers: {} };
     }
 
     let res = await fetchStrResponse(this.url, {
@@ -612,6 +707,9 @@ export class AnalyzeUrl {
       if (m?.[0]) {
         res = { ...res, body: m[0] };
       }
+    }
+    if (this.urlFetchOptions.type?.trim()) {
+      return { ...res, body: this.applyTypeHexBody(res.body) };
     }
     return res;
   }
@@ -703,10 +801,15 @@ async function fetchStrResponseInner(
     if (split.options.method) method = split.options.method;
     if (split.options.body != null) body = split.options.body;
     if (split.options.charset) charset = split.options.charset;
+    const isPost = method.toUpperCase() === "POST";
     const qPos = url.indexOf("?");
-    if (qPos >= 0) {
+    // Legado：仅 GET 拆 query；POST 保留 ?product=… 并在 body 提交表单
+    if (qPos >= 0 && !isPost) {
       urlNoQuery = url.slice(0, qPos);
       fieldMap = analyzeFields(url.slice(qPos + 1), charset);
+    } else if (isPost && typeof body === "string" && body && !body.trim().startsWith("{") && !body.trim().startsWith("<")) {
+      fieldMap = analyzeFields(body, charset);
+      body = undefined;
     }
   }
 
@@ -757,6 +860,7 @@ async function fetchStrResponseInner(
         headers,
         body: toFetchBody(requestBody),
         redirect: opts.redirect ?? "follow",
+        signal: AbortSignal.timeout(15_000),
         dispatcher,
       } as RequestInit & { dispatcher?: unknown });
     } catch (e) {
@@ -770,7 +874,11 @@ async function fetchStrResponseInner(
       throw e;
     }
   })();
-  const raw = Buffer.from(await res.arrayBuffer());
+  const raw = await readResponseBytesCapped(res, BOOK_SOURCE_MAX_RESPONSE_BYTES, {
+    logs: opts.logs,
+    url: requestUrl,
+    sourceName: opts.source?.bookSourceName,
+  });
   const text = decodeResponseBody(
     raw,
     charset,

@@ -1,4 +1,7 @@
 import { createDecipheriv, createHash, createHmac } from "node:crypto";
+import { createOrgPackage } from "./legadoJsoupShim";
+
+export { createOrgPackage } from "./legadoJsoupShim";
 
 function isByteLike(value: unknown): value is Uint8Array {
   return (
@@ -24,8 +27,9 @@ function toBuffer(value: unknown): Buffer {
   return Buffer.from(value as Uint8Array);
 }
 
-/** Legado Packages.* — 深代理，避免 importPackage(Packages.java.lang) 报错 */
+/** Legado Packages.* — 深代理；Packages.org 提供 jsoup 等真实包 */
 export function createPackagesStub(): Record<string, unknown> {
+  const org = createOrgPackage();
   const proxy = (): object =>
     new Proxy(
       function () {
@@ -45,6 +49,7 @@ export function createPackagesStub(): Record<string, unknown> {
     {
       get(_t, prop) {
         if (prop === "then") return undefined;
+        if (prop === "org") return org;
         return proxy();
       },
     },

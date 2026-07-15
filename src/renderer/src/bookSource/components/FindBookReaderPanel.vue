@@ -11,20 +11,28 @@ import {
 } from "vue";
 import AppModal from "../../components/AppModal.vue";
 import IconButton from "../../components/IconButton.vue";
+import LoadingDotsBounce from "../../components/LoadingDotsBounce.vue";
+import LoadingDotsRotate from "../../components/LoadingDotsRotate.vue";
+import RefreshIcon from "../../components/RefreshIcon.vue";
 import VirtualList from "../../components/VirtualList.vue";
 import ReaderMain from "../../components/ReaderMain.vue";
 import VoiceReadToolbar from "../../components/VoiceReadToolbar.vue";
 import ReaderChapterNavBar from "../../components/ReaderChapterNavBar.vue";
 import FindBookReaderHeader from "./FindBookReaderHeader.vue";
 import EditBookSourcePanel from "./EditBookSourcePanel.vue";
+import BookSourceLoginPanel from "./BookSourceLoginPanel.vue";
 import AppShellMenuTeleport from "../../components/AppShellMenuTeleport.vue";
 import { icons } from "../../icons";
 import type {
   BookChapter,
   BookDetail,
+  BookSourceRecord,
   SearchBookItem,
 } from "@shared/bookSource/types";
-import { useBookSourceChapterContent } from "../composables/useBookSource";
+import {
+  useBookSourceChapterContent,
+  useBookSourceDownload,
+} from "../composables/useBookSource";
 import { useFindBookBookshelf } from "../composables/useFindBookBookshelf";
 import { updateFindBookBookshelfBookInfo } from "../findBookBookshelf";
 import { useFindBookReaderSettings } from "../composables/useFindBookReaderSettings";
@@ -48,7 +56,6 @@ import { useChapterCacheMarks } from "../composables/useChapterCacheMarks";
 import { confirmClearBookChapterCache } from "../services/clearBookChapterCache";
 import { sortContentChaptersDisplay } from "../sortContentChaptersDisplay";
 import {
-  readerTxtLoadingHintText,
   FIND_BOOK_SIDEBAR_MIN_WIDTH,
   SIDEBAR_MIN_READER_WIDTH,
   persistKey,
@@ -70,12 +77,17 @@ import {
   formatFindBookWindowTitle,
 } from "@shared/findBookWindowTitle";
 
-const props = defineProps<{
-  item: SearchBookItem;
-  detail: BookDetail;
-  chapters: BookChapter[];
-  initialChapterIndex?: number;
-}>();
+const props = withDefaults(
+  defineProps<{
+    item: SearchBookItem;
+    detail: BookDetail;
+    chapters: BookChapter[];
+    initialChapterIndex?: number;
+    /** 书架首次打开：目录尚未就绪，阅读区内显示加载中 */
+    tocLoading?: boolean;
+  }>(),
+  { tocLoading: false },
+);
 
 const modelValue = defineModel<boolean>({ default: false });
 
@@ -83,6 +95,8 @@ const emit = defineEmits<{
   openSettings: [];
   openBookDetail: [];
   chapterCacheCleared: [];
+  /** 重新获取目录后同步父级 detail/chapters */
+  tocRefreshed: [payload: { detail: BookDetail; chapters: BookChapter[] }];
 }>();
 
 const readerRef = ref<InstanceType<typeof ReaderMain> | null>(null);
@@ -91,6 +105,13 @@ const chapterListRef = ref<InstanceType<typeof VirtualList> | null>(null);
 const showEditSource = ref(false);
 const editingSourceUrl = ref<string | null>(null);
 const editSourceInitialTab = ref<BookSourceEditTab>("content");
+const showLogin = ref(false);
+const loginSource = ref<BookSourceRecord | null>(null);
+const sourceNeedsLogin = ref(false);
+/** 用户点击「刷新」强制重拉当前章节 */
+const refreshingChapter = ref(false);
+/** 侧栏「重新获取目录」 */
+const refreshingToc = ref(false);
 
 const topMoreBtnRef = ref<HTMLElement | null>(null);
 const topMoreMenu = useAnchoredAppShellMenu({
@@ -121,6 +142,8 @@ const viewportVisualProgressPercent = ref(0);
 const viewportAtBottom = ref(false);
 const readerEditMode = ref(false);
 const loading = ref(false);
+/** 仅切到未缓存章节时为 true，控制侧栏 loading 图标与「加载中」提示 */
+const showChapterLoadingUi = ref(false);
 const showSidebar = ref(true);
 
 const settings = useFindBookReaderSettings();
@@ -169,6 +192,12 @@ const {
 
 const { loading: chapterLoading, error: chapterError, logs, load: loadChapterContent, cancel: cancelChapterLoad } =
   useBookSourceChapterContent();
+const {
+  downloading: offlineCaching,
+  downloadProgress: offlineCacheProgress,
+  download: startOfflineCacheDownload,
+  cancel: cancelOfflineCache,
+} = useBookSourceDownload();
 const { isInBookshelf, toggle: toggleBookshelf, updateReadProgress } =
   useFindBookBookshelf();
 
@@ -184,6 +213,44 @@ const {
   bookUrl: () => props.detail.bookUrl || "",
   chapterUrls: () => contentChapters.value.map((ch) => ch.url),
   cacheDir: () => effectiveCacheDir.value,
+});
+
+/** 离线缓存进行中、尚未写入勾标集合的当前章 */
+function isChapterOfflineCaching(ch: BookChapter | undefined): boolean {
+  if (!offlineCaching.value || !ch?.url) return false;
+  if (offlineCacheProgress.value.chapterUrl !== ch.url) return false;
+  return !isChapterCached(ch);
+}
+
+const offlineCacheProgressPercent = computed(() => {
+  const { current, total } = offlineCacheProgress.value;
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((current / total) * 100));
+});
+
+const offlineCacheProgressLabel = computed(() => {
+  const { current, total } = offlineCacheProgress.value;
+  return `缓存进度：${current}/${total}`;
+});
+
+watch(
+  () =>
+    [
+      offlineCacheProgress.value.chapterUrl,
+      offlineCacheProgress.value.current,
+    ] as const,
+  ([url], prev) => {
+    if (!offlineCaching.value) return;
+    const prevUrl = prev?.[0];
+    if (prevUrl && prevUrl !== url) markChapterCached(prevUrl);
+  },
+);
+
+watch(offlineCaching, (v, was) => {
+  if (was && !v) {
+    const url = offlineCacheProgress.value.chapterUrl;
+    if (url) markChapterCached(url);
+  }
 });
 
 const inBookshelf = computed(() =>
@@ -300,6 +367,25 @@ const showReaderLogBtn = computed(
   () => Boolean(chapterError.value) || hasReaderLogs.value,
 );
 const readerLogHasError = computed(() => Boolean(chapterError.value));
+/** 顶栏/正文加载遮罩：目录拉取中（不含侧栏「重新获取目录」） */
+const readerBootLoading = computed(() => props.tocLoading);
+
+watch(
+  () => props.item.origin?.trim() ?? "",
+  async (origin) => {
+    if (!origin) {
+      sourceNeedsLogin.value = false;
+      return;
+    }
+    try {
+      const source = await window.colorTxt.bookSourceGet(origin);
+      sourceNeedsLogin.value = Boolean(source?.loginUrl?.trim());
+    } catch {
+      sourceNeedsLogin.value = false;
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   () =>
@@ -374,14 +460,16 @@ function displayIndexForContentIndex(contentIndex: number): number {
   return idx >= 0 ? idx : 0;
 }
 
-function scrollChapterListToCurrent(options?: { force?: boolean; smooth?: boolean }) {
+async function scrollChapterListToCurrent(options?: {
+  force?: boolean;
+  smooth?: boolean;
+}): Promise<void> {
   const { force = false, smooth = false } = options ?? {};
-  void nextTick(() => {
-    chapterListRef.value?.scrollToIndex(currentDisplayIndex.value, {
-      align: "center",
-      force,
-      behavior: smooth ? "smooth" : "auto",
-    });
+  await nextTick();
+  await chapterListRef.value?.scrollToIndex(currentDisplayIndex.value, {
+    align: "center",
+    force,
+    behavior: smooth ? "smooth" : "auto",
   });
 }
 
@@ -558,7 +646,24 @@ async function renderChapterText(
   opts?: { resetScroll?: boolean },
 ) {
   const convertOpts = textConvertOptions();
-  let text = heading.trim() ? `${heading.trim()}\n${body}` : body;
+  const rawTitle = heading.trim();
+  // 正文若已带章节名（旧缓存 / ##{{title}} 未生效），先剥离再拼回一行，
+  // 避免「橙色章节装饰行 + 正文里又一行黑字标题」
+  let bodyText = body;
+  if (rawTitle) {
+    try {
+      const titlePat = rawTitle
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        .replace(/\s+/g, "\\s*");
+      bodyText = bodyText.replace(
+        new RegExp(`^(?:\\s|\\p{P})*${titlePat}\\s*`, "u"),
+        "",
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+  let text = rawTitle ? `${rawTitle}\n${bodyText}` : bodyText;
   text = await applyTextDisplayConverts(text, convertOpts);
   const formatted = formatPhysicalPlainTextForReader(text, {
     compressBlankLines: compressBlankLines.value,
@@ -576,7 +681,6 @@ async function renderChapterText(
     heavy: false,
     resetScroll: opts?.resetScroll ?? true,
   });
-  const rawTitle = heading.trim();
   if (rawTitle) {
     const lineNumber =
       formatted.chapterTitleDisplayLineByPhysical.get(1) ?? 1;
@@ -594,17 +698,27 @@ async function renderChapterText(
 
 async function loadChapterAtDisplayIndex(
   index: number,
-  options?: { smoothScroll?: boolean },
+  options?: { smoothScroll?: boolean; preferCache?: boolean },
 ) {
   const ch = displayChapters.value[index];
   if (!ch) return;
   const contentIndex = contentIndexFor(ch);
   if (contentIndex < 0) return;
+  const preferCache = options?.preferCache !== false;
+  const fromCache = preferCache && isChapterCached(ch);
+  const wantSmooth = options?.smoothScroll ?? true;
   currentDisplayIndex.value = index;
   loading.value = true;
-  readerRef.value?.scrollToDocumentStart(false);
+  showChapterLoadingUi.value = !fromCache;
   cancelChapterLoad();
-  scrollChapterListToCurrent({ smooth: options?.smoothScroll ?? true });
+  // 先启动侧栏居中动画，避免与 Monaco 正文写入抢主线程导致卡顿
+  const scrollDone = scrollChapterListToCurrent({ smooth: wantSmooth });
+  if (!fromCache) {
+    // 未缓存 / 强制刷新：遮罩盖住旧正文，切章期间不做 Monaco 清空（避免卡列表动画）
+    readerContentKey.value = null;
+    lastChapterTitle.value = "";
+    lastChapterBody.value = "";
+  }
   const listLen = displayChapters.value.length;
   const readingIdx = readingOrderIndexFromDisplay(
     index,
@@ -632,11 +746,14 @@ async function loadChapterAtDisplayIndex(
       chapterIndex: contentIndex,
       nextChapterUrl: nextInReadingOrder?.url,
       cacheDir: effectiveCacheDir.value.trim() || undefined,
+      preferCache,
     });
     if (body == null) {
       if (chapterError.value) appToast(chapterError.value);
       return;
     }
+    // 缓存命中往往立刻返回：等列表动画结束再写正文，避免与 rAF 平滑滚动抢帧
+    if (wantSmooth) await scrollDone;
     markChapterCached(ch.url);
     readerContentKey.value = `findbook://${props.detail.bookUrl}#${ch.url}`;
     lastChapterTitle.value = ch.title;
@@ -652,13 +769,19 @@ async function loadChapterAtDisplayIndex(
     }
   } finally {
     loading.value = false;
+    showChapterLoadingUi.value = false;
     await ensureChapterScrollAtTop();
   }
 }
 
+function isChapterLoading(index: number): boolean {
+  return showChapterLoadingUi.value && index === currentDisplayIndex.value;
+}
+
 function onChapterClick(index: number) {
   if (voiceRead.isVoiceReadNavigationBlocked.value) return;
-  if (index === currentDisplayIndex.value && !chapterLoading.value) return;
+  if (index === currentDisplayIndex.value && !loading.value && !chapterLoading.value)
+    return;
   void loadChapterAtDisplayIndex(index);
 }
 
@@ -702,7 +825,7 @@ function goToNextChapter() {
 
 /** 定时滚动 / 语音朗读续章：不受「朗读中禁止跳转」限制 */
 function advanceToNextChapterForAutoRead() {
-  if (!canGoNextChapter.value || chapterLoading.value) return;
+  if (!canGoNextChapter.value || chapterContentBusy.value) return;
   void loadChapterAtDisplayIndex(
     displayIndexForReadingOrder(
       currentReadingOrderIndex.value + 1,
@@ -712,13 +835,18 @@ function advanceToNextChapterForAutoRead() {
   );
 }
 
+/** 切章清空正文到新章写入完成（含网络拉取）期间为 true */
+const chapterContentBusy = computed(
+  () => loading.value || chapterLoading.value,
+);
+
 const voiceRead = useAppVoiceRead({
   readerRef,
   voiceReadSettings,
   voiceReadProfiles,
   activeVoiceReadProfileId,
   currentFile: readerContentKey,
-  loading: chapterLoading,
+  loading: chapterContentBusy,
   readerEditMode,
   monacoSmoothScrolling,
   aiFeaturesEnabled,
@@ -738,7 +866,7 @@ const canStartVoiceRead = voiceRead.canStartVoiceRead;
 
 const chapterNavBusy = computed(
   () =>
-    chapterLoading.value ||
+    chapterContentBusy.value ||
     (isVoiceReadActive.value && voiceRead.mode.value === "playing"),
 );
 
@@ -784,7 +912,7 @@ const timedScroll = useAppTimedScroll({
   readerRef,
   timedScrollSettings,
   currentFile: readerContentKey,
-  loading: chapterLoading,
+  loading: chapterContentBusy,
   readerEditMode,
   viewportAtBottom,
   isVoiceReadActive: voiceRead.isVoiceReadActive,
@@ -863,6 +991,132 @@ function onEditBookSource() {
   showEditSource.value = true;
 }
 
+async function onLogin() {
+  const origin = props.item.origin?.trim();
+  if (!origin) {
+    appToast("书源不存在", { kind: "warning" });
+    return;
+  }
+  const source = await window.colorTxt.bookSourceGet(origin);
+  if (!source?.loginUrl?.trim()) {
+    appToast("此书源未配置登录", { kind: "warning" });
+    return;
+  }
+  // 对齐 Legado SourceLoginActivity：无 loginUi → WebView；有 loginUi → 弹层
+  if (!source.loginUi?.trim()) {
+    const r = await window.colorTxt.bookSourceBrowserLogin(
+      source.bookSourceUrl,
+      `登录 · ${source.bookSourceName}`,
+    );
+    if (r.ok) appToast("Cookie 已保存", { kind: "info" });
+    else if (!r.cancelled && r.message) appToast(r.message, { kind: "warning" });
+    return;
+  }
+  loginSource.value = source;
+  showLogin.value = true;
+}
+
+async function onRefresh() {
+  if (
+    readerBootLoading.value ||
+    chapterContentBusy.value ||
+    refreshingChapter.value
+  ) {
+    return;
+  }
+  if (!displayChapters.value[currentDisplayIndex.value]) {
+    appToast("当前没有可刷新的章节", { kind: "warning" });
+    return;
+  }
+  refreshingChapter.value = true;
+  try {
+    await loadChapterAtDisplayIndex(currentDisplayIndex.value, {
+      smoothScroll: false,
+      preferCache: false,
+    });
+  } finally {
+    refreshingChapter.value = false;
+  }
+}
+
+async function onRefreshToc() {
+  if (refreshingToc.value || props.tocLoading || offlineCaching.value) {
+    return;
+  }
+  const origin = props.item.origin?.trim();
+  const bookUrl = props.detail.bookUrl?.trim() || props.item.bookUrl?.trim();
+  if (!origin || !bookUrl) {
+    appToast("书籍信息不完整，无法刷新目录", { kind: "warning" });
+    return;
+  }
+  const currentUrl = displayChapters.value[currentDisplayIndex.value]?.url ?? "";
+  refreshingToc.value = true;
+  try {
+    const tocRes = await window.colorTxt.bookSourceGetChapterList({
+      bookSourceUrl: origin,
+      bookUrl,
+      tocUrl: props.detail.tocUrl,
+    });
+    if (tocRes.logs?.length) logs.value = tocRes.logs;
+    if (tocRes.message) {
+      appToast(tocRes.message, { kind: "warning" });
+      return;
+    }
+    const nextChapters = tocRes.chapters ?? [];
+    const contentOnly = nextChapters.filter((ch) => !ch.isVolume);
+    if (!contentOnly.length) {
+      appToast("未获取到章节", { kind: "warning" });
+      return;
+    }
+    const prevLatest = contentChapters.value[contentChapters.value.length - 1];
+    const prevLatestTitle = prevLatest?.title?.trim() ?? "";
+    const prevLatestUrl = prevLatest?.url ?? "";
+    const latest = contentOnly[contentOnly.length - 1]!;
+    const latestTitle = latest.title?.trim() ?? "";
+    const latestUrl = latest.url ?? "";
+    const latestUnchanged =
+      prevLatestUrl === latestUrl && prevLatestTitle === latestTitle;
+
+    const nextDetail: BookDetail = latestTitle
+      ? { ...props.detail, lastChapter: latestTitle }
+      : props.detail;
+    updateFindBookBookshelfBookInfo(bookUrl, origin, {
+      tocUrl: nextDetail.tocUrl,
+      chapters: nextChapters,
+      lastChapter: latestTitle,
+    });
+    emit("tocRefreshed", { detail: nextDetail, chapters: nextChapters });
+    await nextTick();
+    await refreshChapterCacheStatus();
+    const nextDisplay = sortContentChaptersDisplay(
+      contentOnly,
+      chapterSortDesc.value,
+    );
+    // 只调整侧栏选中项，不重拉正文
+    let idx = Math.min(
+      currentDisplayIndex.value,
+      Math.max(0, nextDisplay.length - 1),
+    );
+    if (currentUrl) {
+      const found = nextDisplay.findIndex((ch) => ch.url === currentUrl);
+      if (found >= 0) idx = found;
+    }
+    currentDisplayIndex.value = idx;
+    void nextTick(() => scrollChapterListToCurrent({ smooth: false }));
+    if (latestUnchanged) {
+      appToast("无更新", { kind: "info" });
+    } else {
+      appToast(`目录已更新，最新章节：${latestTitle || "（无标题）"}`, {
+        kind: "success",
+      });
+    }
+  } catch {
+    appToast("刷新目录失败", { kind: "warning" });
+  } finally {
+    refreshingToc.value = false;
+  }
+}
+
 function onEditSourceDone() {
   showEditSource.value = false;
   editingSourceUrl.value = null;
@@ -880,6 +1134,36 @@ async function onClearChapterCache() {
   if (!cleared) return;
   clearChapterCacheMarks();
   emit("chapterCacheCleared");
+}
+
+async function onStopOfflineCache() {
+  if (!offlineCaching.value) return;
+  await cancelOfflineCache();
+  appToast("已停止离线缓存", { kind: "warning" });
+}
+
+async function onStartOfflineCache() {
+  if (offlineCaching.value) return;
+  const bookUrl = props.detail.bookUrl?.trim() || props.item.bookUrl?.trim();
+  if (!bookUrl || !props.item.origin?.trim()) {
+    appToast("书籍信息不完整，无法缓存", { kind: "warning" });
+    return;
+  }
+  const result = await startOfflineCacheDownload(
+    {
+      ...props.item,
+      bookUrl,
+      name: props.detail.name?.trim() || props.item.name,
+      author: props.detail.author?.trim() || props.item.author,
+    },
+    "",
+    effectiveCacheDir.value.trim() || undefined,
+    { cacheOnly: true },
+  );
+  if (result !== null) {
+    appToast("已完成离线缓存", { kind: "success", duration: 1200 });
+    void refreshChapterCacheStatus();
+  }
 }
 
 function buildShelfItem(): SearchBookItem {
@@ -1015,6 +1299,13 @@ watch(
   },
 );
 
+async function bootstrapReaderContent() {
+  if (!modelValue.value || !displayChapters.value.length) return;
+  await refreshChapterCacheStatus();
+  const startIndex = displayIndexForContentIndex(props.initialChapterIndex ?? 0);
+  void loadChapterAtDisplayIndex(startIndex, { smoothScroll: false });
+}
+
 watch(
   modelValue,
   async (open) => {
@@ -1022,6 +1313,9 @@ watch(
       voiceRead.exitVoiceRead();
       timedScroll.stopTimedScroll();
       cancelChapterLoad();
+      if (offlineCaching.value) void cancelOfflineCache();
+      loading.value = false;
+      showChapterLoadingUi.value = false;
       readerContentKey.value = null;
       lastChapterBody.value = "";
       lastChapterTitle.value = "";
@@ -1039,12 +1333,23 @@ watch(
     applyAppShellTheme(currentTheme.value);
     await nextTick();
     applyReaderAppearance();
-    const startIndex = displayIndexForContentIndex(props.initialChapterIndex ?? 0);
-    if (displayChapters.value.length) {
-      void loadChapterAtDisplayIndex(startIndex, { smoothScroll: false });
-    }
+    await bootstrapReaderContent();
   },
   { immediate: true },
+);
+
+/** 书架先开阅读器、目录迟到时：目录就绪后加载正文 */
+watch(
+  () => [modelValue.value, props.chapters.length, props.tocLoading] as const,
+  async ([open, chapterCount, tocLoading], prev) => {
+    if (!open || tocLoading || chapterCount <= 0) return;
+    const prevCount = prev?.[1] ?? 0;
+    const wasTocLoading = prev?.[2] ?? false;
+    // 目录从空到有，或 tocLoading 刚结束且已有章节
+    if (prevCount > 0 && !wasTocLoading) return;
+    await nextTick();
+    await bootstrapReaderContent();
+  },
 );
 
 onMounted(() => {
@@ -1158,6 +1463,34 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
               aria-label="日志"
               @click="onShowLogs"
             />
+            <IconButton
+              title="重新获取当前章节（忽略缓存）"
+              aria-label="重新获取当前章节（忽略缓存）"
+              :disabled="
+                refreshingChapter ||
+                readerBootLoading ||
+                chapterContentBusy ||
+                !displayChapters.length
+              "
+              :aria-busy="refreshingChapter || undefined"
+              @click="onRefresh"
+            >
+              <RefreshIcon :spinning="refreshingChapter" />
+            </IconButton>
+            <IconButton
+              :icon-html="icons.edit"
+              title="编辑书源"
+              aria-label="编辑书源"
+              :disabled="!item.origin?.trim()"
+              @click="onEditBookSource"
+            />
+            <IconButton
+              v-if="sourceNeedsLogin"
+              :icon-html="icons.login"
+              title="登录"
+              aria-label="登录"
+              @click="onLogin"
+            />
             <div ref="topMoreBtnRef" class="findBookReaderTopMoreWrap">
               <IconButton
                 :icon-html="icons.more"
@@ -1188,18 +1521,12 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
           </button>
           <button
             type="button"
-            class="appShellMenuItem"
-            role="menuitem"
-            :disabled="!item.origin?.trim()"
-            @click="onEditBookSource"
-          >
-            <span class="appShellMenuLabel">编辑书源</span>
-          </button>
-          <button
-            type="button"
             class="appShellMenuItem appShellMenuItem--warning"
             role="menuitem"
-            :disabled="!(detail.bookUrl?.trim() || item.bookUrl?.trim())"
+            :disabled="
+              offlineCaching ||
+              !(detail.bookUrl?.trim() || item.bookUrl?.trim())
+            "
             @click="onClearChapterCache"
           >
             <span class="appShellMenuLabel">清除缓存</span>
@@ -1270,20 +1597,89 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
             <div class="sidebarHeader">
               <div class="sidebarHeaderStart">
                 <span class="sidebarHeaderTitle">章节</span>
+                <IconButton
+                  title="重新获取目录"
+                  aria-label="重新获取目录"
+                  :disabled="
+                    refreshingToc ||
+                    tocLoading ||
+                    offlineCaching ||
+                    !(detail.bookUrl?.trim() || item.bookUrl?.trim())
+                  "
+                  :aria-busy="refreshingToc || undefined"
+                  @click="onRefreshToc"
+                >
+                  <RefreshIcon :spinning="refreshingToc" />
+                </IconButton>
               </div>
-              <div v-if="displayChapters.length" class="sidebarHeaderEnd">
+              <div
+                v-if="displayChapters.length || readerBootLoading"
+                class="sidebarHeaderEnd"
+              >
+                <IconButton
+                  :icon-html="icons.cache"
+                  title="离线缓存"
+                  aria-label="离线缓存"
+                  :disabled="
+                    readerBootLoading ||
+                    refreshingToc ||
+                    offlineCaching ||
+                    !(detail.bookUrl?.trim() || item.bookUrl?.trim())
+                  "
+                  @click="onStartOfflineCache"
+                />
                 <IconButton
                   :icon-html="chapterSortDesc ? icons.desc : icons.asc"
                   :title="chapterSortDesc ? '倒序' : '正序'"
                   :aria-label="chapterSortDesc ? '切换为正序' : '切换为倒序'"
                   :pressed="chapterSortDesc"
+                  :disabled="
+                    readerBootLoading ||
+                    refreshingToc ||
+                    !displayChapters.length
+                  "
                   @click="toggleChapterSort"
+                />
+              </div>
+            </div>
+            <div
+              v-if="offlineCaching"
+              class="sidebarCacheBar"
+              role="progressbar"
+              :aria-valuenow="offlineCacheProgress.current"
+              aria-valuemin="0"
+              :aria-valuemax="offlineCacheProgress.total"
+              :aria-label="offlineCacheProgressLabel"
+            >
+              <span class="sidebarCacheBarLabel">{{
+                offlineCacheProgressLabel
+              }}</span>
+              <button
+                type="button"
+                class="link danger sidebarCacheBarStop"
+                @click="onStopOfflineCache"
+              >
+                停止
+              </button>
+              <div class="sidebarCacheBarTrack" aria-hidden="true">
+                <div
+                  class="sidebarCacheBarFill"
+                  :style="{ width: `${offlineCacheProgressPercent}%` }"
                 />
               </div>
             </div>
             <div class="sidebarListWrap">
               <div class="sidebarTabBody">
-                <div v-if="!displayChapters.length" class="empty">暂无章节</div>
+                <div v-if="!displayChapters.length" class="empty">
+                  <span
+                    v-if="readerBootLoading"
+                    class="findBookReaderLoadingHint"
+                    aria-live="polite"
+                  >
+                    加载中<LoadingDotsBounce />
+                  </span>
+                  <template v-else>暂无章节</template>
+                </div>
                 <div v-else class="sidebarListViewportPad">
                   <VirtualList
                     ref="chapterListRef"
@@ -1311,8 +1707,20 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
                           aria-label="VIP"
                         />
                         <span class="itemName">{{ chapterDisplayTitle(index) }}</span>
+                        <LoadingDotsRotate
+                          v-if="isChapterLoading(index)"
+                          class="findBookReaderChapterLoading"
+                          title="加载中"
+                          aria-label="加载中"
+                        />
+                        <LoadingDotsRotate
+                          v-else-if="isChapterOfflineCaching(displayChapters[index])"
+                          class="findBookReaderChapterLoading"
+                          title="正在缓存"
+                          aria-label="正在缓存"
+                        />
                         <span
-                          v-if="isChapterCached(displayChapters[index])"
+                          v-else-if="isChapterCached(displayChapters[index])"
                           class="findBookReaderChapterCached"
                           v-html="icons.ok"
                           title="已离线缓存"
@@ -1341,16 +1749,25 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
           class="findBookReaderMainWrap"
           :style="fullscreenReaderPaneStyle"
         >
-          <p v-if="chapterLoading && !readerContentKey" class="findBookReaderLoading">
-            {{ readerTxtLoadingHintText }}
+          <p
+            v-if="readerBootLoading || showChapterLoadingUi"
+            class="findBookReaderLoading"
+            aria-live="polite"
+          >
+            <span class="findBookReaderLoadingHint">
+              加载中<LoadingDotsBounce />
+            </span>
           </p>
-          <p v-else-if="chapterError && !readerContentKey" class="findBookReaderError">
+          <p
+            v-else-if="chapterError && !readerContentKey"
+            class="findBookReaderError"
+          >
             {{ chapterError }}
           </p>
           <ReaderMain
             ref="readerRef"
             class="readerPane findBookReaderMain"
-            :stream-loading="chapterLoading"
+            :stream-loading="readerBootLoading || showChapterLoadingUi"
             :voice-read-scroll-locked="isVoiceReadScrollLocked"
             :voice-read-paused="isVoiceReadActive && voiceRead.mode.value === 'paused'"
             :voice-read-blocks-find="isVoiceReadBlocksFind"
@@ -1424,6 +1841,7 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
       :initial-tab="editSourceInitialTab"
       @done="onEditSourceDone"
     />
+    <BookSourceLoginPanel v-model="showLogin" :source="loginSource" />
   </AppModal>
 </template>
 
@@ -1669,6 +2087,7 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
 }
 .sidebarListWrap {
   flex: 1;
@@ -1730,7 +2149,8 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.findBookReaderChapterCached {
+.findBookReaderChapterCached,
+.findBookReaderChapterLoading {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -1738,6 +2158,9 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
   width: 16px;
   height: 16px;
   color: var(--muted);
+}
+.findBookReaderChapterLoading {
+  color: var(--accent);
 }
 .findBookReaderChapterCached :deep(svg) {
   width: 14px;
@@ -1767,6 +2190,46 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
   font-size: 12px;
   color: var(--secondary);
 }
+.sidebarCacheBar {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  user-select: none;
+}
+.sidebarCacheBarLabel {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebarCacheBarStop {
+  flex-shrink: 0;
+}
+.sidebarCacheBarTrack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  z-index: 1;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  overflow: hidden;
+}
+.sidebarCacheBarFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
 .sidebarTabFooter {
   flex-shrink: 0;
   display: flex;
@@ -1792,10 +2255,14 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
   display: inline-flex;
   width: 14px;
   flex-shrink: 0;
+  color: var(--warning);
 }
 .findBookReaderChapterLock :deep(svg) {
   width: 14px;
   height: 14px;
+}
+.findBookReaderChapterLock :deep(svg path) {
+  fill: currentColor;
 }
 .findBookReaderMainWrap {
   flex: 1;
@@ -1825,6 +2292,12 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
   text-align: center;
   z-index: 2;
   pointer-events: none;
+  background: var(--reader-bg);
+}
+.findBookReaderLoadingHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 .findBookReaderError {
   position: absolute;

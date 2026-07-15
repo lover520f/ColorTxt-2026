@@ -8,7 +8,12 @@ import {
   wrapLegadoChapterForJs,
   type LegadoVariableSync,
 } from "./legadoRuleEntity";
-import { createJavaImporter, createPackagesStub } from "./legadoJavaShims";
+import { createJavaImporter, createOrgPackage, createPackagesStub } from "./legadoJavaShims";
+import {
+  BOOK_SOURCE_JS_TIMEOUT_MS,
+  raceWithJsTimeout,
+  toBookSourceJsTimeoutError,
+} from "./bookSourceJsTimeout";
 
 type SharedScopeEntry = {
   sandbox: Record<string, unknown>;
@@ -17,13 +22,14 @@ type SharedScopeEntry = {
 const scopeCache = new Map<string, SharedScopeEntry>();
 
 /** java.lang.String 等 shim 变更时递增，避免沿用过期 sandbox */
-const JS_LIB_SHIM_VERSION = "4";
+const JS_LIB_SHIM_VERSION = "5";
 
 const SANDBOX_RESERVED = new Set([
   "globalThis",
   "javaImport",
   "JavaImporter",
   "Packages",
+  "org",
 ]);
 
 function jsLibCacheKey(jsLib: string): string {
@@ -72,6 +78,7 @@ function createSandboxShell(log: (msg: string) => void): Record<string, unknown>
     encodeURI,
     decodeURI,
     Packages: createPackagesStub(),
+    org: createOrgPackage(),
     JavaImporter: function JavaImporter() {
       return createJavaImporter(log);
     },
@@ -88,11 +95,13 @@ function loadSharedJsLib(jsLib: string, log: (msg: string) => void): SharedScope
   const sandbox = createSandboxShell(log);
   vm.createContext(sandbox);
   try {
-    vm.runInContext(prepareJsLib(jsLib), sandbox);
+    vm.runInContext(prepareJsLib(jsLib), sandbox, {
+      timeout: BOOK_SOURCE_JS_TIMEOUT_MS,
+    });
     promoteJsLibGlobals(sandbox);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    log(`jsLib 加载失败: ${msg}`);
+    const err = toBookSourceJsTimeoutError(e);
+    log(`jsLib 加载失败: ${err.message}`);
   }
   const entry = { sandbox };
   scopeCache.set(key, entry);
@@ -150,7 +159,7 @@ function coerceLegadoMap(value: unknown): Record<string, unknown> & {
   return wrapLegadoMapLike({});
 }
 
-/** 规则 JS 的 result：字符串/数字等原样传入，对象才包装为 Legado Map */
+/** 规则 JS 的 result：字符串/数字等原样传入；扁平 string map 才包装；嵌套 JSON 保持结构供 JSONPath */
 function coerceLegadoResult(value: unknown): unknown {
   if (value == null) return "";
   if (
@@ -161,7 +170,19 @@ function coerceLegadoResult(value: unknown): unknown {
     return value;
   }
   if (Array.isArray(value)) return value;
-  return coerceLegadoMap(value);
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    // 已有 .get 的 Map 风格对象（如 StrResponse）原样返回
+    if (typeof obj.get === "function") return value;
+    // API JSON（含嵌套 object/array）不可 stringify，否则 init 后 JSONPath 全失效
+    const nested = Object.entries(obj).some(([k, v]) => {
+      if (k === "get") return false;
+      return v != null && typeof v === "object";
+    });
+    if (nested) return value;
+    return coerceLegadoMap(value);
+  }
+  return value;
 }
 
 function applyBindings(
@@ -258,15 +279,19 @@ export function runInBookSourceJsScope(
   const initialResult = sandbox.result;
 
   try {
-    const runResult = vm.runInContext(runScript, sandbox);
+    const runResult = vm.runInContext(runScript, sandbox, {
+      timeout: BOOK_SOURCE_JS_TIMEOUT_MS,
+    });
     if (options.async) {
-      return Promise.resolve(runResult as Promise<unknown>).then((v) =>
-        pickScopeResult(sandbox.result, initialResult, v),
+      return raceWithJsTimeout(
+        Promise.resolve(runResult as Promise<unknown>).then((v) =>
+          pickScopeResult(sandbox.result, initialResult, v),
+        ),
       );
     }
     return pickScopeResult(sandbox.result, initialResult, runResult);
   } catch (e) {
-    throw e;
+    throw toBookSourceJsTimeoutError(e);
   }
 }
 

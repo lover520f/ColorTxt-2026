@@ -3,16 +3,25 @@ import { computed, ref, watch } from "vue";
 import AppModal from "../../components/AppModal.vue";
 import AppShellMenuTeleport from "../../components/AppShellMenuTeleport.vue";
 import IconButton from "../../components/IconButton.vue";
+import RefreshIcon from "../../components/RefreshIcon.vue";
 import VirtualList from "../../components/VirtualList.vue";
+import LoadingDotsBounce from "../../components/LoadingDotsBounce.vue";
+import LoadingDotsRotate from "../../components/LoadingDotsRotate.vue";
 import DefaultBookCover from "./DefaultBookCover.vue";
 import BookSourceCenterState from "./BookSourceCenterState.vue";
 import EditBookSourcePanel from "./EditBookSourcePanel.vue";
+import BookSourceLoginPanel from "./BookSourceLoginPanel.vue";
 import { icons } from "../../icons";
 import {
   useBookSourceDetail,
   useBookSourceDownload,
 } from "../composables/useBookSource";
-import type { BookChapter, BookDetail, SearchBookItem } from "@shared/bookSource/types";
+import type {
+  BookChapter,
+  BookDetail,
+  BookSourceRecord,
+  SearchBookItem,
+} from "@shared/bookSource/types";
 import { appLog, appPrompt } from "../../services/appDialog";
 import { appToast } from "../../services/appToast";
 import { useFindBookBookshelf } from "../composables/useFindBookBookshelf";
@@ -26,7 +35,6 @@ import {
   formatBookIntroForDisplay,
   getBookKindList,
 } from "../bookSourceDisplay";
-import { readerTxtLoadingHintText } from "../../constants/appUi";
 import { resolveFirstChapterContentIndex } from "../chapterReadingOrder";
 import type { BookSourceEditTab } from "../editBookSourceFields";
 
@@ -51,6 +59,12 @@ const coverFailed = ref(false);
 const chapterSortDesc = ref(false);
 const showEdit = ref(false);
 const editingUrl = ref<string | null>(null);
+const showLogin = ref(false);
+const loginSource = ref<BookSourceRecord | null>(null);
+/** 当前书源是否配置了 loginUrl */
+const sourceNeedsLogin = ref(false);
+/** 用户点击顶栏「刷新」触发的加载（用于图标旋转，不含初次进入） */
+const refreshing = ref(false);
 const editInitialTab = ref<BookSourceEditTab>("detail");
 const detailScrollEl = ref<HTMLElement | null>(null);
 const moreBtnRef = ref<HTMLElement | null>(null);
@@ -126,6 +140,28 @@ const detailLogHasError = computed(() => {
   return logs.value.some((line) => /错误|失败|异常/.test(line));
 });
 
+/** 有日志或错误时才显示顶栏「日志」按钮 */
+const showDetailLogBtn = computed(
+  () => Boolean(error.value?.trim()) || logs.value.length > 0,
+);
+
+watch(
+  () => props.item?.origin?.trim() ?? "",
+  async (origin) => {
+    if (!origin) {
+      sourceNeedsLogin.value = false;
+      return;
+    }
+    try {
+      const source = await window.colorTxt.bookSourceGet(origin);
+      sourceNeedsLogin.value = Boolean(source?.loginUrl?.trim());
+    } catch {
+      sourceNeedsLogin.value = false;
+    }
+  },
+  { immediate: true },
+);
+
 const displayItem = computed(() => props.item);
 const displayName = computed(() => detail.value?.name ?? props.item?.name ?? "");
 const displayAuthor = computed(
@@ -140,7 +176,13 @@ const displayCover = computed(() => {
 });
 const displayLastChapter = computed(() => {
   const raw = detail.value?.lastChapter ?? props.item?.lastChapter ?? "";
-  return raw.replace(/[·•][^\n]*$/, "").trim();
+  return raw
+    .replace(/[·•][^\n]*$/, "")
+    .replace(
+      /\s+(?:\d+\s*(?:分钟|小时|天|周|个月|月|年)前|刚刚|\d{4}[./-]\d{1,2}[./-]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)\s*$/u,
+      "",
+    )
+    .trim();
 });
 const latestChapterIsVip = computed(() => {
   const list = chapters.value.filter((ch) => !ch.isVolume);
@@ -283,12 +325,42 @@ async function copyText(label: string, text: string) {
   }
 }
 
-function onRefresh() {
+async function onRefresh() {
   closeMoreMenu();
   const item = props.item;
-  if (!item || loading.value) return;
+  if (!item || loading.value || refreshing.value) return;
   coverFailed.value = false;
-  void load(item);
+  refreshing.value = true;
+  try {
+    await load(item);
+  } finally {
+    refreshing.value = false;
+  }
+}
+
+async function onLogin() {
+  const origin = displayItem.value?.origin?.trim();
+  if (!origin) {
+    appToast("书源不存在", { kind: "warning" });
+    return;
+  }
+  const source = await window.colorTxt.bookSourceGet(origin);
+  if (!source?.loginUrl?.trim()) {
+    appToast("此书源未配置登录", { kind: "warning" });
+    return;
+  }
+  // 对齐 Legado SourceLoginActivity：无 loginUi → WebView；有 loginUi → 弹层
+  if (!source.loginUi?.trim()) {
+    const r = await window.colorTxt.bookSourceBrowserLogin(
+      source.bookSourceUrl,
+      `登录 · ${source.bookSourceName}`,
+    );
+    if (r.ok) appToast("Cookie 已保存", { kind: "info" });
+    else if (!r.cancelled && r.message) appToast(r.message, { kind: "warning" });
+    return;
+  }
+  loginSource.value = source;
+  showLogin.value = true;
 }
 
 async function onCopyBookUrl() {
@@ -594,6 +666,7 @@ async function onDownloadOrStop() {
       </nav>
       <div v-if="displayItem" class="bookDetailHeaderActions">
         <IconButton
+          v-if="showDetailLogBtn"
           class="bookDetailLogBtn"
           :class="{ 'bookDetailLogBtn--warning': detailLogHasError }"
           :icon-html="icons.info"
@@ -601,11 +674,38 @@ async function onDownloadOrStop() {
           aria-label="日志"
           @click="onShowLogs"
         />
+        <IconButton
+          title="刷新"
+          aria-label="刷新"
+          :disabled="loading || !item"
+          :aria-busy="refreshing || undefined"
+          @click="onRefresh"
+        >
+          <RefreshIcon :spinning="refreshing" />
+        </IconButton>
+        <IconButton
+          :icon-html="icons.edit"
+          title="编辑书源"
+          aria-label="编辑书源"
+          :disabled="!item?.origin"
+          @click="onEditBookSource"
+        />
+        <IconButton
+          v-if="sourceNeedsLogin"
+          :icon-html="icons.login"
+          title="登录"
+          aria-label="登录"
+          @click="onLogin"
+        />
         <div ref="moreBtnRef" class="bookDetailMoreWrap">
           <IconButton
             :icon-html="icons.more"
+            :active="moreOpen"
+            :pressed="moreOpen"
             title="更多"
             aria-label="更多"
+            aria-haspopup="menu"
+            :aria-expanded="moreOpen"
             @click="toggleMoreMenu"
           />
         </div>
@@ -618,15 +718,6 @@ async function onDownloadOrStop() {
       :top="moreTop"
       :on-panel-mount="bindMorePanel"
     >
-      <button
-        type="button"
-        class="appShellMenuItem"
-        role="menuitem"
-        :disabled="loading || !item"
-        @click="onRefresh"
-      >
-        <span class="appShellMenuLabel">刷新</span>
-      </button>
       <button
         type="button"
         class="appShellMenuItem"
@@ -662,15 +753,6 @@ async function onDownloadOrStop() {
       </button>
       <button
         type="button"
-        class="appShellMenuItem"
-        role="menuitem"
-        :disabled="!item?.origin"
-        @click="onEditBookSource"
-      >
-        <span class="appShellMenuLabel">编辑书源</span>
-      </button>
-      <button
-        type="button"
         class="appShellMenuItem appShellMenuItem--warning"
         role="menuitem"
         :disabled="!displayBookUrl"
@@ -687,9 +769,12 @@ async function onDownloadOrStop() {
       @done="onEditDone"
     />
 
+    <BookSourceLoginPanel v-model="showLogin" :source="loginSource" />
     <div class="bookDetailShell">
       <BookSourceCenterState v-if="loading">
-        {{ readerTxtLoadingHintText }}
+        <span class="bookDetailLoadingHint" aria-live="polite">
+          加载中<LoadingDotsBounce />
+        </span>
       </BookSourceCenterState>
       <BookSourceCenterState v-else-if="error && !detail" error>
         <p>{{ error }}</p>
@@ -800,10 +885,9 @@ async function onDownloadOrStop() {
                   title="最后阅读"
                   aria-label="最后阅读"
                 />
-                <span
+                <LoadingDotsRotate
                   v-if="isChapterDownloading(displayChapters[index])"
                   class="bookDetailChapterCaching"
-                  v-html="icons.refresh"
                   title="正在缓存"
                   aria-label="正在缓存"
                 />
@@ -828,9 +912,9 @@ async function onDownloadOrStop() {
         :aria-valuenow="downloadProgress.current"
         aria-valuemin="0"
         :aria-valuemax="downloadProgress.total"
-        :aria-label="`下载进度 ${downloadProgressLabel}`"
+        :aria-label="`下载进度：${downloadProgressLabel}`"
       >
-        <span class="bookDetailDownloadBarText">{{ downloadProgressLabel }}</span>
+        <span class="bookDetailDownloadBarText">下载进度：{{ downloadProgressLabel }}</span>
         <div class="bookDetailDownloadBarTrack" aria-hidden="true">
           <div
             class="bookDetailDownloadBarFill"
@@ -955,6 +1039,11 @@ async function onDownloadOrStop() {
   flex: 1;
   min-height: 0;
   background: var(--bg);
+}
+.bookDetailLoadingHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 .bookDetailScroll {
   flex: 1;
@@ -1169,21 +1258,7 @@ img.bookDetailCover {
   justify-content: center;
   width: 16px;
   height: 16px;
-  color: var(--muted);
-}
-.bookDetailChapterCaching :deep(svg) {
-  width: 14px;
-  height: 14px;
-  display: block;
-  animation: bookDetailChapterCacheSpin 0.75s linear infinite;
-}
-.bookDetailChapterCaching :deep(svg path) {
-  fill: currentColor;
-}
-@keyframes bookDetailChapterCacheSpin {
-  to {
-    transform: rotate(360deg);
-  }
+  color: var(--accent);
 }
 .bookDetailChapterItem--clickable {
   cursor: pointer;

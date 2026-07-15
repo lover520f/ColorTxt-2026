@@ -81,9 +81,8 @@ async function applyBookInfoPutRule(
 ): Promise<string> {
   const { cleanRule, putMap } = parsePutMapFromRule(rule);
   for (const [key, fieldRule] of Object.entries(putMap)) {
-    const val = isPlainRuleObject(content)
-      ? readJsonField(content, fieldRule)
-      : await ar.getPlainString(fieldRule, content);
+    // 走 getString：含 Lofter blogStat→postCollection.postCount 等 JSONPath 兼容回退
+    const val = (await ar.getString(fieldRule, content)).trim();
     ar.putStored(key, val);
   }
   return cleanRule;
@@ -272,11 +271,17 @@ async function expandBookInfoMakeUpRule(
   return { text: meta.rule, meta };
 }
 
-/** 最新章节展示：去掉规则拼接的 •/· + 更新时间后缀（时间由 updateTime / 简介字段展示） */
+/** 最新章节展示：去掉规则拼接的时间后缀（时间由 updateTime / 简介字段展示） */
 export function formatLegadoLastChapterDisplay(raw: string | undefined | null): string {
   const s = raw?.trim() ?? "";
   if (!s) return "";
-  return s.replace(/[·•][^\n]*$/, "").trim();
+  return s
+    .replace(/[·•][^\n]*$/, "")
+    .replace(
+      /\s+(?:\d+\s*(?:分钟|小时|天|周|个月|月|年)前|刚刚|\d{4}[./-]\d{1,2}[./-]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)\s*$/u,
+      "",
+    )
+    .trim();
 }
 
 /** 搜索规则 timeFormat 后的日期/时间（详情页应用目录章节名覆盖） */
@@ -335,17 +340,17 @@ export function ensureLegadoIntroLeadingTitle(intro: string, detailName: string)
   return intro;
 }
 
-/** 详情页「最新章节」：Legado 在拉完目录后用首章标题，而非搜索 publishTime 日期 */
+/**
+ * 详情页「最新章节」：对齐 Legado BookChapterList —
+ * 有目录后用最新章节标题覆盖（不再保留规则拼接的时间等后缀）。
+ */
 export function resolveDetailLastChapterDisplay(
   detailLastChapter: string | undefined,
   firstChapterTitle: string | undefined,
 ): string {
-  const fromDetail = formatLegadoLastChapterDisplay(detailLastChapter)?.trim() ?? "";
   const fromToc = firstChapterTitle?.trim() ?? "";
-  if (fromToc && (!fromDetail || isDateOnlyLegadoLastChapter(fromDetail))) {
-    return fromToc;
-  }
-  return fromDetail || fromToc;
+  if (fromToc) return fromToc;
+  return formatLegadoLastChapterDisplay(detailLastChapter)?.trim() ?? "";
 }
 
 /** Legado HtmlFormatter.format / formatKeepImg：HTML 正文转纯文本 */
