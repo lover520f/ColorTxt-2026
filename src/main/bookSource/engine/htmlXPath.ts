@@ -23,7 +23,7 @@ export function parseHtmlDocument(html: string): Document {
 }
 
 /**
- * 起点等书源常用的 og:meta XPath，用 cheerio 解析（对齐 Legado + Jsoup 的容错）。
+ * 部分书源常用的 og:meta XPath，用 cheerio 解析（对齐 Legado + Jsoup 的容错）。
  */
 export function xpathViaCheerio(
   rule: string,

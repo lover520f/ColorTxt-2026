@@ -12,6 +12,7 @@ import {
   type LegadoVariableSync,
 } from "./legadoRuleEntity";
 import { createJavaImporter, createOrgPackage, createPackagesStub } from "./legadoJavaShims";
+import { ensureLegadoListApi } from "./legadoJsList";
 import {
   BOOK_SOURCE_JS_TIMEOUT_MS,
   raceWithJsTimeout,
@@ -26,7 +27,37 @@ type SharedScopeEntry = {
 const scopeCache = new Map<string, SharedScopeEntry>();
 
 /** java.lang.String 等 shim / jsLib 异步预处理变更时递增，避免沿用过期 sandbox */
-const JS_LIB_SHIM_VERSION = "8";
+const JS_LIB_SHIM_VERSION = "12";
+
+/**
+ * Legado/Jayway：JsonPath 中间结果多为 JSONArray/JSONObject，`String(result)` 仍是合法 JSON，
+ * 故书源常写 `JSON.parse(result)`。Node 对普通 object/array 的 String 是 `[object Object]`，会报错。
+ * 已是对象时直接返回（对齐该兼容写法）；数组再挂串行 async map（见 ensureLegadoListApi）。
+ */
+export function createLegadoJson(): JSON {
+  return {
+    parse(text: unknown, reviver?: (this: unknown, key: string, value: unknown) => unknown) {
+      if (text != null && typeof text === "object") {
+        return Array.isArray(text) ? ensureLegadoListApi(text) : text;
+      }
+      const parsed = JSON.parse(String(text), reviver);
+      return Array.isArray(parsed) ? ensureLegadoListApi(parsed) : parsed;
+    },
+    stringify: JSON.stringify.bind(JSON),
+  } as JSON;
+}
+
+/** 嵌套 eval（如 await java.ajax 触发 header @js）会覆盖同沙箱绑定，须进出成对恢复 */
+const SANDBOX_EVAL_BINDINGS = [
+  "result",
+  "src",
+  "java",
+  "book",
+  "chapter",
+  "baseUrl",
+  "key",
+  "page",
+] as const;
 
 const SANDBOX_RESERVED = new Set([
   "globalThis",
@@ -99,7 +130,7 @@ function createSandboxShell(log: (msg: string) => void): Record<string, unknown>
     Boolean,
     Array,
     Object,
-    JSON,
+    JSON: createLegadoJson(),
     Math,
     Date,
     RegExp,
@@ -216,11 +247,20 @@ function coerceLegadoResult(value: unknown): unknown {
   ) {
     return value;
   }
-  if (Array.isArray(value)) return value;
+  // 保持 Array.isArray + .map/.filter；仅挂 toArray（勿换成无 map 的 plain object）
+  if (Array.isArray(value)) return ensureLegadoListApi(value);
   if (typeof value === "object") {
     const obj = value as Record<string, unknown>;
-    // 已有 .get 的 Map 风格对象（如 StrResponse）原样返回
+    // 已有 .get 的 Map 风格对象原样返回
     if (typeof obj.get === "function") return value;
+    // Legado StrResponse / Connection：body()/url()/raw() 为方法，不可当扁平 map 包掉
+    // （否则 loginCheckJs 的 result.body() 变成 TypeError: result.body is not a function）
+    if (
+      typeof obj.body === "function" &&
+      (typeof obj.url === "function" || typeof obj.raw === "function")
+    ) {
+      return value;
+    }
     // API JSON（含嵌套 object/array）不可 stringify，否则 init 后 JSONPath 全失效
     const nested = Object.entries(obj).some(([k, v]) => {
       if (k === "get") return false;
@@ -295,6 +335,27 @@ function pickScopeResult(current: unknown, initial: unknown, runResult: unknown)
   return runResult;
 }
 
+function snapshotSandboxEvalBindings(
+  sandbox: Record<string, unknown>,
+): Record<string, unknown> {
+  const saved: Record<string, unknown> = {};
+  for (const key of SANDBOX_EVAL_BINDINGS) {
+    saved[key] = sandbox[key];
+  }
+  return saved;
+}
+
+function restoreSandboxEvalBindings(
+  sandbox: Record<string, unknown>,
+  saved: Record<string, unknown>,
+): void {
+  for (const key of SANDBOX_EVAL_BINDINGS) {
+    if (Object.prototype.hasOwnProperty.call(saved, key)) {
+      sandbox[key] = saved[key];
+    }
+  }
+}
+
 export function runInBookSourceJsScope(
   source: BookSourceRecord,
   host: JsExtensionHost,
@@ -320,10 +381,17 @@ export function runInBookSourceJsScope(
     : createSandboxShell((msg) => host.log(msg));
 
   if (!jsLib) vm.createContext(sandbox);
+  // 共享 jsLib 沙箱可重入：await java.ajax 内再跑 header/@js/loginCheckJs 会改 result
+  const savedBindings = snapshotSandboxEvalBindings(sandbox);
   applyBindings(sandbox, bindings);
 
   const runScript = options.async ? wrapAsyncScriptWithBindings(script) : script;
   const initialResult = sandbox.result;
+
+  const finish = (value: unknown): unknown => {
+    restoreSandboxEvalBindings(sandbox, savedBindings);
+    return value;
+  };
 
   try {
     const runResult = vm.runInContext(runScript, sandbox, {
@@ -331,13 +399,17 @@ export function runInBookSourceJsScope(
     });
     if (options.async) {
       return raceWithJsTimeout(
-        Promise.resolve(runResult as Promise<unknown>).then((v) =>
-          pickScopeResult(sandbox.result, initialResult, v),
-        ),
+        Promise.resolve(runResult as Promise<unknown>)
+          .then((v) => pickScopeResult(sandbox.result, initialResult, v))
+          .then(finish, (err) => {
+            restoreSandboxEvalBindings(sandbox, savedBindings);
+            throw err;
+          }),
       );
     }
-    return pickScopeResult(sandbox.result, initialResult, runResult);
+    return finish(pickScopeResult(sandbox.result, initialResult, runResult));
   } catch (e) {
+    restoreSandboxEvalBindings(sandbox, savedBindings);
     throw toBookSourceJsTimeoutError(e);
   }
 }

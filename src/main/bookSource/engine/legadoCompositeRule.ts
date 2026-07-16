@@ -22,6 +22,26 @@ export function expandLegadoGetRefs(
     .replace(/@get:([\w.]+)/gi, (_, key: string) => lookup(key.trim()));
 }
 
+/**
+ * `@put`/`@get` 拼出的详情链等：已是最终 URL，不可再当 JsonPath / XPath。
+ * 例：`https://example.com/book/123.html`、`/book/123.html`
+ */
+export function isLegadoLiteralUrlRule(rule: string): boolean {
+  const t = rule.trim();
+  if (!t) return false;
+  if (/^(?:https?:\/\/|data:|javascript:)/i.test(t)) return true;
+  // /book/123.html — 勿当 XPath（XPath 多为 /html、//div）
+  if (
+    /^\/[^/\s]/.test(t) &&
+    !t.startsWith("//") &&
+    !/^\/(?:html|body|head)\b/i.test(t) &&
+    /\.(?:html?|php|aspx?|jsp|json)(?:[?#]|$)/i.test(t)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /** 整条规则仅为 @get:key / @get:{key}（Legado AnalyzeRule evalPattern） */
 export function parseLegadoPureGetKey(rule: string): string | null {
   const trimmed = rule.trim();
@@ -84,14 +104,26 @@ export function legadoJsonPathFromRule(rule: string): string | null {
   return null;
 }
 
-/** {{}} 内是否含须 Rhino 求值的 JS 表达式（非 JSONPath / result） */
+/** Legado SourceRule.isRule：`{{…}}` 内以 @/$/xpath 开头的是嵌套规则，不是 Rhino JS */
+export function isLegadoEmbeddedRuleExpr(expr: string): boolean {
+  const t = expr.trim();
+  if (!t) return false;
+  return (
+    t.startsWith("@") ||
+    t.startsWith("$.") ||
+    t.startsWith("$[") ||
+    t.startsWith("//")
+  );
+}
+
+/** {{}} 内是否含须 Rhino 求值的 JS 表达式（非 JSONPath / result / 嵌套规则） */
 export function legadoTemplateNeedsJsEval(rule: string): boolean {
   if (!rule.includes("{{")) return false;
   for (const m of rule.matchAll(/\{\{([\s\S]*?)\}\}/g)) {
     const key = m[1].trim();
-    if (key !== "result" && !isLegadoJsonPathExpr(key)) {
-      return true;
-    }
+    if (key === "result" || isLegadoJsonPathExpr(key)) continue;
+    if (isLegadoEmbeddedRuleExpr(key)) continue;
+    return true;
   }
   return false;
 }
@@ -303,7 +335,7 @@ export function parseLegadoUrlSuffixJson(raw: string): LegadoUrlFetchOptions {
     );
   }
 
-  // Lofter 等常见仅有 method/body 的 UrlOption（无 headers）
+  // 仅有 method/body 的 UrlOption（无 headers）较常见
   const hasReservedOptionKey = [
     "method",
     "body",
@@ -444,7 +476,7 @@ export function isPlainRuleObject(content: unknown): content is Record<string, u
   return content != null && typeof content === "object" && !Array.isArray(content);
 }
 
-/** JSONPath / 规则取值：字符串、数字、布尔、Lofter 图片对象 `{ orign: "url" }` */
+/** JSONPath / 规则取值：字符串、数字、布尔、图片对象 `{ orign: "url" }` */
 export function coerceLegadoMediaUrl(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "number") {
@@ -457,7 +489,16 @@ export function coerceLegadoMediaUrl(value: unknown): string {
     return t && t !== "[object Object]" ? t : "";
   }
   if (typeof value === "object" && !Array.isArray(value)) {
-    const o = value as Record<string, unknown>;
+    const o = value as Record<string, unknown> & { text?: unknown };
+    // Jsoup Element/Elements：书源 JSON 字段误存节点时用 .text()
+    if (typeof o.text === "function") {
+      try {
+        const t = String(o.text.call(value) ?? "").trim();
+        if (t && t !== "[object Object]") return t;
+      } catch {
+        /* fall through */
+      }
+    }
     for (const key of ["orign", "origin", "raw", "url", "imgUrl", "bigUrl"]) {
       const v = o[key];
       if (typeof v === "string" && v.trim()) return v.trim();

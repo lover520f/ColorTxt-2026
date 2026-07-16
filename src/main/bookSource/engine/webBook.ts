@@ -11,7 +11,7 @@ import {
   stripNumericIdPrefix,
   toEngineBook,
 } from "@shared/bookSource/bookModel";
-import { normalizeBookSourceBaseUrl, resolveAbsoluteUrl } from "@shared/bookSource/url";
+import { normalizeBookSourceBaseUrl, normalizeHttpUrlPath, resolveAbsoluteUrl } from "@shared/bookSource/url";
 import { wordCountFormat } from "@shared/bookSource/wordCountFormat";
 import { formatLegadoBookAuthor } from "@shared/bookSource/formatBookAuthor";
 import {
@@ -622,6 +622,10 @@ async function parseSearchItem(
 
     ar.setBook({ name, author, kind: kind ?? "", bookUrl });
 
+    // @put（如 bookUrl 前的 id）须随条目带走，勿只留在书源级 cache（会被下一条覆盖）
+    const putVars = ar.getStoredVariables();
+    const variable = Object.keys(putVars).length ? { ...putVars } : undefined;
+
     return {
       id: `${source.bookSourceUrl}::${bookUrl}::${index}`,
       name,
@@ -635,6 +639,7 @@ async function parseSearchItem(
       bookUrl,
       origin: source.bookSourceUrl,
       originName: source.bookSourceName,
+      variable,
     };
   } finally {
     ar.setContent(savedContent, savedBaseUrl);
@@ -647,17 +652,21 @@ function ensureBookUrlWithHeaders(
   bookUrl: string,
   host: ReturnType<typeof createJsExtensionHost>,
 ): string {
-  if (extractUrlFetchOptionsSuffix(bookUrl)) return bookUrl;
+  if (extractUrlFetchOptionsSuffix(bookUrl)) {
+    const { url: path } = splitUrlAndRuleVariables(bookUrl);
+    const suffix = extractUrlFetchOptionsSuffix(bookUrl);
+    return `${normalizeHttpUrlPath(path)}${suffix}`;
+  }
   const get = host.javaBindings.get as ((k: string) => string) | undefined;
   const stored = get?.("headers")?.trim() ?? "";
-  if (!stored) return bookUrl;
+  if (!stored) return normalizeHttpUrlPath(bookUrl);
   const { url: path } = splitUrlAndRuleVariables(bookUrl);
   const raw = stored.startsWith("{") ? stored : `{${stored}}`;
   const opts = parseLegadoUrlSuffixJson(raw);
   const tail = opts.headers
     ? JSON.stringify({ headers: opts.headers })
     : raw;
-  return `${path},${tail}`;
+  return `${normalizeHttpUrlPath(path)},${tail}`;
 }
 
 /** 从 UrlOption POST body 取出 bookId */
@@ -766,7 +775,7 @@ function syncLegadoHeadersForRules(
   variables.headers = wrapped;
 }
 
-/** 七猫等 API 书源：updateTime 规则为空时从 update_time 或 lastChapter 拼接段提取 */
+/** API 书源：updateTime 规则为空时从 update_time 或 lastChapter 拼接段提取 */
 function resolveBookUpdateTimeFallback(
   ar: AnalyzeRule,
   lastChapterRaw: string,
@@ -899,6 +908,14 @@ async function applyBookInfoInitContent(
   ar.setContent(tryParseJsonBookInfoContent(text), base);
 }
 
+/** 从详情/目录 URL 推断 @get:{id}（如 list/@get:{id}.html） */
+function seedBookIdFromUrl(bookUrl: string): string {
+  const path =
+    bookUrl.match(/\/(?:book|list)\/(\d+)(?:\.html)?/i)?.[1] ??
+    bookUrl.match(/[?&](?:bookId|book_id|bid|id)=(\d+)/i)?.[1];
+  return path ?? "";
+}
+
 export async function getBookInfo(
   source: BookSourceRecord,
   bookUrl: string,
@@ -913,6 +930,16 @@ export async function getBookInfo(
   const { url: bookPageUrl, variables } = splitUrlAndRuleVariables(resolvedBookUrl);
   const listIntro = seed.intro?.trim() ?? "";
   if (listIntro) variables.intro = listIntro;
+  // 搜索 @put 优先；缺 id 时从 book/3604583.html 回填（勿用书源 cache 里「最后一条」的 id）
+  if (seed.variable) {
+    for (const [k, v] of Object.entries(seed.variable)) {
+      if (v != null && String(v).trim()) variables[k] = String(v).trim();
+    }
+  }
+  if (!variables.id?.trim()) {
+    const fromUrl = seedBookIdFromUrl(bookPageUrl || bookUrl);
+    if (fromUrl) variables.id = fromUrl;
+  }
   const book: Book = {
     name,
     author,
@@ -1090,6 +1117,11 @@ export async function getBookInfo(
   if (bid) {
     ar.putStored("bid", bid);
   }
+  const mergedVariable = {
+    ...book.variable,
+    ...ar.getStoredVariables(),
+    ...variables,
+  };
   const detail: Book = {
     name: detailName,
     author: detailAuthor,
@@ -1104,9 +1136,14 @@ export async function getBookInfo(
     bookUrl: String(book.bookUrl || resolvedBookUrl),
     origin: seed.origin,
     originName: seed.originName,
-    variable: book.variable,
+    variable: Object.keys(mergedVariable).length ? mergedVariable : undefined,
   };
-  if (!detail.tocUrl?.trim()) {
+  // list/.html 等无效目录址：回退详情页（再由调用方决定是否可用）
+  if (
+    !detail.tocUrl?.trim() ||
+    /\/list\/\.html/i.test(detail.tocUrl) ||
+    /\/list\/(?:\?|$)/i.test(detail.tocUrl)
+  ) {
     detail.tocUrl = ensureBookUrlWithHeaders(String(book.bookUrl || resolvedBookUrl), host);
   }
   return detail;
@@ -1335,25 +1372,118 @@ export async function getChapterList(
     ar.setRuleData({ variable: { ...variables } });
   }
   if (rule.preUpdateJs?.trim()) {
-    const au = new AnalyzeUrl({
-      mUrl: resolvedTocUrl,
-      baseUrl: bookPageUrl,
-      source,
+    // 对齐 Legado WebBook.runPreUpdateJs：AnalyzeRule(book, source, preUpdateJs=true)
+    const mergeBookInfo = (detail: Book) => {
+      book.tocUrl = detail.tocUrl?.trim() || book.tocUrl;
+      book.bookUrl = detail.bookUrl?.trim() || book.bookUrl;
+      if (detail.name?.trim()) book.name = detail.name;
+      if (detail.author?.trim()) book.author = detail.author;
+      if (detail.kind?.trim()) book.kind = stripNumericIdPrefix(detail.kind);
+      if (detail.intro != null) book.intro = detail.intro;
+      if (detail.coverUrl?.trim()) book.coverUrl = detail.coverUrl;
+      if (detail.wordCount?.trim()) book.wordCount = detail.wordCount;
+      if (detail.lastChapter?.trim()) book.lastChapter = detail.lastChapter;
+      if (detail.updateTime?.trim()) book.updateTime = detail.updateTime;
+      const vars =
+        book.variable && typeof book.variable === "object" && !Array.isArray(book.variable)
+          ? (book.variable as Record<string, string>)
+          : {};
+      if (detail.variable) Object.assign(vars, detail.variable);
+      book.variable = vars;
+      Object.assign(variables, vars);
+      ar.setBook(book).setRuleData({ variable: { ...variables } });
+    };
+    const java = {
+      ...ar.buildRuleJava(),
+      /** Legado AnalyzeRule.refreshTocUrl：重新拉详情写回 tocUrl */
+      refreshTocUrl: async () => {
+        const detail = await getBookInfo(
+          source,
+          String(book.bookUrl || bookPageUrl),
+          String(book.name || bookInput.name || ""),
+          String(book.author || bookInput.author || ""),
+          logs,
+          {
+            kind: String(book.kind || bookInput.kind || ""),
+            intro: String(book.intro || bookInput.intro || ""),
+            coverUrl: String(book.coverUrl || bookInput.coverUrl || ""),
+            wordCount: String(book.wordCount || bookInput.wordCount || ""),
+            lastChapter: String(book.lastChapter || bookInput.lastChapter || ""),
+          },
+        );
+        mergeBookInfo(detail);
+      },
+      /** Legado AnalyzeRule.reGetBook：精确搜索后刷新详情 */
+      reGetBook: async () => {
+        const name = String(book.name || bookInput.name || "").trim();
+        const author = String(book.author || bookInput.author || "").trim();
+        const authorNorm = formatLegadoBookAuthor(author);
+        const items = await searchBook(source, name, 1, logs);
+        const hit = items.find(
+          (i) =>
+            i.name === name && formatLegadoBookAuthor(i.author) === authorNorm,
+        );
+        if (!hit?.bookUrl?.trim()) {
+          throw new Error(`未搜索到 ${name}(${author}) 书籍`);
+        }
+        book.bookUrl = hit.bookUrl.trim();
+        if (hit.kind?.trim()) book.kind = stripNumericIdPrefix(hit.kind);
+        const detail = await getBookInfo(
+          source,
+          hit.bookUrl,
+          hit.name || name,
+          hit.author || author,
+          logs,
+          {
+            kind: hit.kind,
+            intro: hit.intro,
+            coverUrl: hit.coverUrl,
+            wordCount: hit.wordCount,
+            lastChapter: hit.lastChapter,
+          },
+        );
+        mergeBookInfo(detail);
+      },
+    };
+    try {
+      await evalJsAsync(rule.preUpdateJs, {
+        source,
+        book,
+        result: String(book.tocUrl || fetchTocUrl),
+        baseUrl: source.bookSourceUrl,
+        host,
+        java,
+      });
+    } catch (e) {
+      appendBookSourceErrorLog(logs, e, {
+        phase: "目录 preUpdateJs",
+        sourceName: source.bookSourceName,
+        sourceUrl: source.bookSourceUrl,
+        url: String(book.tocUrl || fetchTocUrl),
+      });
+      throw e;
+    }
+    // refreshTocUrl / reGetBook 可能改写 tocUrl、bookUrl
+    resolvedTocUrl = ensureBookUrlWithHeaders(
+      String(book.tocUrl || book.bookUrl || tocUrl),
       host,
-      logs,
-      ruleVariables: variables,
-    });
-    await evalJsAsync(rule.preUpdateJs, {
-      source,
-      result: fetchTocUrl,
-      baseUrl: source.bookSourceUrl,
-      host,
-      java: au.buildAnalyzeUrlJava(),
-    });
+    );
+    const refreshed = splitUrlAndRuleVariables(resolvedTocUrl);
+    Object.assign(variables, refreshed.variables);
+    book.tocUrl = refreshed.url;
+    if (book.bookUrl) {
+      const refreshedBook = splitUrlAndRuleVariables(
+        ensureBookUrlWithHeaders(String(book.bookUrl), host),
+      );
+      book.bookUrl = refreshedBook.url;
+      Object.assign(variables, refreshedBook.variables);
+    }
+    ar.setBook(book).setRuleData({ variable: { ...variables } });
   }
+  const fetchTocUrlFinal = String(book.tocUrl || fetchTocUrl);
   const analyzeUrl = new AnalyzeUrl({
     mUrl: resolvedTocUrl,
-    baseUrl: bookPageUrl,
+    baseUrl: String(book.bookUrl || bookPageUrl),
     source,
     host,
     logs,
@@ -1366,17 +1496,17 @@ export async function getChapterList(
   if (
     body.trim().startsWith("{") &&
     /"rows"\s*:\s*\[\s*\]/.test(body) &&
-    /[?&]bookId=\d+_\d+/i.test(fetchTocUrl)
+    /[?&]bookId=\d+_\d+/i.test(fetchTocUrlFinal)
   ) {
-    const stripped = fetchTocUrl.replace(
+    const stripped = fetchTocUrlFinal.replace(
       /([?&]bookId=)\d+_/i,
       "$1",
     );
-    if (stripped !== fetchTocUrl) {
+    if (stripped !== fetchTocUrlFinal) {
       logs.push(`目录 bookId 含前缀且 rows 为空，重试: ${stripped.slice(0, 120)}`);
       const retry = await new AnalyzeUrl({
         mUrl: stripped,
-        baseUrl: bookPageUrl,
+        baseUrl: String(book.bookUrl || bookPageUrl),
         source,
         host,
         logs,
@@ -1445,23 +1575,26 @@ export async function getChapterList(
   await collect(body, res.url, redirectUrl);
   if (rule.nextTocUrl?.trim()) {
     // nextTocUrl 里常按 baseUrl 匹配 UrlOption（如 limit=500）；须用带 option 的原 toc URL，不能只用 res.url
-    const tocRuleBaseUrl = resolvedTocUrl || fetchTocUrl || res.url;
+    const tocRuleBaseUrl = resolvedTocUrl || fetchTocUrlFinal || res.url;
     const ar = new AnalyzeRule(source, logs, host)
       .setContent(body, tocRuleBaseUrl)
       .setRedirectUrl(redirectUrl)
       .setBook(book)
       .setRuleData({ variable: { ...variables } });
     const nextList = await ar.getUrlList(rule.nextTocUrl);
-    /** 须保留 UrlOption（Lofter offset=… 在 POST body）；仅剥末尾空白 */
+    /** 须保留 UrlOption（分页 offset 等常在 POST body）；仅剥末尾空白 */
     const tocVisitKey = (u: string) => u.trim();
     if (nextList.length === 1) {
       let next = nextList[0]!;
-      const visited = new Set<string>([tocVisitKey(resolvedTocUrl), tocVisitKey(fetchTocUrl)]);
+      const visited = new Set<string>([
+        tocVisitKey(resolvedTocUrl),
+        tocVisitKey(fetchTocUrlFinal),
+      ]);
       while (next && !visited.has(tocVisitKey(next))) {
         visited.add(tocVisitKey(next));
         const nextRes = await new AnalyzeUrl({
           mUrl: next,
-          baseUrl: bookPageUrl,
+          baseUrl: String(book.bookUrl || bookPageUrl),
           source,
           host,
           logs,
@@ -1494,7 +1627,7 @@ export async function getChapterList(
   }
   if (!list.length) {
     logs.push(
-      `未解析到章节（tocUrl: ${fetchTocUrl.slice(0, 120)}${fetchTocUrl.length > 120 ? "…" : ""}）`,
+      `未解析到章节（tocUrl: ${fetchTocUrlFinal.slice(0, 120)}${fetchTocUrlFinal.length > 120 ? "…" : ""}）`,
     );
   }
   return list;

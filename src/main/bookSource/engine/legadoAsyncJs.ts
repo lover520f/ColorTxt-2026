@@ -195,7 +195,7 @@ function findMatchingParen(src: string, openIdx: number): number {
   return findMatchingDelim(src, openIdx, "(");
 }
 
-/** Rhino：`with(obj){ ... finalExpr }` 的值即脚本返回值（七猫正文 AES 解密等） */
+/** Rhino：`with(obj){ ... finalExpr }` 的值即脚本返回值（正文 AES 解密等） */
 export function ensureLegadoWithBlockReturn(script: string): string {
   if (!/\bwith\s*\(/.test(script)) return script;
 
@@ -447,12 +447,59 @@ export function ensureLegadoScriptReturn(script: string): string {
 
 /** `if (...) { foo() } else { bar() }` 以及分支末尾裸表达式补 return（对齐 Legado/Rhino） */
 export function ensureLegadoIfElseBranchReturn(script: string): string {
+  // 仅当整段脚本就是「if { a() } else { b() }」时用简写（发现页 category/tag 分支）
   let s = script.replace(
-    /(\bif\s*\([\s\S]*?\)\s*\{\s*)([\w$]+\(\))(\s*\}\s*else\s*\{\s*)([\w$]+\(\))(\s*\})/g,
+    /^(\s*if\s*\([\s\S]*?\)\s*\{\s*)([\w$]+\(\))(\s*\}\s*else\s*\{\s*)([\w$]+\(\))(\s*\})\s*$/,
     "$1return $2$3return $4$5",
   );
-  // `if (cond) { ...; expr } else { ...; expr }`（Lofter 目录等）
+  // `if (cond) { ...; expr } else { ...; expr }`（目录规则等）：仅处理脚本末尾的 if/else
   return injectReturnIntoIfElseBranchEnds(s);
+}
+
+/** if/else 链结束后是否还有顶层语句（loginCheckJs 在 if 后还有 `result`） */
+function ifElseChainIsTerminal(
+  script: string,
+  ifStart: number,
+  chainEnd: number,
+): boolean {
+  if (braceDepthBefore(script, ifStart) !== 0) return false;
+  let i = chainEnd + 1;
+  while (i < script.length && /\s/.test(script[i]!)) i++;
+  return i >= script.length;
+}
+
+/** 解析 if 后紧随的 else / else if 链，返回整条链结束下标 */
+function findIfElseChainEnd(script: string, thenBraceClose: number): number {
+  let end = thenBraceClose;
+  let after = thenBraceClose + 1;
+  while (after < script.length && /\s/.test(script[after]!)) after++;
+  while (/^else\b/.test(script.slice(after))) {
+    after += 4;
+    while (after < script.length && /\s/.test(script[after]!)) after++;
+    if (/^if\s*\(/.test(script.slice(after))) {
+      const ifMatch = /^if\s*\(/.exec(script.slice(after));
+      if (!ifMatch) break;
+      const parenOpen = after + ifMatch[0].length - 1;
+      const parenClose = findMatchingParen(script, parenOpen);
+      if (parenClose < 0) break;
+      let braceOpen = parenClose + 1;
+      while (braceOpen < script.length && /\s/.test(script[braceOpen]!)) braceOpen++;
+      if (script[braceOpen] !== "{") break;
+      const braceClose = findMatchingBrace(script, braceOpen);
+      if (braceClose < 0) break;
+      end = braceClose;
+      after = braceClose + 1;
+      while (after < script.length && /\s/.test(script[after]!)) after++;
+      continue;
+    }
+    if (script[after] === "{") {
+      const elseClose = findMatchingBrace(script, after);
+      if (elseClose < 0) break;
+      return elseClose;
+    }
+    break;
+  }
+  return end;
 }
 
 /** 在顶层 if/else 花括号块末尾表达式前插入 return（不改写已有 return） */
@@ -482,6 +529,13 @@ function injectReturnIntoIfElseBranchEnds(script: string): string {
       const braceClose = findMatchingBrace(result, braceOpen);
       if (braceClose < 0) {
         ifRe.lastIndex = startIdx + 1;
+        continue;
+      }
+
+      const chainEnd = findIfElseChainEnd(result, braceClose);
+      // loginCheckJs：`if (…) { …; java.log(…) } \n result` — if 非末尾语句时勿往分支里塞 return
+      if (!ifElseChainIsTerminal(result, startIdx, chainEnd)) {
+        ifRe.lastIndex = Math.max(braceClose + 1, startIdx + 1);
         continue;
       }
 
@@ -667,6 +721,30 @@ export function ensureLegadoIfEvalReturn(script: string): string {
   );
 }
 
+/**
+ * 快照 `result` 并仅给**数组**补 List.toArray（字符串/对象原样保留，避免打断 .replace/.map）。
+ * 用 `let result` 阴影全局，避免 await java.ajax 期间嵌套 @js 覆盖共享沙箱。
+ */
+export const LEGADO_RESULT_LIST_PRELUDE = `let result = (() => {
+  const r = globalThis.result;
+  if (Array.isArray(r) && typeof r.toArray !== "function") {
+    r.toArray = function () { return this.slice(); };
+    r.isEmpty = function () { return this.length === 0; };
+    r.size = function () { return this.length; };
+    r.get = function (i) { return this[i]; };
+  }
+  return r;
+})();`;
+
+export const LEGADO_RESULT_LIST_PRELUDE_INPLACE = `(() => {
+  const r = typeof result !== "undefined" ? result : globalThis.result;
+  if (!Array.isArray(r) || typeof r.toArray === "function") return;
+  r.toArray = function () { return this.slice(); };
+  r.isEmpty = function () { return this.length === 0; };
+  r.size = function () { return this.length; };
+  r.get = function (i) { return this[i]; };
+})();`;
+
 /** 同步/异步 Legado JS 通用预处理 */
 export function prepareLegadoJs(script: string): string {
   let s = script.trim();
@@ -682,6 +760,16 @@ export function prepareLegadoJs(script: string): string {
   s = ensureLegadoIfElseBranchReturn(s);
   s = ensureLegadoIfEvalReturn(s);
   s = ensureLegadoScriptReturn(s);
+  // 必须在 return 补全之后：prelude 本身不是返回值
+  // 仅当脚本会用到 result 时注入；字符串 result 必须保持可 .replace
+  if (!/\bresult\b/.test(s) && !/\bresult\b/.test(script)) {
+    return s;
+  }
+  if (/\b(?:let|const|var)\s+result\b/.test(s)) {
+    s = `${LEGADO_RESULT_LIST_PRELUDE_INPLACE}\n${s}`;
+  } else {
+    s = `${LEGADO_RESULT_LIST_PRELUDE}\n${s}`;
+  }
   return s;
 }
 
@@ -1044,6 +1132,8 @@ export function injectLegadoAsyncAwaits(
     "connect",
     "post",
     "getVerificationCode",
+    "refreshTocUrl",
+    "reGetBook",
   ] as const;
   for (const name of asyncJavaCalls) {
     s = s.replace(

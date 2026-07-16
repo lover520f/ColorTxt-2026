@@ -29,6 +29,7 @@ export function searchBookToBook(item: SearchBookItem): Book {
     bookUrl,
     origin: item.origin,
     originName: item.originName,
+    variable: item.variable ? { ...item.variable } : undefined,
   };
 }
 

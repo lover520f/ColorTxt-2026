@@ -1,10 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-/** 单次书源规则 JS 超时（与 HTTP AbortSignal.timeout 对齐）；可用环境变量覆盖便于测试 */
+/** 单次书源规则 JS 超时（需覆盖 bookList 内多次 java.ajax；与搜索单源 30s 对齐） */
 export const BOOK_SOURCE_JS_TIMEOUT_MS = (() => {
   const raw = process.env.BOOK_SOURCE_JS_TIMEOUT_MS?.trim();
   if (raw && /^\d+$/.test(raw)) return Math.max(50, Number(raw));
-  return 15_000;
+  return 30_000;
 })();
 
 export class BookSourceJsTimeoutError extends Error {

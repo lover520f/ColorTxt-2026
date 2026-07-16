@@ -133,15 +133,26 @@ export function isLegadoJsRule(rule: string): boolean {
  * @js: 脚本体换行后的下一段 Legado 规则行。
  * 须排除：
  * - JS 单行注释（//java.log、// 中文说明等）
- * - JS 正则字面量（`/pat/g,`），勿当成 XPath `/path`
- * 否则会截断 searchUrl / replaceRegex 等多行脚本。
+ * - JS 正则字面量及后续表达式（`/pat/g,`、`/vip/.test(result)`），勿当成 XPath `/path`
+ * 否则会截断 searchUrl / replaceRegex / isVip 等多行脚本。
  */
 function isLegadoRuleLineAfterJs(line: string): boolean {
   const t = line.trimStart();
   if (!t) return false;
-  // JS 正则字面量：/…/flags 可选尾随 , ;
-  if (/^\/(?:\\.|[^/\n])+\/[gimsuyd]*\s*[,;]?\s*$/i.test(t.trimEnd())) {
-    return false;
+  // JS 正则：整行 `/pat/flags`，或 `/pat/.test(...)` / `/pat/ &&` 等（如 isVip 判断）
+  {
+    const m = t.match(/^\/(?:\\.|[^/\n])+\/[gimsuyd]*/i);
+    if (m) {
+      const rest = t.slice(m[0].length).replace(/^\s+/, "");
+      if (
+        !rest ||
+        /^[,;]?\s*$/.test(rest) ||
+        /^[.\[\])]/.test(rest) ||
+        /^(?:&&|\|\||\?)/.test(rest)
+      ) {
+        return false;
+      }
+    }
   }
   /**
    * 纯 JSONPath 续行：`$.a` / `$..a` / `$[0]` / `$['k']`。

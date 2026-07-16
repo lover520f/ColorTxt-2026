@@ -461,6 +461,7 @@ export function useBookSourceDetail() {
         intro: seed.intro,
         lastChapter: seed.lastChapter,
         coverUrl: seed.coverUrl,
+        variable: seed.variable,
       });
       if (infoRes.logs?.length) logs.value = infoRes.logs;
       if (infoRes.message || !infoRes.detail) {

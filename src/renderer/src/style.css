@@ -143,9 +143,9 @@ html.dark {
   --surface-elevated: #2d2d2d;
 
   /** 找书/发现结果卡片中的书源名（暗色背景上提亮） */
-  --book-source: #c4b5fd;
+  --book-source: #b6a5fa;
   /** 找书列表 kind 标签底色 */
-  --book-source-tag: color-mix(in srgb, var(--book-source) 42%, #5b21b6);
+  --book-source-tag: #875fd4;
 
   --switch-track-off-bg: #4c4d4f;
 

@@ -149,6 +149,7 @@ export function useBookshelfUpdate(onBooksChanged?: (books: BookshelfBook[]) => 
         intro: book.intro,
         lastChapter: book.lastChapter,
         coverUrl: book.coverUrl,
+        variable: book.variable,
       });
       if (!infoRes.detail) {
         appendBookshelfUpdateLog(

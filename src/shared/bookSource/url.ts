@@ -8,6 +8,27 @@ export function normalizeBookSourceBaseUrl(url: string): string {
   return trimmed;
 }
 
+/**
+ * 折叠 http(s) URL 路径中的重复斜杠（保留 `https://`）。
+ * 详情页 baseUrl 常带尾 `/`，书源写 `{{baseUrl}}/catalog/` 会拼出 `//catalog/` → 404。
+ */
+export function normalizeHttpUrlPath(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+  const optMatch = /,\s*(?=\{)/.exec(trimmed);
+  const main = optMatch?.index != null ? trimmed.slice(0, optMatch.index) : trimmed;
+  const suffix = optMatch?.index != null ? trimmed.slice(optMatch.index) : "";
+  const m = main.match(/^(https?:\/\/[^/?#]+)([/?#][\s\S]*)?$/i);
+  if (!m) return trimmed;
+  const origin = m[1]!;
+  const pathQuery = m[2] ?? "";
+  if (!pathQuery.startsWith("/")) return trimmed;
+  const q = pathQuery.search(/[?#]/);
+  const path = q >= 0 ? pathQuery.slice(0, q) : pathQuery;
+  const rest = q >= 0 ? pathQuery.slice(q) : "";
+  return origin + path.replace(/\/{2,}/g, "/") + rest + suffix;
+}
+
 /** 书源封面等远程 URL：保留原始协议（部分站点 https 不可用） */
 export function normalizeRemoteImageUrl(url?: string): string | undefined {
   const u = url?.trim();
@@ -61,28 +82,30 @@ export function resolveAbsoluteUrl(
       const pathOnly = trimmed.slice(0, optIdx).trim().split(/\r?\n/)[0]?.trim() ?? "";
       const suffix = trimmed.slice(optIdx);
       const base = normalizeBookSourceBaseUrl(baseUrl);
-      if (/^https?:\/\//i.test(pathOnly)) return pathOnly + suffix;
+      if (/^https?:\/\//i.test(pathOnly)) {
+        return normalizeHttpUrlPath(pathOnly) + suffix;
+      }
       if (pathOnly.startsWith("data:") || pathOnly.startsWith("javascript")) {
         return pathOnly + suffix;
       }
       if (!base) return pathOnly + suffix;
       try {
-        return new URL(pathOnly, base).href + suffix;
+        return normalizeHttpUrlPath(new URL(pathOnly, base).href) + suffix;
       } catch {
-        return pathOnly + suffix;
+        return normalizeHttpUrlPath(pathOnly) + suffix;
       }
     }
   }
   // 多行相对路径（如 a@href 命中多链后 join）不可整体交给 URL()，否则会拼出 /a//b//c
   const rel = trimmed.split(/\r?\n/)[0]?.trim() ?? "";
   const base = normalizeBookSourceBaseUrl(baseUrl);
-  if (!base) return rel;
-  if (/^https?:\/\//i.test(rel)) return rel;
+  if (!base) return normalizeHttpUrlPath(rel);
+  if (/^https?:\/\//i.test(rel)) return normalizeHttpUrlPath(rel);
   if (rel.startsWith("data:") || rel.startsWith("javascript")) return rel;
   try {
-    return new URL(rel, base).href;
+    return normalizeHttpUrlPath(new URL(rel, base).href);
   } catch {
-    return rel;
+    return normalizeHttpUrlPath(rel);
   }
 }
 

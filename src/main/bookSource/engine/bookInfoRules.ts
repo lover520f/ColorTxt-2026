@@ -81,7 +81,7 @@ async function applyBookInfoPutRule(
 ): Promise<string> {
   const { cleanRule, putMap } = parsePutMapFromRule(rule);
   for (const [key, fieldRule] of Object.entries(putMap)) {
-    // 走 getString：含 Lofter blogStat→postCollection.postCount 等 JSONPath 兼容回退
+    // 走 getString：含 blogStat→postCollection.postCount 等 JSONPath 兼容回退
     const val = (await ar.getString(fieldRule, content)).trim();
     ar.putStored(key, val);
   }
@@ -118,7 +118,7 @@ function applyBookInfoMakeUpResult(
   return text;
 }
 
-/** {{}} 模板 + @js: 链式规则（如企鹅阅读 lastChapter） */
+/** {{}} 模板 + @js: 链式规则（如 lastChapter 多段拼接） */
 async function resolveBookInfoWithJsChain(
   ar: AnalyzeRule,
   cleanRule: string,
@@ -277,6 +277,9 @@ export function formatLegadoLastChapterDisplay(raw: string | undefined | null): 
   const s = raw?.trim() ?? "";
   if (!s) return "";
   return s
+    // Jsoup Elements 误 String()/join 时可能夹进 [object Object]
+    .replace(/\s*[（(]\s*\[object Object\]\s*[）)]\s*/gi, "")
+    .replace(/\[object Object\]/gi, "")
     .replace(/[·•][^\n]*$/, "")
     .replace(
       /\s+(?:\d+\s*(?:分钟|小时|天|周|个月|月|年)前|刚刚|\d{4}[./-]\d{1,2}[./-]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)\s*$/u,
@@ -328,7 +331,7 @@ export function stripEmbeddedAuthorFromDetailName(
   return n;
 }
 
-/** 详情简介缺首行书名时（如 Lofter digest 为空），与 Legado 一样补上标题行 */
+/** 详情简介缺首行书名时（如 digest 为空），与 Legado 一样补上标题行 */
 export function ensureLegadoIntroLeadingTitle(intro: string, detailName: string): string {
   const name = detailName.trim();
   if (!name || !intro?.trim()) return intro;

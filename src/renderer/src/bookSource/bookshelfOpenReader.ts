@@ -47,6 +47,7 @@ export async function loadBookshelfReaderPayload(
       intro: seed.intro,
       lastChapter: seed.lastChapter,
       coverUrl: seed.coverUrl,
+      variable: seed.variable,
     });
     if (!infoRes.detail) {
       return { payload: null, message: infoRes.message ?? "加载书籍失败" };

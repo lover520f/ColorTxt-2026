@@ -460,6 +460,7 @@ export function registerBookSourceIpcHandlers(): void {
           intro: p.intro,
           lastChapter: p.lastChapter,
           coverUrl: p.coverUrl,
+          variable: p.variable,
         },
       );
       return { detail, logs };

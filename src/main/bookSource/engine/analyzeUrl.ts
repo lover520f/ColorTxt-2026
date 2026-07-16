@@ -3,6 +3,7 @@ import type { BookSourceRecord } from "@shared/bookSource/types";
 import { decodeHttpResponseBody } from "../../detectTextEncoding";
 import {
   normalizeBookSourceBaseUrl,
+  normalizeHttpUrlPath,
   resolveAbsoluteUrl,
 } from "@shared/bookSource/url";
 
@@ -567,12 +568,14 @@ export class AnalyzeUrl {
     }
     if (!/^https?:\/\//i.test(u)) {
       u = resolveAbsoluteUrl(this.baseUrl, u);
+    } else {
+      u = normalizeHttpUrlPath(u);
     }
     const charset = this.urlFetchOptions.charset;
     this.method =
       this.urlFetchOptions.method?.toUpperCase() === "POST" ? "POST" : "GET";
 
-    // Legado：POST 保留 URL 上的 query（如 Lofter ?product=…），表单在 body；
+    // Legado：POST 保留 URL 上的 query（如 ?product=…），表单在 body；
     // GET 才把 query 拆进 fieldMap。
     if (this.method === "POST") {
       this.url = u;

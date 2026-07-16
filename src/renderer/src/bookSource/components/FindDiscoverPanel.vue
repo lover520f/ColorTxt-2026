@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import IconButton from "../../components/IconButton.vue";
+import RefreshIcon from "../../components/RefreshIcon.vue";
 import AppShellMenuTeleport from "../../components/AppShellMenuTeleport.vue";
 import FindBookListItem from "./FindBookListItem.vue";
 import { FIND_BOOK_LIST_ROW_STRIDE } from "./findBookListLayout";
@@ -54,6 +55,8 @@ const exploreBooks = ref<SearchBookItem[]>([]);
 const { getCoverUrl, isCoverPending } = useBookshelfCoverUrls(exploreBooks);
 const exploreLoading = ref(false);
 const exploreLoadingMore = ref(false);
+/** 用户点击顶栏「刷新」触发的加载（用于图标旋转，不含初次进入 / 滚动加载更多） */
+const exploreRefreshing = ref(false);
 const explorePage = ref(1);
 const exploreHasMore = ref(true);
 const exploreError = ref("");
@@ -398,6 +401,26 @@ function backFromExplore() {
   exploreLoadingMore.value = false;
 }
 
+async function onRefreshExplore() {
+  if (!exploreShow.value || exploreLoading.value || exploreRefreshing.value) {
+    return;
+  }
+  const seq = bumpExploreRequestSeq();
+  exploreBooks.value = [];
+  explorePage.value = 1;
+  exploreHasMore.value = true;
+  exploreError.value = "";
+  exploreLogs.value = [];
+  exploreLoadingMore.value = false;
+  if (exploreBodyRef.value) exploreBodyRef.value.scrollTop = 0;
+  exploreRefreshing.value = true;
+  try {
+    await loadExplorePage(false, seq);
+  } finally {
+    exploreRefreshing.value = false;
+  }
+}
+
 function onOpenBook(item: SearchBookItem) {
   emit("openBook", item);
 }
@@ -522,14 +545,25 @@ defineExpose({ refreshSources });
           <span class="findDiscoverBreadcrumbSep" aria-hidden="true">/</span>
           <span class="findDiscoverBreadcrumbCurrent">{{ exploreShow.kindTitle }}</span>
         </nav>
-        <IconButton
-          v-if="showExploreLogBtn"
-          class="findDiscoverSubLogBtn"
-          :icon-html="icons.info"
-          title="日志"
-          aria-label="日志"
-          @click="onShowExploreLogs"
-        />
+        <div class="findDiscoverSubHeadActions">
+          <IconButton
+            v-if="showExploreLogBtn"
+            class="findDiscoverSubLogBtn"
+            :icon-html="icons.info"
+            title="日志"
+            aria-label="日志"
+            @click="onShowExploreLogs"
+          />
+          <IconButton
+            title="刷新"
+            aria-label="刷新"
+            :disabled="exploreLoading || !exploreShow"
+            :aria-busy="exploreRefreshing || undefined"
+            @click="onRefreshExplore"
+          >
+            <RefreshIcon :spinning="exploreRefreshing" />
+          </IconButton>
+        </div>
       </header>
       <div class="findDiscoverExploreBodyWrap">
         <BookSourceCenterState v-if="exploreLoading">
@@ -993,8 +1027,14 @@ defineExpose({ refreshSources });
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.findDiscoverSubLogBtn {
+.findDiscoverSubHeadActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   margin-left: auto;
+  flex-shrink: 0;
+}
+.findDiscoverSubLogBtn {
   flex-shrink: 0;
 }
 </style>

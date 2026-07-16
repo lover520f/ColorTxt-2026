@@ -154,9 +154,6 @@ function onCoverLoad(e: Event) {
       </div>
       <div v-else class="findBookListItemTitle">{{ item.name }}</div>
       <div class="findBookListItemAuthor">{{ formatBookAuthor(item.author) }}</div>
-      <div v-if="lastChapterText" class="findBookListItemLatest">
-        最新：{{ lastChapterText }}
-      </div>
       <div v-if="kindTags.length" class="findBookListItemTags">
         <span
           v-for="(tag, tagIdx) in kindTags"
@@ -164,9 +161,13 @@ function onCoverLoad(e: Event) {
           class="findBookListItemTag"
         >{{ tag }}</span>
       </div>
+      <div v-if="lastChapterText" class="findBookListItemLatest">
+        最新：{{ lastChapterText }}
+      </div>
       <div
         v-if="introText"
         class="findBookListItemIntro"
+        :class="{ 'findBookListItemIntro--single': !!lastChapterText }"
         :title="introText"
       >{{ introText }}</div>
     </div>
@@ -201,7 +202,7 @@ function onCoverLoad(e: Event) {
   height: 102px;
   border-radius: 4px;
   flex-shrink: 0;
-  display: block;
+  box-sizing: border-box;
 }
 .findBookCoverBadge {
   position: absolute;
@@ -236,6 +237,7 @@ function onCoverLoad(e: Event) {
   fill: currentColor;
 }
 img.findBookListItemCover {
+  display: block;
   object-fit: cover;
   background: var(--scrollbar-track);
 }
@@ -291,7 +293,7 @@ img.findBookListItemCover {
   font-size: 12px;
   line-height: 1.45;
   color: var(--muted);
-  margin-bottom: 6px;
+  margin-bottom: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -299,8 +301,8 @@ img.findBookListItemCover {
 .findBookListItemTags {
   display: flex;
   flex-wrap: nowrap;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 4px;
+  margin-bottom: 4px;
   overflow: hidden;
 }
 .findBookListItemTag {
@@ -323,5 +325,10 @@ img.findBookListItemCover {
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-wrap;
+}
+/* 有「最新」行时简介只占 1 行，把垂直空间让给最新章节 */
+.findBookListItemIntro--single {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
 }
 </style>

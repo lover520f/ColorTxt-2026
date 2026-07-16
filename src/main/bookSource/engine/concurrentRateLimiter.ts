@@ -9,6 +9,48 @@ type ConcurrentRecord = {
 
 const concurrentRecordMap = new Map<string, ConcurrentRecord>();
 
+/**
+ * 未配置 concurrentRate 时的默认并发上限。
+ * Rhino 中 `list.map(() => java.ajax)` 实质串行；Node 升成 async map 后若无限制
+ * 会同时打满列表项详情请求，易触发限流与 TimeoutError。
+ */
+const DEFAULT_MAX_INFLIGHT_PER_SOURCE = 3;
+
+type InflightGate = {
+  active: number;
+  max: number;
+  waiters: Array<() => void>;
+};
+
+const inflightGateMap = new Map<string, InflightGate>();
+
+async function withInflightLimit<T>(
+  key: string,
+  max: number,
+  block: () => Promise<T>,
+): Promise<T> {
+  let gate = inflightGateMap.get(key);
+  if (!gate) {
+    gate = { active: 0, max, waiters: [] };
+    inflightGateMap.set(key, gate);
+  } else if (gate.max !== max) {
+    gate.max = max;
+  }
+  while (gate.active >= gate.max) {
+    await new Promise<void>((resolve) => {
+      gate!.waiters.push(resolve);
+    });
+  }
+  gate.active += 1;
+  try {
+    return await block();
+  } finally {
+    gate.active -= 1;
+    const next = gate.waiters.shift();
+    if (next) next();
+  }
+}
+
 export class ConcurrentException extends Error {
   waitTime: number;
   constructor(message: string, waitTime: number) {
@@ -185,5 +227,11 @@ export async function withSourceRateLimit<T>(
   skip = false,
 ): Promise<T> {
   if (skip || !source) return block();
-  return new ConcurrentRateLimiter(source).withLimit(block);
+  const rate = source.concurrentRate?.trim();
+  if (rate && rate !== "0") {
+    return new ConcurrentRateLimiter(source).withLimit(block);
+  }
+  const key = source.bookSourceUrl?.trim();
+  if (!key) return block();
+  return withInflightLimit(key, DEFAULT_MAX_INFLIGHT_PER_SOURCE, block);
 }

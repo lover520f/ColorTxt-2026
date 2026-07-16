@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { JSONPath } from "jsonpath-plus";
 import type { BookSourceRecord } from "@shared/bookSource/types";
-import { normalizeBookSourceBaseUrl, resolveAbsoluteUrl } from "@shared/bookSource/url";
+import { normalizeBookSourceBaseUrl, normalizeHttpUrlPath, resolveAbsoluteUrl } from "@shared/bookSource/url";
 import { createJsExtensionHost, type JsExtensionHost } from "./jsExtensions";
 import { selectXPath } from "./htmlXPath";
 import {
@@ -56,9 +56,10 @@ import {
 } from "./legadoRuleSplit";
 import {
   expandLegadoGetRefs,
+  isLegadoEmbeddedRuleExpr,
+  isLegadoLiteralUrlRule,
   isLegadoTemplateOnlyRule,
   isPureMustacheTemplateRule,
-  legadoTemplateNeedsJsEval,
   legadoJsonPathFromRule,
   coerceLegadoMediaUrl,
   isPlainRuleObject,
@@ -102,6 +103,16 @@ function coerceLegadoRuleString(value: unknown): string {
       .join("\n");
   }
   if (typeof value === "object") {
+    // Jsoup Elements / Element：优先 .text()，避免 String(el) → [object Object]
+    const withText = value as { text?: unknown };
+    if (typeof withText.text === "function") {
+      try {
+        const t = trimLegadoAsciiWhitespace(String(withText.text.call(value) ?? ""));
+        if (t && t !== "[object Object]") return t;
+      } catch {
+        /* fall through */
+      }
+    }
     const s = trimLegadoAsciiWhitespace(coerceJavaString(value));
     if (s && s !== "[object Object]") return s;
   }
@@ -325,6 +336,22 @@ export class AnalyzeRule {
     };
   }
 
+  private normalizeRuleInputSync(
+    rule: string,
+    mContent?: unknown,
+  ): { working: string; pureGet: boolean } {
+    const { cleanRule, putMap } = parsePutMapFromRule(rule);
+    this.evalPutMapSync(putMap, mContent);
+    const getKey = parseLegadoPureGetKey(cleanRule);
+    if (getKey) {
+      return { working: this.lookupStoredValue(getKey), pureGet: true };
+    }
+    return {
+      working: expandLegadoGetRefs(cleanRule, (k) => this.lookupStoredValue(k)),
+      pureGet: false,
+    };
+  }
+
   private async applyPutFromFullRule(
     rule: string,
     mContent?: unknown,
@@ -374,15 +401,64 @@ export class AnalyzeRule {
       if (regex) s = this.applyRuleRegex(s, regex);
       return trimLegadoAsciiWhitespace(s);
     }
+    // @put/@get 拼出的 https://…/book/id.html：勿再当 JsonPath
+    if (isLegadoLiteralUrlRule(working)) {
+      let s = working.trim();
+      if (regex) s = this.applyRuleRegex(s, regex);
+      return trimLegadoAsciiWhitespace(s);
+    }
     if (isLegadoTemplateOnlyRule(working)) {
       const expanded = trimLegadoAsciiWhitespace(
-        expandLegadoTemplateRule(working, mContent ?? this.content),
+        this.expandAllTemplateExprs(working, mContent ?? this.content),
       );
       return regex ? trimLegadoAsciiWhitespace(this.applyRuleRegex(expanded, regex)) : expanded;
     }
     const jsonCompound = await this.resolveJsonCompoundString(working, mContent, regex);
     if (jsonCompound != null) return jsonCompound;
     let s = await this.getStringChain(working, mContent);
+    if (regex) s = this.applyRuleRegex(s, regex);
+    return trimLegadoAsciiWhitespace(s);
+  }
+
+  /** Legado/Rhino：规则 JS / `{{@@…}}` 嵌套规则展开用的同步 getString */
+  getStringSync(rule: string | undefined | null, mContent?: unknown): string {
+    if (!rule?.trim()) return "";
+    const parseRule = this.applyPutFromFullRuleSync(rule, mContent);
+    if (/(?:@js:|<js>|@webjs:)/i.test(parseRule)) {
+      return trimLegadoAsciiWhitespace(this.getStringChainSync(parseRule, mContent));
+    }
+    const { baseRule: orBase, regex: orRegex } = splitRuleRegexSuffix(parseRule);
+    if (shouldSplitOrAlternatives(orBase)) {
+      for (const alt of orBase.split("||").map((s) => s.trim()).filter(Boolean)) {
+        let v = this.getStringSync(alt, mContent);
+        if (v) {
+          if (orRegex) v = this.applyRuleRegex(v, orRegex);
+          return trimLegadoAsciiWhitespace(v);
+        }
+      }
+      return "";
+    }
+    const { baseRule, regex } = splitRuleRegexSuffix(parseRule);
+    const { working, pureGet } = this.normalizeRuleInputSync(baseRule, mContent);
+    if (pureGet) {
+      let s = working;
+      if (regex) s = this.applyRuleRegex(s, regex);
+      return trimLegadoAsciiWhitespace(s);
+    }
+    if (isLegadoLiteralUrlRule(working)) {
+      let s = working.trim();
+      if (regex) s = this.applyRuleRegex(s, regex);
+      return trimLegadoAsciiWhitespace(s);
+    }
+    if (isLegadoTemplateOnlyRule(working)) {
+      const expanded = trimLegadoAsciiWhitespace(
+        this.expandAllTemplateExprs(working, mContent ?? this.content),
+      );
+      return regex ? trimLegadoAsciiWhitespace(this.applyRuleRegex(expanded, regex)) : expanded;
+    }
+    const jsonCompound = this.resolveJsonCompoundStringSync(working, mContent, regex);
+    if (jsonCompound != null) return jsonCompound;
+    let s = this.getStringChainSync(working, mContent);
     if (regex) s = this.applyRuleRegex(s, regex);
     return trimLegadoAsciiWhitespace(s);
   }
@@ -435,7 +511,7 @@ export class AnalyzeRule {
     const { baseRule, regex } = splitRuleRegexSuffix(parseRule);
 
     if (isLegadoTemplateOnlyRule(baseRule)) {
-      const s = expandLegadoTemplateRule(baseRule, content).trim();
+      const s = this.expandAllTemplateExprs(baseRule, content).trim();
       const v = regex ? this.applyRuleRegex(s, regex) : s;
       return v ? splitStringListLines(v) : [];
     }
@@ -530,7 +606,7 @@ export class AnalyzeRule {
     const { baseRule, regex } = splitRuleRegexSuffix(parseRule);
 
     if (isLegadoTemplateOnlyRule(baseRule)) {
-      const s = expandLegadoTemplateRule(baseRule, content).trim();
+      const s = this.expandAllTemplateExprs(baseRule, content).trim();
       const v = regex ? this.applyRuleRegex(s, regex) : s;
       return v ? splitStringListLines(v) : [];
     }
@@ -774,7 +850,7 @@ export class AnalyzeRule {
       | undefined;
     const login = fromLogin?.() ?? {};
     if (login[key]) return login[key]!;
-    // 须在 cache / put 之后：否则 java.put('url', tocUrl) 会被 baseUrl 盖掉，Lofter nextTocUrl 无法分页
+    // 须在 cache / put 之后：否则 java.put('url', tocUrl) 会被 baseUrl 盖掉，nextTocUrl 无法分页
     if (key === "url") return this.requestUrlCtx || this.baseUrl;
     if (key === "bookName" && this.book?.name) return String(this.book.name);
     if (key === "title" && this.chapter?.title) return String(this.chapter.title);
@@ -828,6 +904,11 @@ export class AnalyzeRule {
       s,
     );
     return s;
+  }
+
+  /** 当前规则链 @put / java.put 写入的变量快照（供搜索项带入 Book.variable） */
+  getStoredVariables(): Record<string, string> {
+    return { ...(this.ruleData.variable ?? {}) };
   }
 
   private writeEntityVariable(
@@ -906,14 +987,14 @@ export class AnalyzeRule {
     };
   }
 
-  /** JSON 上 `$.a&&$.b##regex##repl`：合并多段 JsonPath 后再做正则（七猫 intro 标签行） */
+  /** JSON 上 `$.a&&$.b##regex##repl`：合并多段 JsonPath 后再做正则（如 intro 标签行） */
   private resolveJsonCompoundStringSync(
     baseRule: string,
     content: unknown,
     regex?: ReturnType<typeof splitRuleRegexSuffix>["regex"],
   ): string | null {
     if (!isJsonItemContent(content)) return null;
-    // `a||b <js>strip</js>`：须走规则链，避免 || 短路后跳过 JS 再套 ##（Lofter 章节名）
+    // `a||b <js>strip</js>`：须走规则链，避免 || 短路后跳过 JS 再套 ##
     if (splitSourceRule(baseRule).length > 1) return null;
     const { parts, joiner } = splitLegadoCompoundRule(baseRule);
     if (parts.length <= 1) return null;
@@ -1081,7 +1162,7 @@ export class AnalyzeRule {
       return this.applyRuleRegex(text, regex);
     }
 
-    // 单段内 `a||b`：首个非空（Lofter `$..posts[*]||$.response.items[*]`）；勿把整段当 JSONPath
+    // 单段内 `a||b`：首个非空（如 `$..posts[*]||$.response.items[*]`）；勿把整段当 JSONPath
     if (!isJsRule && workRule.includes("||")) {
       const { parts, joiner } = splitLegadoCompoundRule(workRule);
       if (joiner === "||" && parts.length > 1) {
@@ -1100,9 +1181,7 @@ export class AnalyzeRule {
 
     if (isJsonItemContent(content)) {
       if (workRule.includes("{{")) {
-        workRule = legadoTemplateNeedsJsEval(workRule)
-          ? this.expandRuleJsTemplates(workRule, content)
-          : expandLegadoTemplateRule(workRule, content);
+        workRule = this.expandAllTemplateExprs(workRule, content);
       } else if (workRule.includes("{$.")) {
         workRule = expandBraceJsonPathRule(workRule, content);
       }
@@ -1115,12 +1194,16 @@ export class AnalyzeRule {
       }
       return literal;
     }
+    // @get 展开后的绝对/站内 URL：JSON 条目上勿走 JsonPath，也勿把 /book/x.html 当 XPath
+    if (!list && isLegadoLiteralUrlRule(workRule)) {
+      return regex ? this.applyRuleRegex(workRule, regex) : workRule;
+    }
     const mode = detectMode(workRule, this.contentIsJson);
     let out: unknown;
     try {
       switch (mode) {
         case "template":
-          out = expandLegadoTemplateRule(workRule, content);
+          out = this.expandAllTemplateExprs(workRule, content);
           break;
         case "js":
           out = await this.evalRuleJs(baseRule, content);
@@ -1235,9 +1318,7 @@ export class AnalyzeRule {
     }
     if (isJsonItemContent(content)) {
       if (workRule.includes("{{")) {
-        workRule = legadoTemplateNeedsJsEval(workRule)
-          ? this.expandRuleJsTemplates(workRule, content)
-          : expandLegadoTemplateRule(workRule, content);
+        workRule = this.expandAllTemplateExprs(workRule, content);
       } else if (workRule.includes("{$.")) {
         workRule = expandBraceJsonPathRule(workRule, content);
       }
@@ -1249,12 +1330,15 @@ export class AnalyzeRule {
       }
       return literal;
     }
+    if (!list && isLegadoLiteralUrlRule(workRule)) {
+      return regex ? this.applyRuleRegex(workRule, regex) : workRule;
+    }
     const mode = detectMode(workRule, this.contentIsJson);
     let out: unknown;
     try {
       switch (mode) {
         case "template":
-          out = expandLegadoTemplateRule(workRule, content);
+          out = this.expandAllTemplateExprs(workRule, content);
           break;
         case "js":
           out = this.evalRuleJsSync(baseRule, content);
@@ -1366,6 +1450,16 @@ export class AnalyzeRule {
   }
 
   private expandRuleJsTemplates(script: string, content: unknown): string {
+    return this.expandAllTemplateExprs(script, content);
+  }
+
+  /**
+   * 展开 `{{…}}`：对齐 Legado SourceRule.makeUpRule —
+   * - `result` / `$.…`：链式结果 / JSONPath
+   * - `@`/`@@`/`$/`/`//` 开头：嵌套规则走 getString（如 `{{@@td.1@text##…}}`）
+   * - 其余：Rhino 表达式
+   */
+  private expandAllTemplateExprs(rule: string, content: unknown): string {
     const templateContexts: unknown[] = [];
     if (isJsonItemContent(this.chainItemContext)) {
       templateContexts.push(this.chainItemContext);
@@ -1378,8 +1472,17 @@ export class AnalyzeRule {
     }
     if (!templateContexts.length) templateContexts.push(content);
 
-    return script.replace(/\{\{([\s\S]*?)\}\}/g, (_, expr: string) => {
+    return rule.replace(/\{\{([\s\S]*?)\}\}/g, (_, expr: string) => {
       const key = expr.trim();
+      if (key === "result") {
+        if (content == null || typeof content === "object") return "";
+        if (typeof content === "number" && Number.isFinite(content)) {
+          return content % 1 === 0
+            ? String(Math.trunc(content))
+            : String(content);
+        }
+        return String(content);
+      }
       if (key.startsWith("$.") || key.startsWith("$..") || key.startsWith("$[")) {
         const pathPart = key.split("##")[0]?.trim() ?? key;
         for (const ctx of templateContexts) {
@@ -1397,6 +1500,10 @@ export class AnalyzeRule {
           if (fromUrl) return fromUrl;
         }
         return "";
+      }
+      // Legado isRule：嵌套选择器/JSONPath/XPath，勿当 JS eval
+      if (isLegadoEmbeddedRuleExpr(key)) {
+        return this.getStringSync(key, content);
       }
       const jsOut = evalJsExpression(key, {
         ...this.buildJsEvalContext(content),
@@ -1442,12 +1549,7 @@ export class AnalyzeRule {
     if (isPureMustacheTemplateRule(beforeExpand)) {
       return script;
     }
-    if (Array.isArray(content)) {
-      script = script.replace(/\$(\d{1,2})/g, (_, d) => {
-        const v = content[Number.parseInt(d, 10)] ?? "";
-        return String(v).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-      });
-    }
+    script = expandLegadoRegexGroupRefsInJs(script, content);
     const allowContentFallback = this.shouldEvalJsFallbackToContent(content);
     let out: unknown;
     const jsPrefix = this.nextChapterUrl
@@ -1471,7 +1573,7 @@ export class AnalyzeRule {
     if (out != null && out !== "") {
       return out;
     }
-    // 部分书源（如起点）在 if 外不 return，但已通过 setContent / ajax 更新正文
+    // 部分书源在 if 外不 return，但已通过 setContent / ajax 更新正文
     const pathMatch = script.match(/path\s*=\s*['"]([^'"]+)['"]/);
     if (pathMatch) {
       try {
@@ -1494,12 +1596,7 @@ export class AnalyzeRule {
     if (isPureMustacheTemplateRule(beforeExpand)) {
       return script;
     }
-    if (Array.isArray(content)) {
-      script = script.replace(/\$(\d{1,2})/g, (_, d) => {
-        const v = content[Number.parseInt(d, 10)] ?? "";
-        return String(v).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-      });
-    }
+    script = expandLegadoRegexGroupRefsInJs(script, content);
     const allowContentFallback = this.shouldEvalJsFallbackToContent(content);
     const jsPrefix = this.nextChapterUrl
       ? `var nextChapterUrl=${JSON.stringify(this.nextChapterUrl)};\n`
@@ -1576,7 +1673,7 @@ export class AnalyzeRule {
       } else if (results != null && results !== "") {
         return results;
       }
-      // 标量路径落空时尝试 Lofter 等详情字段兼容（blogsetting → posts[0].post）
+      // 标量路径落空时尝试详情字段兼容（blogsetting → posts[0].post）
       const fb = jsonPathWithLegacyResponseFallback(path, data);
       return fb || "";
     } catch {
@@ -1966,6 +2063,8 @@ export class AnalyzeRule {
       );
       // UrlOption 后缀已拆出；相对路径不含换行。多行 href 误入时只取首行
       path = resolveAbsoluteUrl(base, path);
+    } else {
+      path = normalizeHttpUrlPath(path);
     }
     return path + suffix;
   }
@@ -1989,6 +2088,28 @@ export class AnalyzeRule {
         .find(Boolean) ?? "";
     return first ? this.resolveAbsoluteRuleUrl(first) : "";
   }
+}
+
+/**
+ * Legado：上一段为正则捕获组 List 时，规则 JS 里的 `$1`/`$2` 替换为组内容。
+ * 仅标量数组可展开；JsonPath `data.books[*]` 等对象数组不可展开，否则会把
+ * `.replace(..., '（$1）')` 里的 `$1` 误替换成 `String(book)` → `[object Object]`
+ *（搜索 list `@js` 里 `.replace(..., '（$1）')` 拼最新章日期）。
+ */
+function expandLegadoRegexGroupRefsInJs(script: string, content: unknown): string {
+  if (!Array.isArray(content) || content.length === 0) return script;
+  const allScalar = content.every(
+    (v) =>
+      v == null ||
+      typeof v === "string" ||
+      typeof v === "number" ||
+      typeof v === "boolean",
+  );
+  if (!allScalar) return script;
+  return script.replace(/\$(\d{1,2})/g, (_, d) => {
+    const v = content[Number.parseInt(d, 10)] ?? "";
+    return String(v).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  });
 }
 
 function jsonPathFromContent(path: string, content: unknown): string {
@@ -2026,7 +2147,7 @@ function jsonPathFromContent(path: string, content: unknown): string {
 }
 
 /**
- * Lofter 字段兼容（勿把 detail 的 post.blogId 当成 blogsetting.blogId：
+ * 部分博客/合集书源字段兼容（勿把 detail 的 post.blogId 当成 blogsetting.blogId：
  * 否则会误拼 blogHomePage，目录变成博主全部动态而非本书）。
  */
 function jsonPathWithLegacyResponseFallback(path: string, content: unknown): string {
@@ -2082,27 +2203,6 @@ function expandLegadoTemplateJsonPathExpr(expr: string, content: unknown): strin
   return "";
 }
 
-function expandLegadoTemplateRule(rule: string, content: unknown): string {
-  return rule.replace(/\{\{([\s\S]*?)\}\}/g, (_, expr: string) => {
-    const key = expr.trim();
-    // Legado 规则链：{{result}} 表示上一段规则的输出（如 bid 经 JS 偏移后的 bookid）
-    if (key === "result") {
-      if (content == null || typeof content === "object") return "";
-      if (typeof content === "number" && Number.isFinite(content)) {
-        return content % 1 === 0
-          ? String(Math.trunc(content))
-          : String(content);
-      }
-      return String(content);
-    }
-    if (key.startsWith("$.") || key.startsWith("$..") || key.startsWith("$[")) {
-      return expandLegadoTemplateJsonPathExpr(key, content);
-    }
-    return "";
-  });
-}
-
-/** Legado `{$.path}` 单花括号 JSON 模板（不匹配 {{$.path}} 双花括号） */
 function expandBraceJsonPathRule(rule: string, content: unknown): string {
   return rule.replace(/(?<!\{)\{(\$\.[^}]+)\}/g, (_, expr: string) =>
     jsonPathFromContent(expr.trim(), content),
@@ -2181,6 +2281,8 @@ function detectMode(rule: string, contentIsJson = false): AnalyzeMode {
   if (isLegadoTemplateOnlyRule(t)) return "template";
   if (/^@webjs:/i.test(t)) return "webJs";
   if (/^<js>/i.test(t) || /^@js:/i.test(t)) return "js";
+  // @put/@get 拼出的 URL 优先于 JsonPath / XPath（/book/x.html）
+  if (isLegadoLiteralUrlRule(t)) return "default";
   if (
     t.startsWith("@Json:") ||
     t.startsWith("@json:") ||

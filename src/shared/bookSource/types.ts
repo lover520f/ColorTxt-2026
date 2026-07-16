@@ -133,6 +133,8 @@ export type SearchBookItem = {
   bookUrl: string;
   origin: string;
   originName: string;
+  /** 搜索 @put 写入的变量（如 id），须随书带入详情/目录 */
+  variable?: Record<string, string>;
 };
 
 /**
@@ -175,11 +177,13 @@ export type BookSourceGetBookInfoPayload = {
   intro?: string;
   lastChapter?: string;
   coverUrl?: string;
+  /** 搜索 @put 变量（对齐 Legado Book.variable） */
+  variable?: Record<string, string>;
 };
 
 export type BookInfoSeed = Pick<
   BookSourceGetBookInfoPayload,
-  "kind" | "wordCount" | "intro" | "lastChapter" | "coverUrl"
+  "kind" | "wordCount" | "intro" | "lastChapter" | "coverUrl" | "variable"
 > & {
   origin?: string;
   originName?: string;

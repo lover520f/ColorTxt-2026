@@ -61,6 +61,7 @@ export function useBookshelfLastReadTitles(
         intro: book.intro,
         lastChapter: book.lastChapter,
         coverUrl: book.coverUrl,
+        variable: book.variable,
       });
       const detail = infoRes.detail;
       if (!detail?.tocUrl) return;

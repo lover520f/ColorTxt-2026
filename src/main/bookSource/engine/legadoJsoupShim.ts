@@ -159,23 +159,28 @@ function wrapElements($: CheerioAPI, selection: Cheerio<AnyNode>): JsoupElements
       return selection.first().attr(attributeKey) ?? "";
     },
     text() {
-      return selection
-        .map((_, n) => wrapElement($, n).text())
-        .get()
-        .filter(Boolean)
-        .join(" ");
+      // 勿用 cheerio `.map().get()`：部分路径会得到节点对象，`join` 成 `[object Object]`
+      //（搜索规则用 Elements.text() 拼最新章日期时）
+      const parts: string[] = [];
+      selection.each((_, n) => {
+        const t = wrapElement($, n).text();
+        if (t) parts.push(t);
+      });
+      return parts.join(" ");
     },
     html() {
-      return selection
-        .map((_, n) => $(n).html() ?? "")
-        .get()
-        .join("");
+      const parts: string[] = [];
+      selection.each((_, n) => {
+        parts.push($(n).html() ?? "");
+      });
+      return parts.join("");
     },
     outerHtml() {
-      return selection
-        .map((_, n) => $.html(n) ?? "")
-        .get()
-        .join("");
+      const parts: string[] = [];
+      selection.each((_, n) => {
+        parts.push($.html(n) ?? "");
+      });
+      return parts.join("");
     },
     hasClass(className: string) {
       return selection.toArray().some((n) => $(n).hasClass(className));

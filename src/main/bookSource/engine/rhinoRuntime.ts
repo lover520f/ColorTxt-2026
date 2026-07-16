@@ -12,7 +12,9 @@ import {
   type LegadoVariableSync,
 } from "./legadoRuleEntity";
 import { createJavaImporter, createOrgPackage, createPackagesStub } from "./legadoJavaShims";
+import { ensureLegadoListApi } from "./legadoJsList";
 import {
+  createLegadoJson,
   ensureBookSourceJsLib,
   getJsLibAsyncFunctionNames,
   runInBookSourceJsScope,
@@ -49,15 +51,17 @@ function buildVmSandbox(
   const host = ctx.host;
   const book = wrapLegadoBookForJs(ctx.book, ctx.bookVariableSync);
   const chapter = wrapLegadoChapterForJs(ctx.chapter, ctx.chapterVariableSync);
-  const result = ctx.result ?? "";
-  const src = ctx.src !== undefined ? ctx.src : result;
+  const result = ensureLegadoListApi(ctx.result ?? "");
+  const src = ensureLegadoListApi(
+    ctx.src !== undefined ? ctx.src : result,
+  );
   const sandbox: Record<string, unknown> = {
     String,
     Number,
     Boolean,
     Array,
     Object,
-    JSON,
+    JSON: createLegadoJson(),
     Math,
     Date,
     RegExp,
@@ -108,6 +112,24 @@ function runVmScript(code: string, sandbox: Record<string, unknown>): unknown {
   } catch (e) {
     throw toBookSourceJsTimeoutError(e);
   }
+}
+
+/** `.map(async () => …)` / 含 await 的回调会得到 Promise[]；对齐 Legado 同步 map 串行结算 */
+async function settleLegadoJsResult(value: unknown): Promise<unknown> {
+  if (!Array.isArray(value) || value.length === 0) return value;
+  const hasThenable = value.some(
+    (v) =>
+      v != null &&
+      (typeof v === "object" || typeof v === "function") &&
+      typeof (v as { then?: unknown }).then === "function",
+  );
+  if (!hasThenable) return value;
+  // 勿 Promise.all：回调若已启动则无法撤销并行；串行 await 至少保证结算顺序
+  const out: unknown[] = [];
+  for (const v of value) {
+    out.push(await v);
+  }
+  return out;
 }
 
 export function evalJs(
@@ -170,7 +192,7 @@ export async function evalJsAsync(
         });
         if (!legadoAsync) return result;
         // sharedJsScope 异步路径已内嵌 raceWithJsTimeout
-        return await (result as Promise<unknown>);
+        return await settleLegadoJsResult(await (result as Promise<unknown>));
       }
 
       const body = legadoAsync
@@ -184,8 +206,8 @@ export async function evalJsAsync(
       const code = legadoAsync ? body : `(function(){ ${body} })()`;
       const runResult = runVmScript(code, sandbox);
       if (!legadoAsync) return runResult;
-      return await raceWithJsTimeout(
-        Promise.resolve(runResult as Promise<unknown>),
+      return await settleLegadoJsResult(
+        await raceWithJsTimeout(Promise.resolve(runResult as Promise<unknown>)),
       );
     });
   } catch (e) {

@@ -48,7 +48,7 @@ export function trimLegadoRulePreservingRegexReplace(rule: string): string {
 /**
  * Legado 常见误用/惯用：用 `<js>` 包住纯 `##正则` 段，实际不是 JS。
  * - `title<js>##正则##</js>`（字段 + 替换）
- * - `<js>##正则</js>` / `@js:##正则`（链式段，七猫 lastChapter 等）
+ * - `<js>##正则</js>` / `@js:##正则`（链式段，如 lastChapter 后处理）
  */
 function stripLegadoJsRegexWrapper(rule: string): string {
   let r = rule.trim();
@@ -652,14 +652,23 @@ export function extractFromContentRoot(
 }
 
 /**
- * 对齐 Jsoup/Kotlin：只把 code≤0x20 当空白。
- * JS `String#trim` / `\s` 会吃掉全角空格 `\u3000`（简介段首缩进）。
+ * 去掉首尾 ASCII 空白，但**保留换行** `\n`/`\r`。
+ * - 勿用 JS `trim`/`\s`：会吃掉全角空格 `\u3000`（简介段首缩进）
+ * - 勿裁掉换行：`##pat##\n$1` 类替换（榜单规则）依赖结果以 `\n` 开头，Legado 替换后不 trim
  */
 export function trimLegadoAsciiWhitespace(s: string): string {
   let start = 0;
   let end = s.length;
-  while (start < end && s.charCodeAt(start) <= 0x20) start += 1;
-  while (end > start && s.charCodeAt(end - 1) <= 0x20) end -= 1;
+  while (start < end) {
+    const c = s.charCodeAt(start);
+    if (c === 0x0a || c === 0x0d || c > 0x20) break;
+    start += 1;
+  }
+  while (end > start) {
+    const c = s.charCodeAt(end - 1);
+    if (c === 0x0a || c === 0x0d || c > 0x20) break;
+    end -= 1;
+  }
   return s.slice(start, end);
 }
 
@@ -683,19 +692,102 @@ export function normalizeLegadoAsciiWhitespace(raw: string): string {
 }
 
 /**
+ * Jsoup `Tag.isBlock` 常用集合（含 `br`：text() 时按块边界插空格）。
+ * 块级边界插空格，否则 `<div>暂无</div><div>里程碑</div>` 会粘成「暂无里程碑」，
+ * 榜单类 `##(\S+)\s+…` 替换会失效。
+ */
+const LEGADO_JSOUP_BLOCK_TAGS = new Set([
+  "address",
+  "article",
+  "aside",
+  "blockquote",
+  "br",
+  "caption",
+  "dd",
+  "details",
+  "dialog",
+  "div",
+  "dl",
+  "dt",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hr",
+  "html",
+  "legend",
+  "li",
+  "main",
+  "nav",
+  "ol",
+  "p",
+  "pre",
+  "section",
+  "table",
+  "tbody",
+  "td",
+  "tfoot",
+  "th",
+  "thead",
+  "tr",
+  "ul",
+]);
+
+function isLegadoJsoupBlockTag(tagName: string): boolean {
+  return LEGADO_JSOUP_BLOCK_TAGS.has(tagName.toLowerCase());
+}
+
+function lastCharIsAsciiWhitespace(s: string): boolean {
+  if (!s) return false;
+  return s.charCodeAt(s.length - 1) <= 0x20;
+}
+
+/**
  * 对齐 Legado/JSoup `Element.text()`：
- * - 忽略 script / style / noscript
+ * - 忽略 script / style / noscript / textarea
+ * - 块级元素（及 br）边界插入空格（Cheerio `.text()` 不会）
  * - 仅折叠 code≤0x20 的空白（勿用 JS `\s`/`trim`，以免去掉简介段首全角缩进）
- * Cheerio `.text()` 会保留 HTML 源码换行，`div.tags` / `p.bookDesc` 等会多出无换行段。
  */
 function legadoElementText(el: Cheerio<any>): string {
-  const raw = el
-    .clone()
-    .find("script, style, noscript")
-    .remove()
-    .end()
-    .text();
-  return normalizeLegadoAsciiWhitespace(raw);
+  if (!el.length) return "";
+  let out = "";
+  const walk = (node: any) => {
+    if (!node) return;
+    if (node.type === "text") {
+      const raw = typeof node.data === "string" ? node.data : "";
+      for (let i = 0; i < raw.length; i++) {
+        const c = raw.charCodeAt(i);
+        if (c <= 0x20) {
+          if (out && !lastCharIsAsciiWhitespace(out)) out += " ";
+        } else {
+          out += raw[i]!;
+        }
+      }
+      return;
+    }
+    if (node.type !== "tag" && node.type !== "script" && node.type !== "style") {
+      return;
+    }
+    const name = String(node.name ?? "").toLowerCase();
+    if (name === "script" || name === "style" || name === "noscript" || name === "textarea") {
+      return;
+    }
+    const block = isLegadoJsoupBlockTag(name);
+    if (block && out && !lastCharIsAsciiWhitespace(out)) out += " ";
+    const children: any[] = node.children ?? [];
+    for (const child of children) walk(child);
+    if (block && out && !lastCharIsAsciiWhitespace(out)) out += " ";
+  };
+  el.each((_, root) => walk(root));
+  return normalizeLegadoAsciiWhitespace(out);
 }
 
 /**
@@ -722,6 +814,14 @@ function legadoElementTextNodes(el: Cheerio<any>): string {
   return parts.join("\n");
 }
 
+/** Legado `@html` / `@all`：`Elements.outerHtml()`（含选中节点自身标签） */
+function legadoElementOuterHtml(el: Cheerio<any>): string {
+  if (!el.length) return "";
+  const clone = el.clone();
+  clone.find("script, style").remove();
+  return clone.toString();
+}
+
 export function extractFromElement(
   el: Cheerio<any>,
   extract: string,
@@ -732,7 +832,7 @@ export function extractFromElement(
 
   if (lower === "text") return legadoElementText(el);
   if (lower === "textnodes") return legadoElementTextNodes(el);
-  if (lower === "html" || lower === "all") return el.html() ?? "";
+  if (lower === "html" || lower === "all") return legadoElementOuterHtml(el);
   if (lower === "owntext") {
     return el
       .contents()

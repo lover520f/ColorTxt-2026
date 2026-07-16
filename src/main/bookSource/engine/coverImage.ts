@@ -15,7 +15,7 @@ import { getBookSourceDispatcher } from "./httpProxy";
 const COVER_FETCH_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-/** CDN（如网易 easyreadfs）常返回 application/octet-stream，需按魔数识别 */
+/** CDN 常返回 application/octet-stream，需按魔数识别 */
 function sniffImageMime(body: Buffer): string | null {
   if (body.length < 12) return null;
   if (body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff) return "image/jpeg";
