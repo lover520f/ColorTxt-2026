@@ -416,6 +416,19 @@ export function createJsExtensionHost(
     timeFormatUTC: (time: unknown, format: unknown, offsetHours: unknown) =>
       timeFormatUtc(time, format, offsetHours),
     getUserAgent: () => getWebViewUserAgent(),
+    /**
+     * 洛雅橙分叉 API（官方 Legado 无）。
+     * 部分书源用 `typeof java.readBookConfig == "undefined"` 做客户端校验；
+     * Rhino 上对应 `getReadBookConfig()`，会以属性名 `readBookConfig` 可见。
+     * 返回空配置 JSON，仅保证存在性，不模拟阅读排版。
+     * @link https://github.com/Luoyacheng/legado-E
+     */
+    getReadBookConfig: () => "{}",
+    readBookConfig: () => "{}",
+    getReadBookConfigMap: () => ({}),
+    getThemeMode: () => "0",
+    getThemeConfig: () => "{}",
+    getThemeConfigMap: () => ({}),
     getString: (_rule: string, content?: string) => content ?? "",
     getCookie: (domain: string) => {
       const d = getDomainFromUrl(domain.includes(".") ? `https://${domain}` : domain);

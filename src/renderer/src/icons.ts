@@ -104,6 +104,7 @@ import loginIcon from "./assets/login.svg?raw";
 import buyIcon from "./assets/buy.svg?raw";
 import okIcon from "./assets/ok.svg?raw";
 import lockIcon from "./assets/lock.svg?raw";
+import unlockIcon from "./assets/unlock.svg?raw";
 import disclaimerIcon from "./assets/disclaimer.svg?raw";
 import desktopShortcutIcon from "./assets/desktop_shortcut.svg?raw";
 import cacheIcon from "./assets/cache.svg?raw";
@@ -257,6 +258,8 @@ export const icons = {
   speak1: speak1Icon,
   /** VIP / 锁定章节 */
   lock: lockIcon,
+  /** 已购买的付费章节 */
+  unlock: unlockIcon,
   /** 免责声明 */
   disclaimer: disclaimerIcon,
   /** 生成桌面快捷方式 */

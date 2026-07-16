@@ -34,7 +34,7 @@ const emit = defineEmits<{
   sourcesChanged: [];
 }>();
 
-const { listSources, reorderSource } = useBookSourceApi();
+const { listSources, reorderSource, getSource, saveSource } = useBookSourceApi();
 
 const sources = ref<BookSourceListItem[]>([]);
 const expandedUrl = ref<string | null>(null);
@@ -452,6 +452,21 @@ async function onSourceMorePinTop() {
   emit("sourcesChanged");
 }
 
+async function onSourceMoreDisableExplore() {
+  const item = sourceMoreItem.value;
+  closeSourceMoreMenu();
+  sourceMoreItem.value = null;
+  if (!item) return;
+  const source = await getSource(item.bookSourceUrl);
+  if (!source) return;
+  await saveSource({ ...source, enabledExplore: false });
+  if (expandedUrl.value === item.bookSourceUrl) {
+    expandedUrl.value = null;
+  }
+  await refreshSources();
+  emit("sourcesChanged");
+}
+
 async function onEditDone() {
   const url = editingUrl.value;
   showEdit.value = false;
@@ -708,6 +723,14 @@ defineExpose({ refreshSources });
         @click="onSourceMorePinTop"
       >
         <span class="appShellMenuLabel">置顶</span>
+      </button>
+      <button
+        type="button"
+        class="appShellMenuItem appShellMenuItem--danger"
+        role="menuitem"
+        @click="onSourceMoreDisableExplore"
+      >
+        <span class="appShellMenuLabel">禁用发现</span>
       </button>
     </AppShellMenuTeleport>
 

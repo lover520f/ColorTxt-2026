@@ -59,6 +59,13 @@ import {
 } from "./engine/chapterCache";
 import { fetchCoverDisplayUrl } from "./engine/coverImage";
 import {
+  getDefaultBookSourceProxy,
+  getInsecureTlsAgent,
+  getProxyDispatcher,
+  parseLegadoProxy,
+  setDefaultBookSourceProxy,
+} from "./engine/httpProxy";
+import {
   getDomainFromUrl,
   removeDomainCookies,
 } from "./engine/cookieManager";
@@ -787,6 +794,71 @@ export function registerBookSourceIpcHandlers(): void {
         ? (patch as Partial<ReturnType<typeof getCheckSourceConfig>>)
         : {};
     return setCheckSourceConfig(p);
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.setHttpProxy, (_e, proxy: unknown) => {
+    if (proxy == null || proxy === "") {
+      setDefaultBookSourceProxy(null);
+      return { ok: true };
+    }
+    if (typeof proxy !== "string") return { ok: false };
+    setDefaultBookSourceProxy(proxy);
+    return { ok: true };
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.getHttpProxy, () => {
+    return getDefaultBookSourceProxy() ?? null;
+  });
+
+  ipcMain.handle(BOOK_SOURCE_IPC.testHttpProxy, async (_e, payload: unknown) => {
+    const p =
+      payload && typeof payload === "object"
+        ? (payload as { proxy?: unknown; url?: unknown })
+        : {};
+    const url = typeof p.url === "string" ? p.url.trim() : "";
+    if (!url) return { ok: false, message: "请填写测试 URL" };
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return { ok: false, message: "测试 URL 格式无效" };
+    }
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return { ok: false, message: "测试 URL 仅支持 http/https" };
+    }
+
+    const proxyRaw =
+      typeof p.proxy === "string" ? p.proxy.trim() : p.proxy == null ? "" : "";
+    let dispatcher;
+    if (proxyRaw) {
+      if (!parseLegadoProxy(proxyRaw)) {
+        return { ok: false, message: "代理地址格式无效" };
+      }
+      dispatcher = getProxyDispatcher(proxyRaw);
+      if (!dispatcher) {
+        return { ok: false, message: "无法创建代理连接" };
+      }
+    } else {
+      dispatcher = getInsecureTlsAgent();
+    }
+
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        redirect: "follow",
+        signal: AbortSignal.timeout(20_000),
+        dispatcher,
+      } as RequestInit & { dispatcher?: unknown });
+      return {
+        ok: true,
+        message: `HTTP ${res.status}`,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        message: e instanceof Error ? e.message : String(e),
+      };
+    }
   });
 }
 

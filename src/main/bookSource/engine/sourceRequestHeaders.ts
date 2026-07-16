@@ -46,15 +46,13 @@ async function parseHeaderField(
     if (h.startsWith("@js:")) script = h.slice(4).trim();
     else script = h.replace(/^<js>/i, "").replace(/<\/js>$/i, "").trim();
     try {
-      const out = await evalJsAsync(
-        script,
-        {
-          source,
-          host,
-          baseUrl: ctx.baseUrl,
-        },
-        { useSharedJsScope: false },
-      );
+      // 须走 jsLib 共享作用域：有些书源 header 里 `Map("cookie")` 是书源自定义函数，
+      // 关闭共享域时 Node VM 会落到原生 Map → Constructor Map requires 'new'
+      const out = await evalJsAsync(script, {
+        source,
+        host,
+        baseUrl: ctx.baseUrl,
+      });
       const text = String(out ?? "").trim();
       if (!text) return {};
       return parseStaticHeaderJson(text);

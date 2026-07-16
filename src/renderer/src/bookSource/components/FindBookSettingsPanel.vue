@@ -7,6 +7,7 @@ import FindBookSettingsTabBar, {
 } from "./FindBookSettingsTabBar.vue";
 import FindBookSettingsDownloadPanel from "./FindBookSettingsDownloadPanel.vue";
 import FindBookSettingsEditPanel from "./FindBookSettingsEditPanel.vue";
+import FindBookSettingsProxyPanel from "./FindBookSettingsProxyPanel.vue";
 import {
   clampFindBookReaderLineHeight,
   defaultTimedScrollIntervalMs,
@@ -29,8 +30,10 @@ import { useFindBookSettings } from "../composables/useFindBookSettings";
 import {
   DEFAULT_FIND_BOOK_DOWNLOAD_AFTER_ACTION,
   DEFAULT_FIND_BOOK_DOWNLOAD_CATEGORY,
+  DEFAULT_FIND_BOOK_PROXY_SETTINGS,
   defaultFindBookChapterNavToolbarEnabled,
   type FindBookDownloadAfterAction,
+  type FindBookProxyType,
 } from "../constants/findBookSettings";
 import {
   resolveDefaultBookSourceChapterCacheDirSync,
@@ -62,6 +65,12 @@ const draftDownloadAfterAction = ref<FindBookDownloadAfterAction>(
 );
 const draftDownloadAddToMainFileList = ref(true);
 const draftDownloadDefaultCategory = ref(DEFAULT_FIND_BOOK_DOWNLOAD_CATEGORY);
+const draftProxyEnabled = ref(DEFAULT_FIND_BOOK_PROXY_SETTINGS.enabled);
+const draftProxyType = ref<FindBookProxyType>(DEFAULT_FIND_BOOK_PROXY_SETTINGS.type);
+const draftProxyHost = ref(DEFAULT_FIND_BOOK_PROXY_SETTINGS.host);
+const draftProxyPort = ref(DEFAULT_FIND_BOOK_PROXY_SETTINGS.port);
+const draftProxyUsername = ref(DEFAULT_FIND_BOOK_PROXY_SETTINGS.username);
+const draftProxyPassword = ref(DEFAULT_FIND_BOOK_PROXY_SETTINGS.password);
 const draftFontSize = ref(defaultReaderFontSize);
 const draftLineHeightMultiple = ref(defaultReaderLineHeightMultiple);
 const draftMonacoSmoothScrolling = ref(defaultMonacoSmoothScrolling);
@@ -81,6 +90,12 @@ function syncDraftFromStore() {
   draftDownloadAfterAction.value = fb.downloadAfterAction.value;
   draftDownloadAddToMainFileList.value = fb.downloadAddToMainFileList.value;
   draftDownloadDefaultCategory.value = fb.downloadDefaultCategory.value;
+  draftProxyEnabled.value = fb.proxy.value.enabled;
+  draftProxyType.value = fb.proxy.value.type;
+  draftProxyHost.value = fb.proxy.value.host;
+  draftProxyPort.value = fb.proxy.value.port;
+  draftProxyUsername.value = fb.proxy.value.username;
+  draftProxyPassword.value = fb.proxy.value.password;
   draftFontSize.value = fb.readerFontSize.value;
   draftLineHeightMultiple.value = clampFindBookReaderLineHeight(
     fb.readerFontSize.value,
@@ -107,6 +122,15 @@ function resetDownloadDraft() {
   draftDownloadDefaultCategory.value = DEFAULT_FIND_BOOK_DOWNLOAD_CATEGORY;
 }
 
+function resetProxyDraft() {
+  draftProxyEnabled.value = DEFAULT_FIND_BOOK_PROXY_SETTINGS.enabled;
+  draftProxyType.value = DEFAULT_FIND_BOOK_PROXY_SETTINGS.type;
+  draftProxyHost.value = DEFAULT_FIND_BOOK_PROXY_SETTINGS.host;
+  draftProxyPort.value = DEFAULT_FIND_BOOK_PROXY_SETTINGS.port;
+  draftProxyUsername.value = DEFAULT_FIND_BOOK_PROXY_SETTINGS.username;
+  draftProxyPassword.value = DEFAULT_FIND_BOOK_PROXY_SETTINGS.password;
+}
+
 function resetReadingDraft() {
   draftFontSize.value = defaultReaderFontSize;
   draftLineHeightMultiple.value = defaultReaderLineHeightMultiple;
@@ -128,6 +152,7 @@ function resetEditDraft() {
 function onResetCurrentTab() {
   if (activeTab.value === "download") resetDownloadDraft();
   else if (activeTab.value === "edit") resetEditDraft();
+  else if (activeTab.value === "proxy") resetProxyDraft();
   else resetReadingDraft();
 }
 
@@ -141,6 +166,14 @@ function onConfirm() {
   fb.downloadAfterAction.value = draftDownloadAfterAction.value;
   fb.downloadAddToMainFileList.value = draftDownloadAddToMainFileList.value;
   fb.downloadDefaultCategory.value = draftDownloadDefaultCategory.value.trim();
+  fb.proxy.value = {
+    enabled: draftProxyEnabled.value,
+    type: draftProxyType.value,
+    host: draftProxyHost.value.trim(),
+    port: draftProxyPort.value.trim(),
+    username: draftProxyUsername.value.trim(),
+    password: draftProxyPassword.value,
+  };
   fb.readerFontSize.value = draftFontSize.value;
   fb.readerLineHeightMultiple.value = clampFindBookReaderLineHeight(
     draftFontSize.value,
@@ -242,6 +275,16 @@ watch(draftFontSize, (size) => {
                 draftReaderEditShowLineNumbers
               "
               v-model:draft-reader-edit-minimap="draftReaderEditMinimap"
+            />
+
+            <FindBookSettingsProxyPanel
+              v-show="activeTab === 'proxy'"
+              v-model:draft-proxy-enabled="draftProxyEnabled"
+              v-model:draft-proxy-type="draftProxyType"
+              v-model:draft-proxy-host="draftProxyHost"
+              v-model:draft-proxy-port="draftProxyPort"
+              v-model:draft-proxy-username="draftProxyUsername"
+              v-model:draft-proxy-password="draftProxyPassword"
             />
           </div>
         </div>

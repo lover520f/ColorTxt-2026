@@ -46,34 +46,125 @@ function findTrailingExpressionStartLine(lines: string[], endLineIdx: number): n
   return endLineIdx;
 }
 
-function findMatchingBrace(src: string, openIdx: number): number {
+/** 跳过正则字面量；start 指向开头 `/`，返回结束下标（flags 之后） */
+function skipRegexLiteral(src: string, start: number): number {
+  let i = start + 1;
+  let inClass = false;
+  while (i < src.length) {
+    const ch = src[i]!;
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (inClass) {
+      if (ch === "]") inClass = false;
+      i++;
+      continue;
+    }
+    if (ch === "[") {
+      inClass = true;
+      i++;
+      continue;
+    }
+    if (ch === "/") {
+      i++;
+      while (i < src.length && /[gimsuy]/.test(src[i]!)) i++;
+      return i;
+    }
+    if (ch === "\n" || ch === "\r") return i;
+    i++;
+  }
+  return i;
+}
+
+/**
+ * 上一非空白 token 是否允许出现正则字面量（避免把除法 `/` 当成正则）。
+ * 注释与字符串内不会走到这里。
+ */
+function canStartRegexLiteral(src: string, slashIdx: number): boolean {
+  let i = slashIdx - 1;
+  while (i >= 0 && /[ \t\n\r]/.test(src[i]!)) i--;
+  if (i < 0) return true;
+  const ch = src[i]!;
+  if ("([{,;=:!&|?~%^<>+-*%".includes(ch)) return true;
+  // return /x/、case /x/: 等
+  if (/[A-Za-z_$]/.test(ch)) {
+    let j = i;
+    while (j >= 0 && /[A-Za-z0-9_$]/.test(src[j]!)) j--;
+    const word = src.slice(j + 1, i + 1);
+    return /^(?:return|case|throw|typeof|delete|void|new|in|of|instanceof|else|do|yield|await)$/.test(
+      word,
+    );
+  }
+  return false;
+}
+
+type MatchDelim = "{" | "(";
+
+/**
+ * 从开括号匹配到对应闭括号；跳过字符串、模板、行/块注释、正则字面量。
+ * （注释里的引号、正则字符类里的 `'` 否则会破坏括号深度，导致 jsLib 提升 async 死循环）
+ */
+function findMatchingDelim(src: string, openIdx: number, open: MatchDelim): number {
+  const close = open === "{" ? "}" : ")";
   let depth = 0;
   let inSingle = false;
   let inDouble = false;
   let inTemplate = false;
   let escape = false;
+
   for (let i = openIdx; i < src.length; i++) {
-    const ch = src[i];
+    const ch = src[i]!;
+
     if (escape) {
       escape = false;
       continue;
     }
-    if (ch === "\\") {
-      escape = true;
-      continue;
-    }
+
     if (inSingle) {
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
       if (ch === "'") inSingle = false;
       continue;
     }
     if (inDouble) {
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
       if (ch === '"') inDouble = false;
       continue;
     }
     if (inTemplate) {
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
       if (ch === "`") inTemplate = false;
       continue;
     }
+
+    if (ch === "/" && i + 1 < src.length) {
+      const next = src[i + 1]!;
+      if (next === "/") {
+        i = src.indexOf("\n", i + 2);
+        if (i < 0) return -1;
+        continue;
+      }
+      if (next === "*") {
+        const end = src.indexOf("*/", i + 2);
+        if (end < 0) return -1;
+        i = end + 1;
+        continue;
+      }
+      if (canStartRegexLiteral(src, i)) {
+        i = skipRegexLiteral(src, i) - 1;
+        continue;
+      }
+    }
+
     if (ch === "'") {
       inSingle = true;
       continue;
@@ -86,8 +177,9 @@ function findMatchingBrace(src: string, openIdx: number): number {
       inTemplate = true;
       continue;
     }
-    if (ch === "{") depth++;
-    else if (ch === "}") {
+
+    if (ch === open) depth++;
+    else if (ch === close) {
       depth--;
       if (depth === 0) return i;
     }
@@ -95,53 +187,12 @@ function findMatchingBrace(src: string, openIdx: number): number {
   return -1;
 }
 
+function findMatchingBrace(src: string, openIdx: number): number {
+  return findMatchingDelim(src, openIdx, "{");
+}
+
 function findMatchingParen(src: string, openIdx: number): number {
-  let depth = 0;
-  let inSingle = false;
-  let inDouble = false;
-  let inTemplate = false;
-  let escape = false;
-  for (let i = openIdx; i < src.length; i++) {
-    const ch = src[i];
-    if (escape) {
-      escape = false;
-      continue;
-    }
-    if (ch === "\\") {
-      escape = true;
-      continue;
-    }
-    if (inSingle) {
-      if (ch === "'") inSingle = false;
-      continue;
-    }
-    if (inDouble) {
-      if (ch === '"') inDouble = false;
-      continue;
-    }
-    if (inTemplate) {
-      if (ch === "`") inTemplate = false;
-      continue;
-    }
-    if (ch === "'") {
-      inSingle = true;
-      continue;
-    }
-    if (ch === '"') {
-      inDouble = true;
-      continue;
-    }
-    if (ch === "`") {
-      inTemplate = true;
-      continue;
-    }
-    if (ch === "(") depth++;
-    else if (ch === ")") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
+  return findMatchingDelim(src, openIdx, "(");
 }
 
 /** Rhino：`with(obj){ ... finalExpr }` 的值即脚本返回值（七猫正文 AES 解密等） */
@@ -202,7 +253,19 @@ export function ensureLegadoScriptReturn(script: string): string {
   if (!hasLegadoTopLevelStatements(trimmed)) {
     const expr = trimmed.replace(/;\s*$/, "");
     if (/^return\s+\([\s\S]*\)\s*;?\s*$/.test(trimmed)) return trimmed;
-    return `return (${expr});`;
+    const wrapped = `return (${expr});`;
+    /**
+     * 多语句靠换行 ASI 分隔时（如 `java.put('k',key)\n'https://…'`），
+     * 整体包进 `return (…)` 后括号内不再 ASI，会变成 Unexpected string。
+     * 能通过语法检查则整包返回；否则走下方「末行表达式 return」。
+     */
+    try {
+      // eslint-disable-next-line no-new-func -- 仅作语法探测
+      new Function(wrapped);
+      return wrapped;
+    } catch {
+      // fall through
+    }
   }
 
   const lines = trimmed.split("\n");
@@ -428,8 +491,10 @@ export function prepareLegadoJs(script: string): string {
 /** 仅将函数体内含 await 的 function / 箭头函数提升为 async（避免 urlEncode 等同步 helper 变 Promise） */
 export function promoteFunctionsToAsyncForAwait(script: string): string {
   if (!/\bawait\b/.test(script)) return script;
-  return promoteArrowAssignmentsToAsync(
-    promoteClassicFunctionsToAsync(script),
+  return promoteBlockArrowsToAsync(
+    promoteArrowAssignmentsToAsync(
+      promoteClassicFunctionsToAsync(script),
+    ),
   );
 }
 
@@ -442,23 +507,27 @@ function promoteClassicFunctionsToAsync(script: string): string {
   let m: RegExpExecArray | null;
   while ((m = headRe.exec(script))) {
     out += script.slice(pos, m.index);
-    if (m[1]) {
+    const braceIdx = m.index + m[0].length - 1;
+    const endBrace = findMatchingBrace(script, braceIdx);
+    if (endBrace < 0) {
+      // 无法匹配体：跳过本头，避免 pos 回退导致无限拼接
       out += m[0];
       pos = m.index + m[0].length;
       headRe.lastIndex = pos;
       continue;
     }
-    const braceIdx = m.index + m[0].length - 1;
-    const endBrace = findMatchingBrace(script, braceIdx);
-    const fullFn = script.slice(m.index, endBrace + 1);
-    if (/\bawait\b/.test(fullFn)) {
-      out += fullFn.replace(
+    const head = script.slice(m.index, braceIdx + 1);
+    const body = promoteClassicFunctionsToAsync(
+      script.slice(braceIdx + 1, endBrace),
+    );
+    let fullFn = `${head}${body}}`;
+    if (!m[1] && /\bawait\b/.test(fullFn)) {
+      fullFn = fullFn.replace(
         /(\b(?:var|let|const)\s+\w+\s*=\s*)?function\b/,
         "$1async function",
       );
-    } else {
-      out += fullFn;
     }
+    out += fullFn;
     pos = endBrace + 1;
     headRe.lastIndex = pos;
   }
@@ -476,23 +545,64 @@ function promoteArrowAssignmentsToAsync(script: string): string {
   let m: RegExpExecArray | null;
   while ((m = headRe.exec(script))) {
     out += script.slice(pos, m.index);
-    if (m[2]) {
+    const braceIdx = m.index + m[0].length - 1;
+    const endBrace = findMatchingBrace(script, braceIdx);
+    if (endBrace < 0) {
       out += m[0];
       pos = m.index + m[0].length;
       headRe.lastIndex = pos;
       continue;
     }
-    const braceIdx = m.index + m[0].length - 1;
-    const endBrace = findMatchingBrace(script, braceIdx);
-    const fullFn = script.slice(m.index, endBrace + 1);
-    if (/\bawait\b/.test(fullFn)) {
-      out += fullFn.replace(
+    const head = script.slice(m.index, braceIdx + 1);
+    const body = promoteArrowAssignmentsToAsync(
+      script.slice(braceIdx + 1, endBrace),
+    );
+    let fullFn = `${head}${body}}`;
+    if (!m[2] && /\bawait\b/.test(fullFn)) {
+      fullFn = fullFn.replace(
         /^((?:(?:var|let|const)\s+)?[A-Za-z_$][\w$]*\s*=\s*)/,
         "$1async ",
       );
-    } else {
-      out += fullFn;
     }
+    out += fullFn;
+    pos = endBrace + 1;
+    headRe.lastIndex = pos;
+  }
+  out += script.slice(pos);
+  return out;
+}
+
+/**
+ * `arr.forEach(node => { await ... })` / `(x) => { await ... }`：
+ * 回调体含 await 时须标成 async（赋值箭头由 promoteArrowAssignmentsToAsync 处理）。
+ */
+function promoteBlockArrowsToAsync(script: string): string {
+  let out = "";
+  let pos = 0;
+  // 单参数或一层括号参数；嵌套默认值较少见于书源 forEach
+  const headRe =
+    /(\basync\s+)?(\((?:[^()]|\([^()]*\))*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{/g;
+
+  let m: RegExpExecArray | null;
+  while ((m = headRe.exec(script))) {
+    out += script.slice(pos, m.index);
+    const braceIdx = m.index + m[0].length - 1;
+    const endBrace = findMatchingBrace(script, braceIdx);
+    if (endBrace < 0) {
+      out += m[0];
+      pos = m.index + m[0].length;
+      headRe.lastIndex = pos;
+      continue;
+    }
+    const head = script.slice(m.index, braceIdx + 1);
+    const body = promoteBlockArrowsToAsync(
+      script.slice(braceIdx + 1, endBrace),
+    );
+    let fullFn = `${head}${body}}`;
+    if (!m[1] && /\bawait\b/.test(fullFn)) {
+      fullFn = `async ${fullFn}`;
+    }
+    out += fullFn;
     pos = endBrace + 1;
     headRe.lastIndex = pos;
   }
@@ -549,26 +659,49 @@ export function inlineBookSourceCommentEvals(
  * 对 async 函数的调用补 await。
  * Legado/Rhino 中嵌套函数调用是同步阻塞的；Node 中须逐层 await 才能等 toast 等副作用完成。
  */
-export function awaitAsyncFunctionCalls(script: string): string {
-  const names = collectAsyncFunctionNames(script);
+export function awaitAsyncFunctionCalls(
+  script: string,
+  extraNames: readonly string[] = [],
+): string {
+  const names = [
+    ...new Set([...collectAsyncFunctionNames(script), ...extraNames]),
+  ];
   if (!names.length) return script;
 
   let s = script;
   for (const name of names) {
     const escaped = name.replace(/\$/g, "\\$");
+    // 裸调用：getWbiEnc(
     s = s.replace(
-      new RegExp(`(?<![\\w.$])(?<!(?:await|function)\\s)${escaped}\\s*\\(`, "g"),
+      new RegExp(
+        `(?<![\\w.$])(?<!(?:await|function)\\s)${escaped}\\s*\\(`,
+        "g",
+      ),
       `await ${name}(`,
+    );
+    // 成员调用：this.getWbiEnc( / obj.getWbiEnc(
+    s = s.replace(
+      new RegExp(
+        `(?<!\\bawait\\s)(\\b(?:this|[A-Za-z_$][\\w$]*)\\s*\\.\\s*)${escaped}\\s*\\(`,
+        "g",
+      ),
+      `await $1${name}(`,
     );
   }
   return s.replace(/\bawait\s+await\s+/g, "await ");
 }
 
 /** 交替提升 async 与补 await，直到嵌套调用链稳定 */
-export function promoteLegadoAsyncCallChain(script: string): string {
+export function promoteLegadoAsyncCallChain(
+  script: string,
+  extraAsyncNames: readonly string[] = [],
+): string {
   let s = script;
   for (let i = 0; i < 8; i++) {
-    const next = awaitAsyncFunctionCalls(promoteFunctionsToAsyncForAwait(s));
+    const next = awaitAsyncFunctionCalls(
+      promoteFunctionsToAsyncForAwait(s),
+      extraAsyncNames,
+    );
     if (next === s) break;
     s = next;
   }
@@ -578,8 +711,81 @@ export function promoteLegadoAsyncCallChain(script: string): string {
 const JAVA_HTTP_CHAIN_MEMBER =
   /^(matchAll|match|trim|replace|split|slice|substring|indexOf|includes|startsWith|body|header|headers|code|url|raw)\s*\(/;
 
+/**
+ * 判断 `java.get(...)` 实参是否为 HTTP 调用（对齐 jsExtensions.isHttpGetKey 的可静态判定部分）：
+ * - 两参数（含 header）→ HTTP
+ * - 单参数且字面量以 http(s):// 或 // 开头 → HTTP
+ * 单参数变量键如 `java.get("headers")` / `java.get(key)` 不 await，避免与源变量 API 冲突。
+ */
+function isJavaGetHttpCallArgs(argsInner: string): boolean {
+  const trimmed = argsInner.trim();
+  if (!trimmed) return false;
+
+  let depth = 0;
+  let inStr: "'" | '"' | "`" | null = null;
+  let escaped = false;
+  for (let i = 0; i < trimmed.length; i++) {
+    const c = trimmed[i]!;
+    if (inStr) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (c === inStr) inStr = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") {
+      inStr = c;
+      continue;
+    }
+    if (c === "(" || c === "[" || c === "{") {
+      depth += 1;
+      continue;
+    }
+    if (c === ")" || c === "]" || c === "}") {
+      depth -= 1;
+      continue;
+    }
+    if (depth === 0 && c === ",") return true;
+  }
+
+  return (
+    /^(['"`])https?:\/\//i.test(trimmed) || /^(['"`])\/\//.test(trimmed)
+  );
+}
+
+/**
+ * 仅为 HTTP 形态的 `java.get` 注入 await；源变量 `java.get("key")` 保持同步。
+ */
+function awaitJavaGetHttpCalls(script: string): string {
+  let s = script;
+  const prefixRe = /(?<!await\s{1,4})\bjava\.get\s*\(/g;
+  while (true) {
+    prefixRe.lastIndex = 0;
+    let rewritten = false;
+    let m: RegExpExecArray | null;
+    while ((m = prefixRe.exec(s))) {
+      const start = m.index;
+      const openParen = start + m[0].length - 1;
+      const closeParen = findMatchingParen(s, openParen);
+      if (closeParen < 0) continue;
+      const argsInner = s.slice(openParen + 1, closeParen);
+      if (!isJavaGetHttpCallArgs(argsInner)) continue;
+      s = `${s.slice(0, start)}await java.get(${argsInner})${s.slice(closeParen + 1)}`;
+      rewritten = true;
+      break;
+    }
+    if (!rewritten) break;
+  }
+  return s;
+}
+
 function wrapAwaitJavaHttpMemberAccess(script: string): string {
-  const methods = ["ajax", "connect", "post"] as const;
+  const methods = ["ajax", "connect", "post", "get"] as const;
   let s = script;
 
   for (const method of methods) {
@@ -618,8 +824,15 @@ function wrapAwaitJavaHttpMemberAccess(script: string): string {
   return s;
 }
 
-export function prepareLegadoAsyncJs(script: string): string {
-  let s = prepareLegadoJs(script);
+/**
+ * 注入 java.ajax / post / get(HTTP) 等 await，并提升含 await 的函数为 async。
+ * 不包 IIFE、不补顶层 return（供 jsLib 共享作用域与规则脚本共用）。
+ */
+export function injectLegadoAsyncAwaits(
+  script: string,
+  extraAsyncNames: readonly string[] = [],
+): string {
+  let s = script;
 
   // startBrowserAwait(...).body() / .code() / .url()
   s = s.replace(
@@ -632,10 +845,7 @@ export function prepareLegadoAsyncJs(script: string): string {
     "ajax",
     "ajaxAll",
     "connect",
-    // java.post 是 HTTP POST（与 java.put 变量存储不同，可安全 await）
     "post",
-    // 注意：勿把 get 算作异步 HTTP——java.get 兼变量 API；
-    // 误 await java.get('url') 且替换串含 `$` 时还会污染后续脚本（如 resul）。
     "getVerificationCode",
   ] as const;
   for (const name of asyncJavaCalls) {
@@ -645,25 +855,48 @@ export function prepareLegadoAsyncJs(script: string): string {
     );
   }
 
-  // java.ajaxAll([...])[i] → (await java.ajaxAll([...]))[i]
+  s = awaitJavaGetHttpCalls(s);
+
   s = s.replace(
     /await\s+java\.ajaxAll\(((?:[^()]|\([^()]*\))*)\)\s*\[/g,
     "(await java.ajaxAll($1))[",
   );
 
   s = wrapAwaitJavaHttpMemberAccess(s);
-
   s = s.replace(/\bawait\s+await\s+/g, "await ");
-  s = promoteLegadoAsyncCallChain(s);
-  // await run("data").map(...) → (await run("data")).map(...)
+  s = promoteLegadoAsyncCallChain(s, extraAsyncNames);
   s = wrapAwaitCallMemberAccess(s);
+  return s.replace(/\bawait\s+await\s+/g, "await ");
+}
 
+/**
+ * jsLib 专用：异步注入并收集需在规则脚本中 await 的函数名。
+ * （双点号等 Rhino 预处理由 sharedJsScope.prepareJsLib 负责）
+ */
+export function prepareJsLibAsyncBody(script: string): {
+  code: string;
+  asyncFunctionNames: string[];
+} {
+  const code = injectLegadoAsyncAwaits(script);
+  return {
+    code,
+    asyncFunctionNames: collectAsyncFunctionNames(code),
+  };
+}
+
+export function prepareLegadoAsyncJs(
+  script: string,
+  extraAsyncNames: readonly string[] = [],
+): string {
+  let s = prepareLegadoJs(script);
+  s = injectLegadoAsyncAwaits(s, extraAsyncNames);
   return `(async () => { ${s} })()`;
 }
 
 /**
  * `await fn(...).member` 实际是 `await (fn(...).member)`（. 优先于 await）。
  * 异步 fn 返回 Promise 时须写成 `(await fn(...)).member`。
+ * 同样处理 `await this.fn(...).member`。
  */
 function wrapAwaitCallMemberAccess(script: string): string {
   let s = script;
@@ -672,7 +905,10 @@ function wrapAwaitCallMemberAccess(script: string): string {
     let wrapClose = -1;
 
     for (let pos = 0; pos < s.length; ) {
-      const m = /\bawait\s+[A-Za-z_$][\w$]*\s*\(/.exec(s.slice(pos));
+      const m =
+        /\bawait\s+(?:this|[A-Za-z_$][\w$]*)(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\(/.exec(
+          s.slice(pos),
+        );
       if (!m) break;
       const start = pos + m.index!;
       pos = start + 1;

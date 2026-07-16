@@ -284,18 +284,20 @@ img.findBookListItemCover {
 }
 .findBookListItemTags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   margin-bottom: 6px;
+  overflow: hidden;
 }
 .findBookListItemTag {
   display: inline-block;
+  flex-shrink: 0;
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 11px;
   line-height: 1.4;
-  background: color-mix(in srgb, var(--accent) 12%, var(--btn-bg, rgba(0, 0, 0, 0.06)));
-  color: var(--fg);
+  background: var(--book-source-tag, #8b63c9);
+  color: #fff;
 }
 .findBookListItemIntro {
   font-size: 12px;

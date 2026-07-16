@@ -1157,6 +1157,20 @@ const api = {
     ipcRenderer.invoke(BOOK_SOURCE_IPC.checkSetConfig, patch) as ReturnType<
       BookSourceIpcApi["bookSourceCheckSetConfig"]
     >,
+  bookSourceSetHttpProxy: (proxy: string | null) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.setHttpProxy, proxy) as ReturnType<
+      BookSourceIpcApi["bookSourceSetHttpProxy"]
+    >,
+  bookSourceGetHttpProxy: () =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.getHttpProxy) as ReturnType<
+      BookSourceIpcApi["bookSourceGetHttpProxy"]
+    >,
+  bookSourceTestHttpProxy: (
+    payload: Parameters<BookSourceIpcApi["bookSourceTestHttpProxy"]>[0],
+  ) =>
+    ipcRenderer.invoke(BOOK_SOURCE_IPC.testHttpProxy, payload) as ReturnType<
+      BookSourceIpcApi["bookSourceTestHttpProxy"]
+    >,
   onBookSourceCheckEvent: (
     cb: (ev: import("@shared/bookSource/ipc").BookSourceCheckEvent) => void,
   ) => {

@@ -56,6 +56,7 @@ import {
 import {
   expandLegadoGetRefs,
   isLegadoTemplateOnlyRule,
+  isPureMustacheTemplateRule,
   legadoTemplateNeedsJsEval,
   legadoJsonPathFromRule,
   coerceLegadoMediaUrl,
@@ -1431,7 +1432,12 @@ export class AnalyzeRule {
 
   private async evalRuleJs(rule: string, content: unknown): Promise<unknown> {
     let script = stripLegadoJsRuleMarkers(rule);
+    const beforeExpand = script;
     script = this.expandRuleJsTemplates(script, content);
+    // `{{'书名'}}` / `{{`url`}}`：expand 已是最终字面量，再 eval 会 ReferenceError / Unexpected token
+    if (isPureMustacheTemplateRule(beforeExpand)) {
+      return script;
+    }
     if (Array.isArray(content)) {
       script = script.replace(/\$(\d{1,2})/g, (_, d) => {
         const v = content[Number.parseInt(d, 10)] ?? "";
@@ -1479,7 +1485,11 @@ export class AnalyzeRule {
   /** 规则 JS 内嵌 @js/<js> 规则：同步 eval（对齐 Legado/Rhino） */
   private evalRuleJsSync(rule: string, content: unknown): unknown {
     let script = stripLegadoJsRuleMarkers(rule);
+    const beforeExpand = script;
     script = this.expandRuleJsTemplates(script, content);
+    if (isPureMustacheTemplateRule(beforeExpand)) {
+      return script;
+    }
     if (Array.isArray(content)) {
       script = script.replace(/\$(\d{1,2})/g, (_, d) => {
         const v = content[Number.parseInt(d, 10)] ?? "";

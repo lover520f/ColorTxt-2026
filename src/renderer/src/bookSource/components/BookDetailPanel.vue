@@ -197,6 +197,10 @@ const latestChapterIsVip = computed(() => {
   const ch = list[0];
   return Boolean(ch?.isVip || ch?.isPay);
 });
+const latestChapterIsPay = computed(() => {
+  const list = chapters.value.filter((ch) => !ch.isVolume);
+  return Boolean(list[0]?.isPay);
+});
 const displayUpdateTime = computed(() => detail.value?.updateTime ?? "");
 const kindTags = computed(() => {
   const wc =
@@ -849,7 +853,10 @@ async function onDownloadOrStop() {
                 最新章节：<span
                   v-if="latestChapterIsVip"
                   class="bookDetailChapterLock"
-                  v-html="icons.lock"
+                  :class="{
+                    'bookDetailChapterLock--unlocked': latestChapterIsPay,
+                  }"
+                  v-html="latestChapterIsPay ? icons.unlock : icons.lock"
                   aria-hidden="true"
                 />{{ displayLastChapter }}
               </p>
@@ -911,8 +918,13 @@ async function onDownloadOrStop() {
                 <span
                   v-if="displayChapters[index].isVip || displayChapters[index].isPay"
                   class="bookDetailChapterLock"
-                  v-html="icons.lock"
-                  aria-label="VIP"
+                  :class="{
+                    'bookDetailChapterLock--unlocked': displayChapters[index].isPay,
+                  }"
+                  v-html="
+                    displayChapters[index].isPay ? icons.unlock : icons.lock
+                  "
+                  :aria-label="displayChapters[index].isPay ? '已购买' : 'VIP'"
                 />
                 <span class="bookDetailChapterTitle">{{ displayChapters[index].title }}</span>
                 <span
@@ -1152,6 +1164,9 @@ img.bookDetailCover {
   vertical-align: -0.15em;
   margin-right: 4px;
   color: var(--warning);
+}
+.bookDetailChapterLock--unlocked {
+  color: var(--accent);
 }
 .bookDetailChapterLock :deep(svg) {
   width: 13px;

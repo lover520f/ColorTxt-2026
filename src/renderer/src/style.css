@@ -69,6 +69,8 @@
 
   /** 找书/发现结果卡片中的书源名 */
   --book-source: #6d28d9;
+  /** 找书列表 kind 标签底色（比来源名略柔，仍保持一定饱和度） */
+  --book-source-tag: #8b63c9;
 
   /** SwitchToggle 未勾选时轨道背景 */
   --switch-track-off-bg: #dcdfe6;
@@ -142,6 +144,8 @@ html.dark {
 
   /** 找书/发现结果卡片中的书源名（暗色背景上提亮） */
   --book-source: #c4b5fd;
+  /** 找书列表 kind 标签底色 */
+  --book-source-tag: color-mix(in srgb, var(--book-source) 42%, #5b21b6);
 
   --switch-track-off-bg: #4c4d4f;
 

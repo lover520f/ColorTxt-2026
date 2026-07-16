@@ -408,7 +408,7 @@ img.findBookListItemCover {
   margin-top: 6px;
   font-size: 11px;
   line-height: 1.45;
-  color: var(--book-source, var(--find-book-origin, #7c5cbf));
+  color: var(--book-source);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

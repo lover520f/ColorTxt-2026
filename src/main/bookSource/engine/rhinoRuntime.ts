@@ -12,7 +12,11 @@ import {
   type LegadoVariableSync,
 } from "./legadoRuleEntity";
 import { createJavaImporter, createOrgPackage, createPackagesStub } from "./legadoJavaShims";
-import { runInBookSourceJsScope } from "./sharedJsScope";
+import {
+  ensureBookSourceJsLib,
+  getJsLibAsyncFunctionNames,
+  runInBookSourceJsScope,
+} from "./sharedJsScope";
 import {
   BOOK_SOURCE_JS_TIMEOUT_MS,
   raceWithJsTimeout,
@@ -154,8 +158,11 @@ export async function evalJsAsync(
       );
 
       if (shouldUseBookSourceJsScope(ctx.source, options.useSharedJsScope)) {
+        // 先加载 jsLib，以便把其中的 async 函数名并入 await 注入
+        ensureBookSourceJsLib(ctx.source!, host);
+        const jsLibAsyncNames = getJsLibAsyncFunctionNames(ctx.source?.jsLib);
         const body = legadoAsync
-          ? prepareLegadoAsyncJs(inlined)
+          ? prepareLegadoAsyncJs(inlined, jsLibAsyncNames)
           : prepareLegadoJs(inlined);
         const code = legadoAsync ? body : `(function(){ ${body} })()`;
         const result = runInBookSourceJsScope(ctx.source!, host, code, ctx, {

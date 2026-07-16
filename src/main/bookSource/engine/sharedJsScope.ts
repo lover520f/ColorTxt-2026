@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import vm from "node:vm";
 import type { BookSourceRecord } from "@shared/bookSource/types";
 import type { JsExtensionHost } from "./jsExtensions";
-import { fixRhinoBareArrayArrowParams } from "./legadoAsyncJs";
+import {
+  fixRhinoBareArrayArrowParams,
+  prepareJsLibAsyncBody,
+} from "./legadoAsyncJs";
 import {
   wrapLegadoBookForJs,
   wrapLegadoChapterForJs,
@@ -17,12 +20,13 @@ import {
 
 type SharedScopeEntry = {
   sandbox: Record<string, unknown>;
+  asyncFunctionNames: string[];
 };
 
 const scopeCache = new Map<string, SharedScopeEntry>();
 
-/** java.lang.String 等 shim 变更时递增，避免沿用过期 sandbox */
-const JS_LIB_SHIM_VERSION = "5";
+/** java.lang.String 等 shim / jsLib 异步预处理变更时递增，避免沿用过期 sandbox */
+const JS_LIB_SHIM_VERSION = "8";
 
 const SANDBOX_RESERVED = new Set([
   "globalThis",
@@ -39,8 +43,39 @@ function jsLibCacheKey(jsLib: string): string {
     .digest("hex");
 }
 
-function prepareJsLib(script: string): string {
-  return fixRhinoBareArrayArrowParams(script.trim());
+/**
+ * Rhino/E4X 残留：`obj..prop`（Legado 可解析，Node 为 SyntaxError）。
+ * 仅改代码中的标识符连写；字符串内 JSONPath `$..` / `..major` 等保持不动。
+ */
+export function fixRhinoDoubleDotPropertyAccess(script: string): string {
+  const held: string[] = [];
+  const masked = script.replace(
+    /`(?:\\[\s\S]|\$\{(?:[^{}]|\{[^}]*\})*\}|[^`\\$]|\$(?!\{))*`|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g,
+    (m) => {
+      held.push(m);
+      return `\0STR${held.length - 1}\0`;
+    },
+  );
+  let fixed = masked;
+  let prev = "";
+  while (fixed !== prev) {
+    prev = fixed;
+    fixed = fixed.replace(
+      /([A-Za-z_$][\w$]*)\.\.([A-Za-z_$][\w$]*)/g,
+      "$1.$2",
+    );
+  }
+  return fixed.replace(/\0STR(\d+)\0/g, (_, n) => held[Number(n)]!);
+}
+
+function prepareJsLib(script: string): {
+  code: string;
+  asyncFunctionNames: string[];
+} {
+  const normalized = fixRhinoDoubleDotPropertyAccess(
+    fixRhinoBareArrayArrowParams(script.trim()),
+  );
+  return prepareJsLibAsyncBody(normalized);
 }
 
 function promoteJsLibGlobals(sandbox: Record<string, unknown>): void {
@@ -94,8 +129,11 @@ function loadSharedJsLib(jsLib: string, log: (msg: string) => void): SharedScope
 
   const sandbox = createSandboxShell(log);
   vm.createContext(sandbox);
+  let asyncFunctionNames: string[] = [];
   try {
-    vm.runInContext(prepareJsLib(jsLib), sandbox, {
+    const prepared = prepareJsLib(jsLib);
+    asyncFunctionNames = prepared.asyncFunctionNames;
+    vm.runInContext(prepared.code, sandbox, {
       timeout: BOOK_SOURCE_JS_TIMEOUT_MS,
     });
     promoteJsLibGlobals(sandbox);
@@ -103,7 +141,7 @@ function loadSharedJsLib(jsLib: string, log: (msg: string) => void): SharedScope
     const err = toBookSourceJsTimeoutError(e);
     log(`jsLib 加载失败: ${err.message}`);
   }
-  const entry = { sandbox };
+  const entry = { sandbox, asyncFunctionNames };
   scopeCache.set(key, entry);
   return entry;
 }
@@ -114,6 +152,15 @@ export function clearSharedJsLibCache(jsLib?: string | null): void {
     return;
   }
   scopeCache.delete(jsLibCacheKey(jsLib.trim()));
+}
+
+/** 当前已加载 jsLib 中的 async 函数名（供规则脚本注入 await） */
+export function getJsLibAsyncFunctionNames(
+  jsLib: string | null | undefined,
+): string[] {
+  const text = jsLib?.trim();
+  if (!text) return [];
+  return scopeCache.get(jsLibCacheKey(text))?.asyncFunctionNames ?? [];
 }
 
 type RunScopeBindings = {

@@ -33,10 +33,13 @@ import type {
 import {
   DEFAULT_FIND_BOOK_DOWNLOAD_AFTER_ACTION,
   DEFAULT_FIND_BOOK_DOWNLOAD_CATEGORY,
+  DEFAULT_FIND_BOOK_PROXY_SETTINGS,
   defaultFindBookChapterNavToolbarEnabled,
   findBookSettingsKey,
   isFindBookDownloadAfterAction,
+  normalizeFindBookProxySettings,
   type FindBookDownloadAfterAction,
+  type FindBookProxySettings,
   type PersistedFindBookSettings,
 } from "../constants/findBookSettings";
 
@@ -131,6 +134,7 @@ export function snapshotFindBookSettingsFromStore(state: {
   downloadAfterAction: FindBookDownloadAfterAction;
   downloadAddToMainFileList: boolean;
   downloadDefaultCategory: string;
+  proxy: FindBookProxySettings;
   readerFontSize: number;
   readerLineHeightMultiple: number;
   monacoFontFamily: string;
@@ -159,6 +163,7 @@ export function snapshotFindBookSettingsFromStore(state: {
     downloadAfterAction: state.downloadAfterAction,
     downloadAddToMainFileList: state.downloadAddToMainFileList,
     downloadDefaultCategory: state.downloadDefaultCategory.trim(),
+    proxy: normalizeFindBookProxySettings(state.proxy),
     fontSize: state.readerFontSize,
     lineHeightMultiple: state.readerLineHeightMultiple,
     fontFamily: state.monacoFontFamily,
@@ -204,6 +209,9 @@ export function createInitialFindBookSettingsState() {
         : typeof data.downloadDefaultCategory === "string"
           ? data.downloadDefaultCategory.trim()
           : "",
+    proxy: normalizeFindBookProxySettings(
+      data.proxy ?? DEFAULT_FIND_BOOK_PROXY_SETTINGS,
+    ),
     readerFontSize:
       typeof data.fontSize === "number" ? data.fontSize : defaultReaderFontSize,
     readerLineHeightMultiple:

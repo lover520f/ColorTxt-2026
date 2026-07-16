@@ -12,6 +12,8 @@ import { OPENAI_COMPAT_API_ENDPOINT_PRESETS } from "@shared/apiEndpointPresets";
 
 export type ApiEndpointSuggestionItem = {
   id: string;
+  /** 列表主文案；缺省为 id */
+  label?: string;
   description?: string;
 };
 
@@ -72,6 +74,7 @@ const visibleSuggestionItems = computed((): ApiEndpointSuggestionItem[] => {
       seen.add(id);
       out.push({
         id,
+        label: raw.label?.trim() || undefined,
         description: raw.description?.trim() || undefined,
       });
     }
@@ -226,7 +229,8 @@ onBeforeUnmount(() => {
             class="appShellMenuItem"
             :class="{
               'is-active': item.id === modelValue,
-              'appShellMenuItem--stacked': item.description,
+              'appShellMenuItem--stacked':
+                item.description || (item.label?.trim() && item.label.trim() !== item.id),
             }"
             @click="pick(item.id)"
           >
@@ -240,7 +244,7 @@ onBeforeUnmount(() => {
                 >
                   <span
                     class="appShellMenuItemLabelText apiEndpointInputMenuLabel"
-                    >{{ item.id }}</span
+                    >{{ item.label?.trim() || item.id }}</span
                   >
                   <span
                     v-if="item.description"

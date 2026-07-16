@@ -2076,8 +2076,18 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
                             displayChapters[index]?.isPay
                           "
                           class="findBookReaderChapterLock"
-                          v-html="icons.lock"
-                          aria-label="VIP"
+                          :class="{
+                            'findBookReaderChapterLock--unlocked':
+                              displayChapters[index]?.isPay,
+                          }"
+                          v-html="
+                            displayChapters[index]?.isPay
+                              ? icons.unlock
+                              : icons.lock
+                          "
+                          :aria-label="
+                            displayChapters[index]?.isPay ? '已购买' : 'VIP'
+                          "
                         />
                         <span class="itemName">{{ chapterDisplayTitle(index) }}</span>
                         <LoadingDotsRotate
@@ -2634,6 +2644,9 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
   width: 14px;
   flex-shrink: 0;
   color: var(--warning);
+}
+.findBookReaderChapterLock--unlocked {
+  color: var(--accent);
 }
 .findBookReaderChapterLock :deep(svg) {
   width: 14px;

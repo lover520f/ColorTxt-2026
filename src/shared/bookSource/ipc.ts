@@ -74,6 +74,11 @@ export const BOOK_SOURCE_IPC = {
   checkEvent: "bookSource:checkEvent",
   checkGetConfig: "bookSource:checkGetConfig",
   checkSetConfig: "bookSource:checkSetConfig",
+  /** 找书全局 HTTP 代理（Legado 格式字符串；空/null 表示关闭） */
+  setHttpProxy: "bookSource:setHttpProxy",
+  getHttpProxy: "bookSource:getHttpProxy",
+  /** 用指定代理（或直连）探测 URL 连通性 */
+  testHttpProxy: "bookSource:testHttpProxy",
 } as const;
 
 export type BookSourceCheckConfig = {
@@ -319,4 +324,13 @@ export type BookSourceIpcApi = {
     patch: Partial<BookSourceCheckConfig>,
   ) => Promise<BookSourceCheckConfig>;
   onBookSourceCheckEvent: (cb: (ev: BookSourceCheckEvent) => void) => () => void;
+  bookSourceSetHttpProxy: (
+    proxy: string | null,
+  ) => Promise<{ ok: boolean }>;
+  bookSourceGetHttpProxy: () => Promise<string | null>;
+  bookSourceTestHttpProxy: (payload: {
+    /** Legado 代理字符串；空/null 表示直连 */
+    proxy?: string | null;
+    url: string;
+  }) => Promise<{ ok: boolean; message?: string }>;
 };

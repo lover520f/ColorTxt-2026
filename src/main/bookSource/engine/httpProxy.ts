@@ -49,6 +49,18 @@ export function parseLegadoProxy(raw: string): ParsedProxy | null {
 
 const dispatcherCache = new Map<string, Dispatcher>();
 
+/** 找书设置里的全局默认代理（书源 header / opts.proxy 优先） */
+let defaultBookSourceProxy: string | undefined;
+
+export function setDefaultBookSourceProxy(proxy?: string | null): void {
+  const text = String(proxy ?? "").trim();
+  defaultBookSourceProxy = text && parseLegadoProxy(text) ? text : undefined;
+}
+
+export function getDefaultBookSourceProxy(): string | undefined {
+  return defaultBookSourceProxy;
+}
+
 export function getProxyDispatcher(proxy?: string | null): Dispatcher | undefined {
   const parsed = parseLegadoProxy(String(proxy ?? "").trim());
   if (!parsed) return undefined;
@@ -69,9 +81,13 @@ export function getProxyDispatcher(proxy?: string | null): Dispatcher | undefine
   return dispatcher;
 }
 
-/** 书源 HTTP / 封面：有代理用代理，否则用不校验证书的 Agent（对齐 Legado OkHttp） */
+/** 书源 HTTP / 封面：显式 proxy → 全局默认 → 不校验证书的 Agent（对齐 Legado OkHttp） */
 export function getBookSourceDispatcher(proxy?: string | null): Dispatcher {
-  return getProxyDispatcher(proxy) ?? getInsecureTlsAgent();
+  return (
+    getProxyDispatcher(proxy) ??
+    getProxyDispatcher(defaultBookSourceProxy) ??
+    getInsecureTlsAgent()
+  );
 }
 
 /** 从请求头中提取 proxy 并移除，对齐 Legado AnalyzeUrl headerMap */

@@ -5,6 +5,10 @@ import {
   snapshotFindBookSettingsFromStore,
 } from "../services/findBookSettingsStore";
 import {
+  buildFindBookProxyUrl,
+  type FindBookProxySettings,
+} from "../constants/findBookSettings";
+import {
   resolveDefaultBookSourceChapterCacheDirSync,
   resolveDefaultBookSourceDownloadDirSync,
 } from "../../utils/defaultCacheDirs";
@@ -19,6 +23,7 @@ function createFindBookSettingsStore() {
   const downloadAfterAction = ref(initial.downloadAfterAction);
   const downloadAddToMainFileList = ref(initial.downloadAddToMainFileList);
   const downloadDefaultCategory = ref(initial.downloadDefaultCategory);
+  const proxy = ref<FindBookProxySettings>({ ...initial.proxy });
   const readerFontSize = ref(initial.readerFontSize);
   const readerLineHeightMultiple = ref(initial.readerLineHeightMultiple);
   const monacoFontFamily = ref(initial.monacoFontFamily);
@@ -51,6 +56,11 @@ function createFindBookSettingsStore() {
     return configured || resolveDefaultBookSourceDownloadDirSync();
   });
 
+  function syncHttpProxyToMain() {
+    const url = buildFindBookProxyUrl(proxy.value);
+    void window.colorTxt.bookSourceSetHttpProxy(url || null);
+  }
+
   function persistAll() {
     persistFindBookSettings(
       snapshotFindBookSettingsFromStore({
@@ -59,6 +69,7 @@ function createFindBookSettingsStore() {
         downloadAfterAction: downloadAfterAction.value,
         downloadAddToMainFileList: downloadAddToMainFileList.value,
         downloadDefaultCategory: downloadDefaultCategory.value,
+        proxy: proxy.value,
         readerFontSize: readerFontSize.value,
         readerLineHeightMultiple: readerLineHeightMultiple.value,
         monacoFontFamily: monacoFontFamily.value,
@@ -82,11 +93,15 @@ function createFindBookSettingsStore() {
         timedScrollSettings: timedScrollSettings.value,
       }),
     );
+    syncHttpProxyToMain();
   }
 
   function persistReaderUiPrefs() {
     persistAll();
   }
+
+  // 窗口启动时把已持久化的代理同步到主进程
+  syncHttpProxyToMain();
 
   return {
     cacheDir,
@@ -94,8 +109,10 @@ function createFindBookSettingsStore() {
     downloadAfterAction,
     downloadAddToMainFileList,
     downloadDefaultCategory,
+    proxy,
     effectiveCacheDir,
     effectiveDownloadDir,
+    syncHttpProxyToMain,
     readerFontSize,
     readerLineHeightMultiple,
     monacoFontFamily,

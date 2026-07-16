@@ -109,6 +109,18 @@ export function isLegadoTemplateOnlyRule(rule: string): boolean {
   return true;
 }
 
+/**
+ * 整条规则仅为一个或多个 `{{...}}`（可含须 JS 求值的表达式）。
+ * 此类规则应在 expand 后直接返回，勿再把展开结果当脚本执行
+ *（否则 `{{'xxx'}}` → `xxx` → ReferenceError）。
+ */
+export function isPureMustacheTemplateRule(rule: string): boolean {
+  const t = rule.trim();
+  if (!t.includes("{{")) return false;
+  if (/(?:<js>|@js:)/i.test(t)) return false;
+  return t.replace(/\{\{[\s\S]*?\}\}/g, "").trim() === "";
+}
+
 function coercePutStringMap(obj: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(obj)) {

@@ -706,7 +706,7 @@ function onSearchBlur() {
   searchInputFocused.value = false;
 }
 
-function onSearchFromSource(item: {
+async function onSearchFromSource(item: {
   bookSourceUrl: string;
   bookSourceName: string;
 }) {
@@ -722,9 +722,11 @@ function onSearchFromSource(item: {
   showReplaceRulePanel.value = false;
   showDisclaimerPanel.value = false;
   mainTab.value = "search";
-  if (query.value.trim()) {
-    void search(query.value, buildSearchOptions());
-  }
+  query.value = "";
+  // 搜索中 input 为 disabled，须等 cancel 把 searching 置 false 后再聚焦
+  if (searching.value) await cancel();
+  await nextTick();
+  searchInputRef.value?.focus();
 }
 
 function clearSearchScope() {

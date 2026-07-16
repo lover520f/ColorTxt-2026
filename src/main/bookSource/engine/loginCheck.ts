@@ -103,7 +103,7 @@ export async function runLoginCheckJs(
         result: legadoResult,
         baseUrl: source.bookSourceUrl,
       },
-      { legadoAsync: true, useSharedJsScope: false },
+      { legadoAsync: true },
     );
     return fromLegadoCheckResult(checked, res);
   } catch (e) {
