@@ -1,6 +1,10 @@
 /**
  * 「文本替换」纯函数：渲染进程阅读展示。
  * 与「转换」（简繁/全半角）同属展示层变换，阅读路径应在转换之前调用。
+ *
+ * 「替换为」对齐 Legado `RegexExtensions.replace`：
+ * - 普通字符串（支持 `$1` / `$&` 等正则回引用法）
+ * - `@js:` 前缀：对每次匹配执行脚本，绑定 `result` = 本次匹配文本，返回值作为替换结果
  */
 import {
   getValidTimeoutMillisecond,
@@ -45,6 +49,72 @@ export function filterEnabledReplaceRules(
   });
 }
 
+/** 剥离 `@js:` 前缀（对齐 Legado `replacement.startsWith("@js:")` + substring(4)） */
+export function stripReplaceJsPrefix(replacement: string): string | null {
+  if (!/^@js:/i.test(replacement)) return null;
+  return replacement.replace(/^@js:\s*/i, "");
+}
+
+/**
+ * 让 Node/浏览器 `Function` 与 Rhino eval 一样返回脚本最终表达式值。
+ * 覆盖常见多语句写法（如 `zk={…}; zk[result]`）。
+ */
+function ensureReplaceJsReturn(script: string): string {
+  const trimmed = script.trim();
+  if (!trimmed) return "return '';";
+
+  const asExpr = `return (${trimmed.replace(/;\s*$/, "")});`;
+  try {
+    // eslint-disable-next-line no-new-func -- 仅语法探测
+    new Function("result", asExpr);
+    return asExpr;
+  } catch {
+    // 多语句：给末行表达式补 return
+  }
+
+  const lines = trimmed.split("\n");
+  let i = lines.length - 1;
+  while (i >= 0 && !lines[i]!.trim()) i--;
+  if (i < 0) return "return '';";
+
+  const indent = lines[i]!.match(/^\s*/)?.[0] ?? "";
+  const last = lines[i]!.trim().replace(/;\s*$/, "");
+  if (!last || last.startsWith("return ")) return trimmed;
+
+  // 单行多语句：`a=1; b` → `a=1; return (b);`
+  const semi = last.lastIndexOf(";");
+  if (semi >= 0) {
+    const before = last.slice(0, semi + 1);
+    const stmt = last.slice(semi + 1).trim();
+    if (stmt && !stmt.startsWith("return ")) {
+      lines[i] = `${indent}${before} return (${stmt});`;
+      return lines.join("\n");
+    }
+  }
+
+  lines[i] = `${indent}return (${last});`;
+  return lines.join("\n");
+}
+
+function evalReplaceJs(script: string, result: string): string {
+  const body = ensureReplaceJsReturn(script);
+  // eslint-disable-next-line no-new-func -- 对齐 Legado Rhino：替换规则用户脚本
+  const fn = new Function("result", body);
+  const out = fn(result);
+  if (out == null) return "";
+  return String(out);
+}
+
+function compileReplaceRegex(pattern: string): RegExp {
+  // 对齐 Java Pattern 的 Unicode 码点语义；无 `u` 时增补平面字会拆成代理对，
+  // 易导致字符类异常 / 灾难性回溯（本规则含 𫔯𩠌 等即会卡住）。
+  try {
+    return new RegExp(pattern, "gu");
+  } catch {
+    return new RegExp(pattern, "g");
+  }
+}
+
 function applyOneRule(text: string, rule: ReplaceRule, logs?: string[]): string {
   if (!rule.pattern) return text;
   if (!isReplaceRuleValid(rule)) {
@@ -52,16 +122,24 @@ function applyOneRule(text: string, rule: ReplaceRule, logs?: string[]): string 
     return text;
   }
   try {
+    const replacement = rule.replacement ?? "";
     if (rule.isRegex) {
       // 浏览器 / Node 均无法可靠打断同步灾难回溯；timeout 字段保留兼容
       void getValidTimeoutMillisecond(rule);
-      const re = new RegExp(rule.pattern, "g");
-      return text.replace(re, rule.replacement ?? "");
+      const re = compileReplaceRegex(rule.pattern);
+      const jsBody = stripReplaceJsPrefix(replacement);
+      if (jsBody != null) {
+        // 函数回调的返回值按字面量写入（对齐 Legado Matcher.quoteReplacement）
+        return text.replace(re, (match) => evalReplaceJs(jsBody, match));
+      }
+      return text.replace(re, replacement);
     }
-    return text.split(rule.pattern).join(rule.replacement ?? "");
+    // 非正则：Legado 走字面量 String.replace，不执行 @js:
+    return text.split(rule.pattern).join(replacement);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     logs?.push(`文本替换：规则「${rule.name || rule.id}」出错: ${msg}`);
+    console.warn(`[replaceRule] 「${rule.name || rule.id}」`, e);
     return text;
   }
 }

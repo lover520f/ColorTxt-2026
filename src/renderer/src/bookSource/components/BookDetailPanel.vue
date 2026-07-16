@@ -1148,8 +1148,9 @@ img.bookDetailCover {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 11px;
-  background: color-mix(in srgb, var(--accent) 12%, var(--btn-bg, rgba(0, 0, 0, 0.06)));
-  color: var(--fg);
+  line-height: 1.4;
+  background: var(--book-source-tag);
+  color: white;
   user-select: none;
 }
 

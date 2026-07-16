@@ -28,6 +28,7 @@ import {
   tagListContainerTextFromHtml,
   legadoCollectResultTexts,
   legadoJoinResultTexts,
+  trimLegadoAsciiWhitespace,
   type RuleRegexSuffix,
 } from "./legadoDefaultRule";
 import {
@@ -91,7 +92,7 @@ type AnalyzeMode = "default" | "json" | "xpath" | "js" | "webJs" | "regex" | "te
 
 function coerceLegadoRuleString(value: unknown): string {
   if (value == null) return "";
-  if (typeof value === "string") return value.trim();
+  if (typeof value === "string") return trimLegadoAsciiWhitespace(value);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (Array.isArray(value)) {
     // 对齐 Legado：列表用换行拼接（勿用逗号，否则 URL 数组 / tagList 会被拆坏）
@@ -101,7 +102,7 @@ function coerceLegadoRuleString(value: unknown): string {
       .join("\n");
   }
   if (typeof value === "object") {
-    const s = coerceJavaString(value).trim();
+    const s = trimLegadoAsciiWhitespace(coerceJavaString(value));
     if (s && s !== "[object Object]") return s;
   }
   return "";
@@ -352,7 +353,7 @@ export class AnalyzeRule {
     const parseRule = await this.applyPutFromFullRule(rule, mContent);
     // 对齐 Legado：先按 @js/<js> 切段，再对各段做 ##（勿先拆 ## 以免把 @js 吃进 replacement）
     if (/(?:@js:|<js>|@webjs:)/i.test(parseRule)) {
-      return (await this.getStringChain(parseRule, mContent)).trim();
+      return trimLegadoAsciiWhitespace(await this.getStringChain(parseRule, mContent));
     }
     // ## 作用于整条 a||b||c；须先拆 ## 再按 || 取首个非空
     const { baseRule: orBase, regex: orRegex } = splitRuleRegexSuffix(parseRule);
@@ -361,7 +362,7 @@ export class AnalyzeRule {
         let v = await this.getString(alt, mContent);
         if (v) {
           if (orRegex) v = this.applyRuleRegex(v, orRegex);
-          return v.trim();
+          return trimLegadoAsciiWhitespace(v);
         }
       }
       return "";
@@ -371,17 +372,19 @@ export class AnalyzeRule {
     if (pureGet) {
       let s = working;
       if (regex) s = this.applyRuleRegex(s, regex);
-      return s.trim();
+      return trimLegadoAsciiWhitespace(s);
     }
     if (isLegadoTemplateOnlyRule(working)) {
-      const expanded = expandLegadoTemplateRule(working, mContent ?? this.content).trim();
-      return regex ? this.applyRuleRegex(expanded, regex).trim() : expanded;
+      const expanded = trimLegadoAsciiWhitespace(
+        expandLegadoTemplateRule(working, mContent ?? this.content),
+      );
+      return regex ? trimLegadoAsciiWhitespace(this.applyRuleRegex(expanded, regex)) : expanded;
     }
     const jsonCompound = await this.resolveJsonCompoundString(working, mContent, regex);
     if (jsonCompound != null) return jsonCompound;
     let s = await this.getStringChain(working, mContent);
     if (regex) s = this.applyRuleRegex(s, regex);
-    return s.trim();
+    return trimLegadoAsciiWhitespace(s);
   }
 
   /** Legado getStringList：&& 分段取多个 tag，|| 取首个非空段 */
@@ -922,7 +925,7 @@ export class AnalyzeRule {
           // Legado AnalyzeByJSonPath.getString：List 与 && 段均用 \n 拼接，再由 ##・|\s##， 统一为全角逗号
           let s = list.join("\n");
           if (regex) s = this.applyRuleRegex(s, regex);
-          return s.trim();
+          return trimLegadoAsciiWhitespace(s);
         }
       }
       return "";
@@ -936,7 +939,7 @@ export class AnalyzeRule {
     if (!segments.length) return "";
     let s = segments.join("\n");
     if (regex) s = this.applyRuleRegex(s, regex);
-    return s.trim();
+    return trimLegadoAsciiWhitespace(s);
   }
 
   private async resolveJsonCompoundString(
@@ -956,7 +959,7 @@ export class AnalyzeRule {
         if (list.length) {
           let s = list.join("\n");
           if (regex) s = this.applyRuleRegex(s, regex);
-          return s.trim();
+          return trimLegadoAsciiWhitespace(s);
         }
       }
       return "";
@@ -970,7 +973,7 @@ export class AnalyzeRule {
     if (!segments.length) return "";
     let s = segments.join("\n");
     if (regex) s = this.applyRuleRegex(s, regex);
-    return s.trim();
+    return trimLegadoAsciiWhitespace(s);
   }
 
   /** 规则 JS 内 java.getString / getStringList 未传 content 时的默认上下文（列表项优先于整页） */
@@ -1689,12 +1692,13 @@ export class AnalyzeRule {
     const $ = loadCheerioHtml(html);
     const els = isLegadoAttrSelectorSegment(selector)
       ? queryLegadoAttrSelector($, selector)
-      : queryLegadoSelectorSegment($, $("body"), selector, true);
+      : // fromRoot：整页查询（含 <head> 内 og:novel meta），勿限 body
+        queryLegadoSelectorSegment($, $.root(), selector, true);
     if (!els.length) return [];
 
     const out: string[] = [];
     els.each((_, el) => {
-      const v = extractFromElement($(el), extract!).trim();
+      const v = trimLegadoAsciiWhitespace(extractFromElement($(el), extract!));
       if (v) out.push(v);
     });
     return pickLegadoResultByIndex(out, resultIndex);
@@ -1810,7 +1814,7 @@ export class AnalyzeRule {
       if (list || current.length > 1) {
         const out: string[] = [];
         current.each((_, el) => {
-          const v = extractFromElement($(el), extract).trim();
+          const v = trimLegadoAsciiWhitespace(extractFromElement($(el), extract));
           if (v) out.push(v);
         });
         const picked = pickLegadoResultByIndex(out, resultIndex);

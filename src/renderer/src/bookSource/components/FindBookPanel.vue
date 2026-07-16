@@ -1167,6 +1167,7 @@ function onGoMain() {
         :sort-mode="bookshelfSortMode"
         @read-book="onReadBookshelfBook"
         @open-book-info="onOpenBook"
+        @search-source="onSearchFromSource"
         @managing-change="bookshelfManaging = $event"
       />
 
@@ -1502,7 +1503,7 @@ function onGoMain() {
   max-width: 46%;
   padding: 2px 4px 2px 8px;
   border-radius: 999px;
-  background: var(--warning-hover);
+  background: var(--book-source-tag, #8b63c9);;
   color: white;
   font-size: 12px;
   line-height: 1.4;

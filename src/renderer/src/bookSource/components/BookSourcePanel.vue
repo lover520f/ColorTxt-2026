@@ -55,6 +55,7 @@ const {
   toggleSource,
   importFromFile,
   importFromNetwork,
+  importFromClipboard,
   getSource,
   saveSource,
   reorderSource,
@@ -574,6 +575,25 @@ async function onNetworkImport() {
   }
 }
 
+async function onClipboardImport() {
+  closeHeaderMoreMenu();
+  let preview: typeof importItems.value;
+  try {
+    preview = await importFromClipboard();
+  } catch {
+    appToast("读取剪贴板失败", { kind: "warning" });
+    return;
+  }
+  if (!preview.length) {
+    appToast("剪贴板中没有有效书源（需含 bookSourceUrl / bookSourceName）", {
+      kind: "warning",
+    });
+    return;
+  }
+  importItems.value = preview;
+  showImport.value = true;
+}
+
 function onImportDone() {
   showImport.value = false;
   void refreshAndNotify();
@@ -672,6 +692,9 @@ function onEditDone() {
             </button>
             <button type="button" class="appShellMenuItem" @click="onNetworkImport">
               网络导入
+            </button>
+            <button type="button" class="appShellMenuItem" @click="onClipboardImport">
+              从剪贴板导入
             </button>
           </AppShellMenuTeleport>
         </div>

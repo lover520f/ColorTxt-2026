@@ -36,7 +36,7 @@ import {
   bookInfoSelectorNeedsCompositeResolver,
   stripLegadoKindLabelNoise,
 } from "./bookInfoRules";
-import { applyRuleRegex, splitRuleRegexSuffix } from "./legadoDefaultRule";
+import { applyRuleRegex, splitRuleRegexSuffix, trimLegadoAsciiWhitespace } from "./legadoDefaultRule";
 import { AnalyzeRule } from "./analyzeRule";
 import { AnalyzeUrl, ajaxAllStrResponses, splitUrlFetchOptions } from "./analyzeUrl";
 import { createJsExtensionHost } from "./jsExtensions";
@@ -53,6 +53,27 @@ function runJsLib(
   ensureBookSourceJsLib(source, host);
 }
 
+/** 详情页常见 Open Graph 小说 meta（书源未配 kind 或选择器未命中时兜底） */
+const OG_NOVEL_KIND_RULES = [
+  '[property="og:novel:category"]@content',
+  '[property="og:novel:status"]@content',
+] as const;
+
+async function resolveOgNovelKindParts(
+  ar: AnalyzeRule,
+  mContent?: unknown,
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const rule of OG_NOVEL_KIND_RULES) {
+    const list = await ar.getStringList(rule, mContent);
+    for (const s of list) {
+      const t = stripLegadoKindLabelNoise(s);
+      if (t) out.push(t);
+    }
+  }
+  return out;
+}
+
 /** ruleBookInfo / ruleSearch.kind：含 {{java.*}}、{{$..path}} 等复合表达式时走详情专用解析 */
 async function resolveBookInfoKindParts(
   ar: AnalyzeRule,
@@ -60,7 +81,6 @@ async function resolveBookInfoKindParts(
   mContent?: unknown,
 ): Promise<string[]> {
   const trimmed = rule?.trim();
-  if (!trimmed) return [];
   const saved = ar.currentContent;
   if (mContent !== undefined) {
     ar.setContent(mContent, ar.currentBaseUrl);
@@ -68,27 +88,38 @@ async function resolveBookInfoKindParts(
   const finalizeKindParts = (parts: string[]) =>
     parts.map(stripLegadoKindLabelNoise).filter(Boolean);
   try {
+    if (!trimmed) {
+      return finalizeKindParts(await resolveOgNovelKindParts(ar, mContent ?? saved));
+    }
     const { baseRule, regex } = splitRuleRegexSuffix(trimmed);
 
+    let parts: string[] = [];
     if (!bookInfoSelectorNeedsCompositeResolver(baseRule)) {
       const list = await ar.getStringList(baseRule, mContent ?? saved);
-      if (!regex?.pattern) return finalizeKindParts(list);
-      const expanded = expandBookInfoRegexTemplates(ar, regex);
-      return finalizeKindParts(
-        list.map((s) => applyRuleRegex(s.trim(), expanded).trim()),
-      );
+      if (!regex?.pattern) {
+        parts = finalizeKindParts(list);
+      } else {
+        const expanded = expandBookInfoRegexTemplates(ar, regex);
+        parts = finalizeKindParts(
+          list.map((s) => applyRuleRegex(s.trim(), expanded).trim()),
+        );
+      }
+    } else {
+      const useBookInfoResolver =
+        (containsCompositeEvalRule(trimmed) &&
+          !/^@js:/i.test(trimmed) &&
+          !/^<js>/i.test(trimmed)) ||
+        trimmed.includes("@get:");
+      if (useBookInfoResolver) {
+        const raw = (await resolveBookInfoField(ar, trimmed)).trim();
+        parts = raw ? finalizeKindParts(splitBookMetaTags(raw)) : [];
+      } else {
+        parts = finalizeKindParts(await ar.getStringList(trimmed, mContent ?? saved));
+      }
     }
-
-    const useBookInfoResolver =
-      (containsCompositeEvalRule(trimmed) &&
-        !/^@js:/i.test(trimmed) &&
-        !/^<js>/i.test(trimmed)) ||
-      trimmed.includes("@get:");
-    if (useBookInfoResolver) {
-      const raw = (await resolveBookInfoField(ar, trimmed)).trim();
-      return raw ? finalizeKindParts(splitBookMetaTags(raw)) : [];
-    }
-    return finalizeKindParts(await ar.getStringList(trimmed, mContent ?? saved));
+    if (parts.length) return parts;
+    // 规则未命中时再试 og:novel（镜像站书源常漏配 kind）
+    return finalizeKindParts(await resolveOgNovelKindParts(ar, mContent ?? saved));
   } finally {
     if (mContent !== undefined) {
       ar.setContent(saved, ar.currentBaseUrl);
@@ -170,7 +201,9 @@ async function fillSearchIntrosFromBookInfo(
       const detailAr = new AnalyzeRule(source, logs, host)
         .setContent(body, item.bookUrl)
         .setBook({ name: item.name, author: item.author, bookUrl: item.bookUrl });
-      const introRaw = (await resolveBookInfoField(detailAr, infoIntroRule)).trim();
+      const introRaw = trimLegadoAsciiWhitespace(
+        await resolveBookInfoField(detailAr, infoIntroRule),
+      );
       const intro = formatLegadoBookIntro(introRaw);
       if (intro) item.intro = intro;
     } catch {
@@ -189,9 +222,13 @@ async function resolveBookIntroText(
   introRule: string | undefined,
   kindParts: string[],
 ): Promise<string> {
-  let introRaw = (await resolveBookInfoField(ar, introRule)).trim();
+  let introRaw = trimLegadoAsciiWhitespace(
+    await resolveBookInfoField(ar, introRule),
+  );
   if (!introRaw && introRule?.includes(".introduce")) {
-    introRaw = (await ar.getPlainString(".introduce@html")).trim();
+    introRaw = trimLegadoAsciiWhitespace(
+      await ar.getPlainString(".introduce@html"),
+    );
   }
   let intro = formatLegadoBookIntro(introRaw);
   if (!intro || !kindParts.length || isLegadoGetIntroRule(introRule)) return intro;
@@ -487,9 +524,7 @@ async function parseInfoSearchItem(
     baseUrl && requestedAbs && baseUrl !== requestedAbs
       ? baseUrl
       : requestedAbs || baseUrl;
-  const kindParts = rule.kind
-    ? await resolveBookInfoKindParts(ar, rule.kind)
-    : [];
+  const kindParts = await resolveBookInfoKindParts(ar, rule.kind);
   const kind = kindParts.length ? kindParts.join(",") : undefined;
   const rawWordCount = await resolveBookInfoField(ar, rule.wordCount);
   const wordCount = wordCountFormat(rawWordCount) || undefined;
@@ -545,9 +580,7 @@ async function parseSearchItem(
     const author =
       formatLegadoBookAuthor(await ar.getString(rule.author, el)) || "未知";
 
-    const kindParts = rule.kind
-      ? await resolveBookInfoKindParts(ar, rule.kind, el)
-      : [];
+    const kindParts = await resolveBookInfoKindParts(ar, rule.kind, el);
     warnSuspiciousKindTags(kindParts, logs, source.bookSourceName);
     const kind = kindParts.length ? kindParts.join(",") : undefined;
 
@@ -560,7 +593,7 @@ async function parseSearchItem(
       formatLegadoLastChapterDisplay(await ar.getString(rule.lastChapter, el)) ||
       undefined;
 
-    const introRaw = (await ar.getString(rule.intro, el)).trim();
+    const introRaw = trimLegadoAsciiWhitespace(await ar.getString(rule.intro, el));
     const intro = introRaw ? formatLegadoBookIntro(introRaw) || undefined : undefined;
 
     // 列表不预拉封面（搜索/发现条目多）；由渲染侧 useBookshelfCoverUrls 懒解析
@@ -944,7 +977,7 @@ export async function getBookInfo(
   ) || "未知";
   let detailName = isLikelyBadDetailName(detailNameRaw) ? name : detailNameRaw;
   detailName = stripEmbeddedAuthorFromDetailName(detailName, detailAuthor);
-  const kindParts = rule.kind ? await resolveBookInfoKindParts(ar, rule.kind) : [];
+  const kindParts = await resolveBookInfoKindParts(ar, rule.kind);
   const parsedKind = kindParts.length ? kindParts.join(",") : "";
   // 详情落地一次规范化 kind
   const kind = stripNumericIdPrefix(parsedKind || book.kind || "");

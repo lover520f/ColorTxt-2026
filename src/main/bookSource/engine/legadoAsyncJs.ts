@@ -366,20 +366,24 @@ export function ensureLegadoScriptReturn(script: string): string {
   if (lastStmtStartInLine > 0) {
     const indent = lines[i].match(/^\s*/)?.[0] ?? "";
     const before = last.slice(0, lastStmtStartInLine);
-    let stmt = last.slice(lastStmtStartInLine).replace(/;\s*$/, "").trim();
-    if (!stmt || stmt.startsWith("return ")) return trimmed;
-    // if/else / for / while：交给 ensureLegadoIfElseBranchReturn，勿写成 `return if`
-    if (/^(if|for|while|switch|try|with)\b/.test(stmt)) {
-      lines[i] = `${indent}${before}${stmt}`;
+    const stmt = last.slice(lastStmtStartInLine).replace(/;\s*$/, "").trim();
+    if (stmt.startsWith("return ")) return trimmed;
+    // 末行仅为 `});` / `);`（闭括号 + 分号）时 stmt 为空，不是多语句；
+    // 若此处直接 return，会漏掉 `List.map(…);` / `JSON.stringify($$);` 的顶层 return
+    if (stmt) {
+      // if/else / for / while：交给 ensureLegadoIfElseBranchReturn，勿写成 `return if`
+      if (/^(if|for|while|switch|try|with)\b/.test(stmt)) {
+        lines[i] = `${indent}${before}${stmt}`;
+        return lines.join("\n");
+      }
+      const declName = legadoDeclAssignReturnName(stmt);
+      if (declName) {
+        lines[i] = `${indent}${before}${stmt}; return ${declName};`;
+      } else {
+        lines[i] = `${indent}${before}return ${stmt};`;
+      }
       return lines.join("\n");
     }
-    const declName = legadoDeclAssignReturnName(stmt);
-    if (declName) {
-      lines[i] = `${indent}${before}${stmt}; return ${declName};`;
-    } else {
-      lines[i] = `${indent}${before}return ${stmt};`;
-    }
-    return lines.join("\n");
   }
 
   const declNameFromLast = legadoDeclAssignReturnName(last);
@@ -517,6 +521,85 @@ function injectReturnIntoIfElseBranchEnds(script: string): string {
   return result;
 }
 
+/** 计算 `src[0..endExclusive)` 内未闭合的 `{` 深度（跳过字符串/注释/正则） */
+function braceDepthBefore(src: string, endExclusive: number): number {
+  let depth = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let inTemplate = false;
+  let escape = false;
+
+  for (let i = 0; i < endExclusive && i < src.length; i++) {
+    const ch = src[i]!;
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (inSingle) {
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+    if (inTemplate) {
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "`") inTemplate = false;
+      continue;
+    }
+
+    if (ch === "/" && i + 1 < src.length) {
+      const next = src[i + 1]!;
+      if (next === "/") {
+        const nl = src.indexOf("\n", i + 2);
+        i = nl < 0 ? src.length : nl;
+        continue;
+      }
+      if (next === "*") {
+        const end = src.indexOf("*/", i + 2);
+        if (end < 0) break;
+        i = end + 1;
+        continue;
+      }
+      if (canStartRegexLiteral(src, i)) {
+        i = skipRegexLiteral(src, i) - 1;
+        continue;
+      }
+    }
+
+    if (ch === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+    if (ch === "`") {
+      inTemplate = true;
+      continue;
+    }
+
+    if (ch === "{") depth++;
+    else if (ch === "}") depth = Math.max(0, depth - 1);
+  }
+  return depth;
+}
+
 function injectTrailingReturnInBraceBlock(
   src: string,
   braceOpen: number,
@@ -524,10 +607,21 @@ function injectTrailingReturnInBraceBlock(
 ): { text: string; changed: boolean; nextIndex: number } {
   const inner = src.slice(braceOpen + 1, braceClose);
   const innerLines = inner.split("\n");
+  let lineStart = 0;
+  const lineStarts: number[] = [];
+  for (let i = 0; i < innerLines.length; i++) {
+    lineStarts.push(lineStart);
+    lineStart += (innerLines[i]?.length ?? 0) + 1;
+  }
   let li = innerLines.length - 1;
   while (li >= 0) {
     const t = innerLines[li]?.trim() ?? "";
     if (!t || t === "}" || t === "{") {
+      li--;
+      continue;
+    }
+    // for/while/if 体内的末行不可当分支返回值（urlEncode 等）
+    if (braceDepthBefore(inner, lineStarts[li] ?? 0) !== 0) {
       li--;
       continue;
     }

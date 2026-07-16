@@ -67,14 +67,28 @@ function wrapElement($: CheerioAPI, node: AnyNode): JsoupElement {
       return el.attr(attributeKey) ?? "";
     },
     text() {
-      return el
+      // 对齐 Jsoup：仅折叠 code≤0x20；保留全角空格（简介缩进）
+      const raw = el
         .clone()
         .find("script, style, noscript")
         .remove()
         .end()
-        .text()
-        .replace(/\s+/g, " ")
-        .trim();
+        .text();
+      let out = "";
+      let prevWs = true;
+      for (let i = 0; i < raw.length; i++) {
+        const c = raw.charCodeAt(i);
+        if (c <= 0x20) {
+          if (!prevWs) {
+            out += " ";
+            prevWs = true;
+          }
+        } else {
+          out += raw[i]!;
+          prevWs = false;
+        }
+      }
+      return prevWs && out.endsWith(" ") ? out.slice(0, -1) : out;
     },
     html() {
       return el.html() ?? "";

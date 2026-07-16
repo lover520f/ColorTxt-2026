@@ -16,11 +16,14 @@ export {
   splitBookMetaTags,
 } from "@shared/bookSource/bookMetaTags";
 
-/** 简介展示：保留段首全角缩进；换行转 &lt;br&gt;，不依赖 CSS white-space */
+/** 简介展示：按行去掉首尾空白（含全角空格），仅影响 UI，不改引擎存盘 */
 export function formatBookIntroForDisplay(intro: string | undefined | null): string {
   const raw = intro ?? "";
-  if (!raw.trim()) return "";
-  return raw.trimEnd();
+  if (!raw.replace(/[\t\n\r\f\v \u3000]+/g, "")) return "";
+  const lines = raw.split(/\r\n|\r|\n/).map((line) => line.trim());
+  while (lines.length && !lines[0]) lines.shift();
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  return lines.join("\n");
 }
 
 /** 详情简介 HTML（转义 + 换行），供 v-html 使用 */

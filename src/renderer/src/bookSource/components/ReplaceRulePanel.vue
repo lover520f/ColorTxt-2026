@@ -320,6 +320,27 @@ async function onNetworkImport() {
   );
 }
 
+async function onClipboardImport() {
+  closeHeaderMoreMenu();
+  let text = "";
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    appToast("读取剪贴板失败", { kind: "warning" });
+    return;
+  }
+  const rules = parseReplaceRuleJson(text);
+  if (!rules.length) {
+    appToast("未解析到有效替换规则", { kind: "warning" });
+    return;
+  }
+  const added = mergeImportedRules(rules);
+  appToast(
+    `已加入 ${added} 条（${props.editFormatMode ? "应用" : "保存"}后生效）`,
+    { kind: "info" },
+  );
+}
+
 async function onExportEnabled() {
   closeHeaderMoreMenu();
   const enabled = items.value.filter((r) => r.isEnabled);
@@ -409,6 +430,14 @@ const showScopeColumn = computed(() => props.bucket === "findBook");
             type="button"
             class="appShellMenuItem"
             role="menuitem"
+            @click="onClipboardImport"
+          >
+            <span class="appShellMenuLabel">从剪贴板导入</span>
+          </button>
+          <button
+            type="button"
+            class="appShellMenuItem"
+            role="menuitem"
             :disabled="!hasEnabledRules"
             @click="onExportEnabled"
           >
@@ -460,10 +489,12 @@ const showScopeColumn = computed(() => props.bucket === "findBook");
                 <div v-if="displayReplaceRuleName(item)" class="ruleTitle">{{ displayReplaceRuleName(item) }}</div>
                 <div class="rulePreview" :class="{ 'rulePreview--toEmpty': !item.replacement }">
                   <template v-if="item.replacement">
-                    <code>{{ item.pattern }}</code> → <code>{{ item.replacement }}</code>
+                    <code :title="item.pattern">{{ item.pattern }}</code>
+                    <span class="rulePreviewArrow" aria-hidden="true">→</span>
+                    <code :title="item.replacement">{{ item.replacement }}</code>
                   </template>
                   <template v-else>
-                    <code>{{ item.pattern }}</code>
+                    <code :title="item.pattern">{{ item.pattern }}</code>
                   </template>
                 </div>
               </td>
@@ -581,11 +612,12 @@ const showScopeColumn = computed(() => props.bucket === "findBook");
         <label class="editField">
           <span class="editFieldLabel">
             <span class="editFieldLabelTitle">替换为</span>
-            <span class="editFieldLabelKey">（可选）</span>
+            <span class="editFieldLabelKey">（可选；正则下可用 @js:）</span>
           </span>
           <AutoResizeTextarea
             class="editFieldInput"
             v-model="editing.replacement"
+            placeholder="纯文本，或 @js: 脚本（绑定 result）"
           />
         </label>
         <div class="editCheckRow editCheckRow--pair">
@@ -681,7 +713,7 @@ const showScopeColumn = computed(() => props.bucket === "findBook");
 .tableWrap {
   display: flex;
   flex-direction: column;
-  max-height: min(50vh, 420px);
+  max-height: calc(100vh - 200px);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
@@ -770,23 +802,34 @@ const showScopeColumn = computed(() => props.bucket === "findBook");
   font-family: Consolas, "Courier New", monospace;
   color: var(--muted);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
 }
 
 .ruleTitle + .rulePreview {
   margin-top: 5px;
 }
 
+.rulePreviewArrow {
+  flex: 0 0 auto;
+  line-height: 1.35;
+  padding-top: 2px;
+}
+
 .rulePreview code {
-  display: inline;
-  margin: 0 1px;
+  min-width: 80px;
+  margin: 0;
   padding: 2px 4px;
   border-radius: 4px;
   background: var(--panel-elevated, rgba(127, 127, 127, 0.12));
   font-size: 11px;
   line-height: 1.35;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 .rulePreview--toEmpty code {

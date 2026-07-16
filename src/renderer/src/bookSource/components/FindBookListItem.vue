@@ -49,6 +49,8 @@ const displayCoverUrl = computed(() => {
 
 const introText = computed(() => formatBookIntroForDisplay(props.item.intro));
 
+const lastChapterText = computed(() => props.item.lastChapter?.trim() || "");
+
 const kindTags = computed(() => getBookKindList(props.item));
 
 /** 仅最终失败才用默认封面；解析中用占位 */
@@ -152,6 +154,9 @@ function onCoverLoad(e: Event) {
       </div>
       <div v-else class="findBookListItemTitle">{{ item.name }}</div>
       <div class="findBookListItemAuthor">{{ formatBookAuthor(item.author) }}</div>
+      <div v-if="lastChapterText" class="findBookListItemLatest">
+        最新：{{ lastChapterText }}
+      </div>
       <div v-if="kindTags.length" class="findBookListItemTags">
         <span
           v-for="(tag, tagIdx) in kindTags"
@@ -280,7 +285,16 @@ img.findBookListItemCover {
 .findBookListItemAuthor {
   font-size: 13px;
   color: var(--muted);
+  margin-bottom: 4px;
+}
+.findBookListItemLatest {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
   margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .findBookListItemTags {
   display: flex;

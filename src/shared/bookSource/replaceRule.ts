@@ -71,10 +71,16 @@ export function isReplaceRuleValid(rule: Pick<ReplaceRule, "pattern" | "isRegex"
   if (!pattern) return false;
   if (!rule.isRegex) return true;
   try {
+    // 优先 `u`：与套用时一致，并避免增补平面字符类在无 `u` 下的异常语义
     // eslint-disable-next-line no-new
-    new RegExp(pattern);
+    new RegExp(pattern, "u");
   } catch {
-    return false;
+    try {
+      // eslint-disable-next-line no-new
+      new RegExp(pattern);
+    } catch {
+      return false;
+    }
   }
   if (pattern.endsWith("|") && !pattern.endsWith("\\|")) return false;
   return true;

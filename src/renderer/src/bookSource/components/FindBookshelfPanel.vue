@@ -35,6 +35,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   readBook: [item: SearchBookItem];
   openBookInfo: [item: SearchBookItem];
+  /** 限定该书源搜索 */
+  searchSource: [item: { bookSourceUrl: string; bookSourceName: string }];
   managingChange: [managing: boolean];
 }>();
 
@@ -121,6 +123,7 @@ const canDragReorder = computed(
 );
 
 const rowMenuCanUpdate = computed(() => rowMenuItem.value?.canUpdate !== false);
+const rowMenuHasOrigin = computed(() => Boolean(rowMenuItem.value?.origin?.trim()));
 
 const selectedCount = computed(() => {
   let n = 0;
@@ -279,6 +282,21 @@ function onRowMenuBookInfo() {
   closeRowMenu();
   if (!item) return;
   emit("openBookInfo", item);
+}
+
+function onRowMenuSearchSource() {
+  const item = rowMenuItem.value;
+  closeRowMenu();
+  if (!item) return;
+  const url = item.origin?.trim();
+  if (!url) {
+    appToast("该书没有关联书源", { kind: "warning" });
+    return;
+  }
+  emit("searchSource", {
+    bookSourceUrl: url,
+    bookSourceName: item.originName?.trim() || url,
+  });
 }
 
 function onRowMenuToggleCanUpdate() {
@@ -468,6 +486,15 @@ defineExpose({ refresh, updateAll, enterManage, exitManage });
       </button>
       <button type="button" class="appShellMenuItem" role="menuitem" @click="onRowMenuBookInfo">
         书籍信息
+      </button>
+      <button
+        type="button"
+        class="appShellMenuItem"
+        role="menuitem"
+        :disabled="!rowMenuHasOrigin"
+        @click="onRowMenuSearchSource"
+      >
+        书源搜索
       </button>
       <button
         type="button"

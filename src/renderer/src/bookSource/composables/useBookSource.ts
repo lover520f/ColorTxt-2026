@@ -68,6 +68,14 @@ export function useBookSourceApi() {
     return api.bookSourceImportPreview(sources);
   }
 
+  /** 从系统剪贴板 JSON 解析书源并生成导入预览（数组或单对象） */
+  async function importFromClipboard(): Promise<BookSourceImportPreviewItem[]> {
+    const text = await navigator.clipboard.readText();
+    const sources = parseBookSourceJson(text);
+    if (!sources.length) return [];
+    return api.bookSourceImportPreview(sources);
+  }
+
   async function commitImport(payload: {
     addUrls: string[];
     updateUrls: string[];
@@ -96,6 +104,7 @@ export function useBookSourceApi() {
     applySourceCustomOrders,
     importFromFile,
     importFromNetwork,
+    importFromClipboard,
     commitImport,
   };
 }

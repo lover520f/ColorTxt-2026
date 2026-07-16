@@ -148,8 +148,21 @@ export function saveBookSource(source: BookSourceRecord): void {
     throw new Error("仅支持文本类型书源");
   }
   const now = Date.now();
+  const existing = getBookSource(source.bookSourceUrl);
+  let customOrder = source.customOrder;
+  if (!existing) {
+    // 新建：无有效 customOrder 时插入列表顶部（越小越靠前，对齐「置顶」）
+    if (customOrder == null || !Number.isFinite(customOrder)) {
+      const orders = listCustomOrders();
+      const min = orders.length ? Math.min(...orders) : 0;
+      customOrder = min - 1;
+    }
+  } else if (customOrder == null || !Number.isFinite(customOrder)) {
+    customOrder = existing.customOrder ?? 0;
+  }
   const record: BookSourceRecord = {
     ...source,
+    customOrder,
     lastUpdateTime: source.lastUpdateTime ?? now,
     enabled: source.enabled !== false,
     bookSourceType: 0,

@@ -12,6 +12,7 @@ import { appPrompt } from "../../services/appDialog";
 import { appToast } from "../../services/appToast";
 import { useBookSourceApi } from "../composables/useBookSource";
 import type { BookSourceRecord } from "@shared/bookSource/types";
+import { parseBookSourceJson } from "@shared/bookSource/types";
 import {
   BOOK_SOURCE_BASIC_FIELDS,
   BOOK_SOURCE_CONTENT_FIELDS,
@@ -225,20 +226,49 @@ async function onLogin() {
   showLogin.value = true;
 }
 
-function onSearchSource() {
+async function onSearchSource() {
   closeMoreMenu();
   if (props.draftOnly) {
     appToast("请先导入书源后再搜索", { kind: "warning" });
     return;
   }
-  const url = effectiveSourceUrl.value;
+  const url = draft.value.bookSourceUrl?.trim();
   if (!url) {
     appToast("请先填写书源 URL", { kind: "warning" });
     return;
   }
-  const name = draft.value.bookSourceName?.trim() || url;
-  modelValue.value = false;
-  emit("searchSource", { bookSourceUrl: url, bookSourceName: name });
+  if (!draft.value.bookSourceName?.trim()) {
+    appToast("请先填写书源名称", { kind: "warning" });
+    return;
+  }
+  // 搜索前先落盘当前草稿，避免未保存的规则改动未生效
+  saving.value = true;
+  try {
+    draft.value.lastUpdateTime = Date.now();
+    draft.value.bookSourceType = 0;
+    draft.value.bookSourceUrl = url;
+    const saved = JSON.parse(JSON.stringify(draft.value)) as BookSourceRecord;
+    const r = await saveSource(saved);
+    if (r && typeof r === "object" && "ok" in r && !r.ok) {
+      appToast(
+        (r as { message?: string }).message || "保存书源失败",
+        { kind: "warning" },
+      );
+      return;
+    }
+    modelValue.value = false;
+    emit("done", saved);
+    emit("searchSource", {
+      bookSourceUrl: saved.bookSourceUrl,
+      bookSourceName: saved.bookSourceName || url,
+    });
+  } catch (e) {
+    appToast(e instanceof Error ? e.message : "保存书源失败", {
+      kind: "warning",
+    });
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function onClearCookie() {
@@ -254,6 +284,38 @@ async function onClearCookie() {
     return;
   }
   appToast("已清除 Cookie", { kind: "success", duration: 1200 });
+}
+
+/** 对齐 Legado「拷贝源」：当前草稿 JSON 写入剪贴板 */
+async function onCopySource() {
+  closeMoreMenu();
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(draft.value, null, 2));
+    appToast("已复制书源", { kind: "success", duration: 1200 });
+  } catch {
+    appToast("复制书源失败", { kind: "warning" });
+  }
+}
+
+/** 对齐 Legado「粘贴源」：从剪贴板解析书源填入表单（须点确定才保存） */
+async function onPasteSource() {
+  closeMoreMenu();
+  let text = "";
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    appToast("读取剪贴板失败", { kind: "warning" });
+    return;
+  }
+  const sources = parseBookSourceJson(text);
+  if (!sources.length) {
+    appToast("剪贴板中没有有效书源（需含 bookSourceUrl / bookSourceName）", {
+      kind: "warning",
+    });
+    return;
+  }
+  draft.value = JSON.parse(JSON.stringify(sources[0]!)) as BookSourceRecord;
+  appToast("已粘贴书源", { kind: "success", duration: 1200 });
 }
 
 async function onSetSourceVariable() {
@@ -345,6 +407,22 @@ async function onSetSourceVariable() {
           @click="onClearCookie"
         >
           <span class="appShellMenuLabel">清除 Cookie</span>
+        </button>
+        <button
+          type="button"
+          class="appShellMenuItem"
+          role="menuitem"
+          @click="onCopySource"
+        >
+          <span class="appShellMenuLabel">复制源</span>
+        </button>
+        <button
+          type="button"
+          class="appShellMenuItem"
+          role="menuitem"
+          @click="onPasteSource"
+        >
+          <span class="appShellMenuLabel">粘贴源</span>
         </button>
         <button
           type="button"

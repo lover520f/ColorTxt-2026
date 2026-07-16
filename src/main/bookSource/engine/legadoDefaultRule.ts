@@ -455,8 +455,14 @@ export function legadoCollectResultTexts(
   if (!extract || !selectorSegs.length) return [];
 
   const $ = loadCheerioHtml(html);
+  // 须含 <head>（og:novel:category 等 meta）；勿只从 body 起查
+  const htmlRoot = $("html");
   const body = $("body");
-  let roots: any[] = body.length ? body.toArray() : $.root().children().toArray();
+  let roots: any[] = htmlRoot.length
+    ? htmlRoot.toArray()
+    : body.length
+      ? body.toArray()
+      : $.root().children().toArray();
   if (!roots.length) return [];
 
   let elements = roots;
@@ -478,8 +484,10 @@ export function legadoCollectResultTexts(
     /^@?\.tag-list$/i.test(selectorSegs[0]?.trim() ?? "") &&
     extract?.trim().toLowerCase() === "text";
   for (const el of elements) {
-    let v = extractFromElement($(el), extract).trim();
-    if (tagListContainerText) v = v.replace(/\s+/g, " ").trim();
+    let v = trimLegadoAsciiWhitespace(extractFromElement($(el), extract));
+    if (tagListContainerText) {
+      v = normalizeLegadoAsciiWhitespace(v);
+    }
     if (v) out.push(v);
   }
   return pickLegadoResultByIndex(out, resultIndex);
@@ -637,16 +645,47 @@ export function extractFromContentRoot(
   const root = cheerioContentRoot($);
   if (!root.length) return list ? [] : "";
   if (list) {
-    const v = extractFromElement(root, extract).trim();
+    const v = trimLegadoAsciiWhitespace(extractFromElement(root, extract));
     return v ? [v] : [];
   }
   return extractFromElement(root, extract);
 }
 
 /**
+ * 对齐 Jsoup/Kotlin：只把 code≤0x20 当空白。
+ * JS `String#trim` / `\s` 会吃掉全角空格 `\u3000`（简介段首缩进）。
+ */
+export function trimLegadoAsciiWhitespace(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && s.charCodeAt(start) <= 0x20) start += 1;
+  while (end > start && s.charCodeAt(end - 1) <= 0x20) end -= 1;
+  return s.slice(start, end);
+}
+
+/** 折叠 ASCII 空白为单空格并 trim；保留全角空格等（对齐 Jsoup text 规范化范围） */
+export function normalizeLegadoAsciiWhitespace(raw: string): string {
+  let out = "";
+  let prevWs = true;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw.charCodeAt(i);
+    if (c <= 0x20) {
+      if (!prevWs) {
+        out += " ";
+        prevWs = true;
+      }
+    } else {
+      out += raw[i]!;
+      prevWs = false;
+    }
+  }
+  return prevWs && out.endsWith(" ") ? out.slice(0, -1) : out;
+}
+
+/**
  * 对齐 Legado/JSoup `Element.text()`：
  * - 忽略 script / style / noscript
- * - 空白（含源码换行）归一为单个空格并 trim
+ * - 仅折叠 code≤0x20 的空白（勿用 JS `\s`/`trim`，以免去掉简介段首全角缩进）
  * Cheerio `.text()` 会保留 HTML 源码换行，`div.tags` / `p.bookDesc` 等会多出无换行段。
  */
 function legadoElementText(el: Cheerio<any>): string {
@@ -656,7 +695,7 @@ function legadoElementText(el: Cheerio<any>): string {
     .remove()
     .end()
     .text();
-  return raw.replace(/\s+/g, " ").trim();
+  return normalizeLegadoAsciiWhitespace(raw);
 }
 
 /**

@@ -10,17 +10,17 @@ import {
   splitMakeUpRegexSuffix,
   type MakeUpRuleResult,
 } from "./legadoCompositeRule";
-import { applyRuleRegex, splitRuleRegexSuffix, trimLegadoRulePreservingRegexReplace, type RuleRegexSuffix } from "./legadoDefaultRule";
+import { applyRuleRegex, splitRuleRegexSuffix, trimLegadoAsciiWhitespace, trimLegadoRulePreservingRegexReplace, type RuleRegexSuffix } from "./legadoDefaultRule";
 import { splitSourceRule } from "./legadoRuleSplit";
 import { evalJsExpression } from "./rhinoRuntime";
 import { coerceJavaString } from "./legadoJavaShims";
 
 function coerceLegadoRuleString(value: unknown): string {
   if (value == null) return "";
-  if (typeof value === "string") return value.trim();
+  if (typeof value === "string") return trimLegadoAsciiWhitespace(value);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (typeof value === "object") {
-    const s = coerceJavaString(value).trim();
+    const s = trimLegadoAsciiWhitespace(coerceJavaString(value));
     if (s && s !== "[object Object]") return s;
   }
   return "";
@@ -355,9 +355,18 @@ export function resolveDetailLastChapterDisplay(
   return formatLegadoLastChapterDisplay(detailLastChapter)?.trim() ?? "";
 }
 
+/**
+ * 段首缩进用的空白类：含全角空格 `\u3000`。
+ * HtmlFormatter 的 indent1/indent2 本意是把段首规范成恰好一个 `　　`；
+ * 若像 Java `\s` 那样不吃 `\u3000`，indent1 补上的缩进会被 indent2 再叠一层，
+ * `##^##$1<br>` 类简介会变成 `　　　　…`，比 Legado 观感更空。
+ * 纯文本简介（如 `　　…`）经 indent2 仍会收成单个 `　　`，缩进不丢。
+ */
+const LEGADO_INDENT_WS = "[\\t\\n\\r\\f\\v \\u3000]";
+
 /** Legado HtmlFormatter.format / formatKeepImg：HTML 正文转纯文本 */
 function formatLegadoHtmlContent(html: string, keepImg = false): string {
-  if (!html.trim()) return "";
+  if (!trimLegadoAsciiWhitespace(html)) return "";
   const tagStrip = keepImg
     ? /<\/?(?!img\b)[a-zA-Z]+(?=[ >])[^<>]*>/gi
     : /<\/?[a-zA-Z]+(?=[ >])[^<>]*>/gi;
@@ -369,10 +378,10 @@ function formatLegadoHtmlContent(html: string, keepImg = false): string {
     .replace(/<\/?(?:div|p|br|hr|h\d|article|dd|dl)[^>]*>/gi, "\n")
     .replace(/<!--[^>]*-->/g, "")
     .replace(tagStrip, "")
-    // 对齐 Legado indent1/indent2：段间换行并补全角缩进
-    .replace(/\s*\n+\s*/g, "\n　　")
-    .replace(/^[\n\s]+/, "　　")
-    .replace(/[\n\s]+$/, "");
+    // 对齐 Legado indent1/indent2：段间换行并规范为单个全角缩进（幂等）
+    .replace(new RegExp(`${LEGADO_INDENT_WS}*\\n+${LEGADO_INDENT_WS}*`, "g"), "\n　　")
+    .replace(new RegExp(`^${LEGADO_INDENT_WS}+`), "　　")
+    .replace(new RegExp(`${LEGADO_INDENT_WS}+$`), "");
 }
 
 /** Legado HtmlFormatter.format：简介中的 <br> 等转为可读文本 */
