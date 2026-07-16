@@ -195,6 +195,7 @@ export function useAppPersistence(deps: {
   textConvertLetter: Ref<import("@shared/textConvertTypes").TextConvertWidthMode>;
   textConvertDigit: Ref<import("@shared/textConvertTypes").TextConvertWidthMode>;
   showChapterCounts: Ref<boolean>;
+  chapterCharCountExact: Ref<boolean>;
   readerFontSize: Ref<number>;
   readerLineHeightMultiple: Ref<number>;
   monacoFontFamily: Ref<string>;
@@ -813,6 +814,9 @@ export function useAppPersistence(deps: {
     if (typeof data.showChapterCounts === "boolean") {
       deps.showChapterCounts.value = data.showChapterCounts;
     }
+    if (typeof data.chapterCharCountExact === "boolean") {
+      deps.chapterCharCountExact.value = data.chapterCharCountExact;
+    }
 
     if (typeof data.fontSize === "number") {
       deps.readerFontSize.value = Math.max(
@@ -1085,6 +1089,7 @@ export function useAppPersistence(deps: {
       textConvertLetter: deps.textConvertLetter.value,
       textConvertDigit: deps.textConvertDigit.value,
       showChapterCounts: deps.showChapterCounts.value,
+      chapterCharCountExact: deps.chapterCharCountExact.value,
       chapterRules: deps.chapterRuleState.value.rules,
       restoreSessionOnStartup: deps.restoreSessionOnStartup.value,
       syncCurrentFile: deps.syncCurrentFile.value,

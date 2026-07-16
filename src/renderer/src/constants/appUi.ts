@@ -119,6 +119,8 @@ export {
   defaultTextConvertZhMode,
 } from "@shared/textConvertTypes";
 export const defaultShowChapterCounts = true;
+/** 章节列表字数是否显示具体数值（关闭时 ≥1 万用「万字」简写） */
+export const defaultChapterCharCountExact = false;
 /** 少于该字数的片段不作为章节（作用于章节列表/导航） */
 export const defaultChapterMinCharCount = 1;
 export const minChapterMinCharCount = 0;

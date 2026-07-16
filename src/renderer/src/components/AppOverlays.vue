@@ -42,6 +42,7 @@ const props = defineProps<{
   monacoSmoothScrolling: boolean;
   stickyChapterTitleEnabled: boolean;
   chapterNavToolbarEnabled: boolean;
+  chapterCharCountExact: boolean;
   readerEditShowLineNumbers: boolean;
   readerEditMinimap: boolean;
   editAutoRefreshChapterList: boolean;
@@ -215,6 +216,7 @@ onBeforeUnmount(() => {
     :monaco-smooth-scrolling="monacoSmoothScrolling"
     :sticky-chapter-title-enabled="stickyChapterTitleEnabled"
     :chapter-nav-toolbar-enabled="chapterNavToolbarEnabled"
+    :chapter-char-count-exact="chapterCharCountExact"
     :reader-edit-show-line-numbers="readerEditShowLineNumbers"
     :reader-edit-minimap="readerEditMinimap"
     :edit-auto-refresh-chapter-list="editAutoRefreshChapterList"

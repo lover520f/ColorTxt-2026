@@ -150,6 +150,7 @@ import {
   defaultSyncCurrentFile,
   defaultTxtrDelimitedMatchCrossLine,
   defaultShowChapterCounts,
+  defaultChapterCharCountExact,
   defaultShowSidebar,
   emptyFileHintText,
   readerTxtLoadingHintText,
@@ -376,6 +377,11 @@ const activeChapterIdx = ref<number>(-1);
 
 useAiChapterPlainTextBridge(readerRef, chapters);
 const showChapterCounts = ref(defaultShowChapterCounts);
+const chapterCharCountExact = ref(defaultChapterCharCountExact);
+/** 依赖 exact 开关，变更时更新函数引用以刷新章节列表字数展示 */
+const formatChapterCharCount = computed(
+  () => (n: number) => formatCharCount(n, chapterCharCountExact.value),
+);
 /** AI 阅读助手工具栏：深度思考 / 防剧透（持久化至 colorTxt.ui.settings） */
 const aiAssistantDeepThinking = ref(false);
 const aiAssistantSpoilerSafe = ref(false);
@@ -1164,6 +1170,7 @@ const persistence = useAppPersistence({
   textConvertLetter,
   textConvertDigit,
   showChapterCounts,
+  chapterCharCountExact,
   readerFontSize,
   readerLineHeightMultiple,
   monacoFontFamily,
@@ -2905,6 +2912,7 @@ async function applySettings(payload: SettingsApplyPayload) {
   monacoSmoothScrolling.value = payload.monacoSmoothScrolling;
   stickyChapterTitleEnabled.value = payload.stickyChapterTitleEnabled;
   chapterNavToolbarEnabled.value = payload.chapterNavToolbarEnabled;
+  chapterCharCountExact.value = payload.chapterCharCountExact;
   timedScrollSettings.value = mergeTimedScrollSettings(payload.timedScroll);
   readerEditShowLineNumbers.value = payload.readerEditShowLineNumbers;
   readerEditMinimap.value = payload.readerEditMinimap;
@@ -3312,7 +3320,7 @@ useAppShellThemeWatch({
           :chapters="chapters"
           :active-chapter-idx="activeChapterIdx"
           :chapter-min-char-count="chapterMinCharCount"
-          :format-char-count="formatCharCount"
+          :format-char-count="formatChapterCharCount"
           :show-edit-chapter-refresh-button="showEditChapterRefreshButton"
           @pick-directory="pickTxtDirectory"
           @import-dropped-paths="onImportDroppedPathsFromList"
@@ -3611,6 +3619,7 @@ useAppShellThemeWatch({
       :monaco-smooth-scrolling="monacoSmoothScrolling"
       :sticky-chapter-title-enabled="stickyChapterTitleEnabled"
       :chapter-nav-toolbar-enabled="chapterNavToolbarEnabled"
+      :chapter-char-count-exact="chapterCharCountExact"
       :timed-scroll-settings="timedScrollSettings"
       :reader-edit-show-line-numbers="readerEditShowLineNumbers"
       :reader-edit-minimap="readerEditMinimap"

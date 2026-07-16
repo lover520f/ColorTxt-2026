@@ -70,6 +70,8 @@ export type PersistedSettingsData = {
   textConvertDigit?: string;
   /** 章节列表是否显示每章字数 */
   showChapterCounts?: boolean;
+  /** 章节列表字数是否显示具体数值（如 `23,123 字`） */
+  chapterCharCountExact?: boolean;
   chapterRules?: ChapterMatchRule[];
   /** 启动时是否从会话快照恢复上次文件与列表；关闭时关闭窗口不写入会话 */
   restoreSessionOnStartup?: boolean;
@@ -288,6 +290,9 @@ export function loadPersistedSettingsData(
   }
   if (typeof obj.showChapterCounts === "boolean") {
     data.showChapterCounts = obj.showChapterCounts;
+  }
+  if (typeof obj.chapterCharCountExact === "boolean") {
+    data.chapterCharCountExact = obj.chapterCharCountExact;
   }
   if (Array.isArray(obj.chapterRules)) {
     data.chapterRules = obj.chapterRules as ChapterMatchRule[];

@@ -13,6 +13,7 @@ defineProps<{
   draftSyncCurrentFile: boolean;
   draftRecentLimit: number;
   draftChapterMinCharCount: number;
+  draftChapterCharCountExact: boolean;
   draftEbookConvertOutputDir: string;
 }>();
 
@@ -21,6 +22,7 @@ defineEmits<{
   "update:draftSyncCurrentFile": [v: boolean];
   "update:draftRecentLimit": [v: number];
   "update:draftChapterMinCharCount": [v: number];
+  "update:draftChapterCharCountExact": [v: boolean];
   "update:draftEbookConvertOutputDir": [v: string];
   clearCache: [];
 }>();
@@ -108,6 +110,22 @@ defineEmits<{
       </div>
       <p class="settingsHint">
         少于该字数的将不会被识别为章节；设置为 0 时不限制。
+      </p>
+    </div>
+
+    <div class="settingsRow">
+      <div class="settingsRowMain">
+        <span class="settingsLabel">章节字数显示具体数值</span>
+        <SwitchToggle
+          :model-value="draftChapterCharCountExact"
+          aria-label="章节字数显示具体数值"
+          @update:model-value="
+            $emit('update:draftChapterCharCountExact', $event)
+          "
+        />
+      </div>
+      <p class="settingsHint">
+        开启后章节列表字数显示为具体数值（如 <code>23,123 字</code>，而不是 <code>2.3 万字</code>）。
       </p>
     </div>
 

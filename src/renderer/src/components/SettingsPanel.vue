@@ -37,6 +37,7 @@ import {
   defaultMonacoSmoothScrolling,
   defaultStickyChapterTitleEnabled,
   defaultChapterNavToolbarEnabled,
+  defaultChapterCharCountExact,
   defaultReaderEditShowLineNumbers,
   defaultReaderEditMinimap,
   defaultEditAutoRefreshChapterList,
@@ -105,6 +106,7 @@ export type SettingsApplyPayload = {
   monacoSmoothScrolling: boolean;
   stickyChapterTitleEnabled: boolean;
   chapterNavToolbarEnabled: boolean;
+  chapterCharCountExact: boolean;
   readerEditShowLineNumbers: boolean;
   readerEditMinimap: boolean;
   editAutoRefreshChapterList: boolean;
@@ -137,6 +139,7 @@ const props = defineProps<{
   monacoSmoothScrolling: boolean;
   stickyChapterTitleEnabled: boolean;
   chapterNavToolbarEnabled: boolean;
+  chapterCharCountExact: boolean;
   readerEditShowLineNumbers: boolean;
   readerEditMinimap: boolean;
   editAutoRefreshChapterList: boolean;
@@ -188,6 +191,7 @@ const draftLineHeightMultiple = ref(1.5);
 const draftMonacoSmoothScrolling = ref(true);
 const draftStickyChapterTitleEnabled = ref(defaultStickyChapterTitleEnabled);
 const draftChapterNavToolbarEnabled = ref(defaultChapterNavToolbarEnabled);
+const draftChapterCharCountExact = ref(defaultChapterCharCountExact);
 const draftReaderEditShowLineNumbers = ref(defaultReaderEditShowLineNumbers);
 const draftReaderEditMinimap = ref(defaultReaderEditMinimap);
 const draftEditAutoRefreshChapterList = ref(defaultEditAutoRefreshChapterList);
@@ -240,6 +244,7 @@ function syncDraftFromProps() {
   draftMonacoSmoothScrolling.value = props.monacoSmoothScrolling;
   draftStickyChapterTitleEnabled.value = props.stickyChapterTitleEnabled;
   draftChapterNavToolbarEnabled.value = props.chapterNavToolbarEnabled;
+  draftChapterCharCountExact.value = props.chapterCharCountExact;
   draftReaderEditShowLineNumbers.value = props.readerEditShowLineNumbers;
   draftReaderEditMinimap.value = props.readerEditMinimap;
   draftEditAutoRefreshChapterList.value = props.editAutoRefreshChapterList;
@@ -339,6 +344,7 @@ function resetGeneralDraft() {
   draftSyncCurrentFile.value = defaultSyncCurrentFile;
   draftRecentLimit.value = defaultRecentFilesHistoryLimit;
   draftChapterMinCharCount.value = defaultChapterMinCharCount;
+  draftChapterCharCountExact.value = defaultChapterCharCountExact;
   draftEbookConvertOutputDir.value = resolveDefaultEbookConvertOutputDirSync();
 }
 
@@ -536,6 +542,7 @@ async function onConfirm() {
     monacoSmoothScrolling: draftMonacoSmoothScrolling.value,
     stickyChapterTitleEnabled: draftStickyChapterTitleEnabled.value,
     chapterNavToolbarEnabled: draftChapterNavToolbarEnabled.value,
+    chapterCharCountExact: draftChapterCharCountExact.value,
     readerEditShowLineNumbers: draftReaderEditShowLineNumbers.value,
     readerEditMinimap: draftReaderEditMinimap.value,
     editAutoRefreshChapterList: draftEditAutoRefreshChapterList.value,
@@ -616,6 +623,9 @@ async function onClearCache() {
               v-model:draft-sync-current-file="draftSyncCurrentFile"
               v-model:draft-recent-limit="draftRecentLimit"
               v-model:draft-chapter-min-char-count="draftChapterMinCharCount"
+              v-model:draft-chapter-char-count-exact="
+                draftChapterCharCountExact
+              "
               v-model:draft-ebook-convert-output-dir="
                 draftEbookConvertOutputDir
               "
