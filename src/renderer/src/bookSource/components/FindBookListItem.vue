@@ -14,7 +14,7 @@ import { icons } from "../../icons";
 const props = withDefaults(
   defineProps<{
     item: SearchBookItem;
-    /** 是否在标题行右侧显示书源名（搜索、书架为 true，发现分类为 false） */
+    /** 是否在标题行右侧显示书源名（搜索为 true，发现分类为 false） */
     showOrigin?: boolean;
     /** 封面 URL 覆盖（父级显式传入；空串表示暂无可用 URL） */
     coverUrl?: string;
@@ -103,7 +103,7 @@ function onCoverLoad(e: Event) {
 </script>
 
 <template>
-  <li class="findBookListItem" @click="onClick">
+  <div class="findBookListItem" role="listitem" @click="onClick">
     <span
       v-if="coverBadge === 'caughtUp'"
       class="findBookCoverBadge findBookCoverBadge--caughtUp"
@@ -143,7 +143,9 @@ function onCoverLoad(e: Event) {
     </div>
     <div class="findBookListItemMain">
       <div v-if="showOrigin" class="findBookListItemHead">
-        <div class="findBookListItemTitle">{{ item.name }}</div>
+        <div class="findBookListItemTitle findBookListItemTitle--withOrigin">
+          {{ item.name }}
+        </div>
         <div v-if="item.originName" class="findBookListItemOrigin">
           {{ item.originName }}
         </div>
@@ -157,24 +159,23 @@ function onCoverLoad(e: Event) {
           class="findBookListItemTag"
         >{{ tag }}</span>
       </div>
-      <div v-if="item.lastChapter" class="findBookListItemLatest">
-        最新：{{ item.lastChapter }}
-      </div>
       <div
         v-if="introText"
         class="findBookListItemIntro"
         :title="introText"
       >{{ introText }}</div>
     </div>
-  </li>
+  </div>
 </template>
 
 <style scoped>
 .findBookListItem {
   position: relative;
+  box-sizing: border-box;
   display: flex;
   gap: 10px;
   padding: 10px;
+  height: 100%;
   border-radius: 8px;
   background: var(--surface-elevated);
   border: 1px solid var(--border);
@@ -236,13 +237,13 @@ img.findBookListItemCover {
 .findBookListItemMain {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 .findBookListItemHead {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 4px;
 }
 .findBookListItemTitle {
   flex: 1;
@@ -257,6 +258,10 @@ img.findBookListItemCover {
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+.findBookListItemTitle--withOrigin {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
 }
 .findBookListItemHead .findBookListItemTitle {
   margin-bottom: 0;
@@ -291,14 +296,6 @@ img.findBookListItemCover {
   line-height: 1.4;
   background: color-mix(in srgb, var(--accent) 12%, var(--btn-bg, rgba(0, 0, 0, 0.06)));
   color: var(--fg);
-}
-.findBookListItemLatest {
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .findBookListItemIntro {
   font-size: 12px;

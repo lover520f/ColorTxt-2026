@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import IconButton from "../../components/IconButton.vue";
+import AppShellMenuTeleport from "../../components/AppShellMenuTeleport.vue";
 import FindBookListItem from "./FindBookListItem.vue";
+import { FIND_BOOK_LIST_ROW_STRIDE } from "./findBookListLayout";
 import EditBookSourcePanel from "./EditBookSourcePanel.vue";
 import BookSourceCenterState from "./BookSourceCenterState.vue";
 import LoadingDotsBounce from "../../components/LoadingDotsBounce.vue";
+import VirtualList from "../../components/VirtualList.vue";
 import { icons } from "../../icons";
+import { useAnchoredAppShellMenu } from "../../composables/useAnchoredAppShellMenu";
 import {
   useBookSourceApi,
 } from "../composables/useBookSource";
@@ -24,9 +28,13 @@ const emit = defineEmits<{
   openBook: [item: SearchBookItem];
   /** 是否已进入书源分类浏览（用于父级隐藏筛选栏） */
   exploreActiveChange: [active: boolean];
+  /** 限定该书源搜索 */
+  searchSource: [item: { bookSourceUrl: string; bookSourceName: string }];
+  /** 书源顺序等变更（置顶后通知父级） */
+  sourcesChanged: [];
 }>();
 
-const { listSources } = useBookSourceApi();
+const { listSources, reorderSource } = useBookSourceApi();
 
 const sources = ref<BookSourceListItem[]>([]);
 const expandedUrl = ref<string | null>(null);
@@ -76,7 +84,28 @@ const showExploreLogBtn = computed(
 const showEdit = ref(false);
 const editingUrl = ref<string | null>(null);
 const discoverBodyRef = ref<HTMLElement | null>(null);
+const exploreBodyRef = ref<HTMLElement | null>(null);
 const sourceItemEls = new Map<string, HTMLElement>();
+
+const sourceMoreBtnRef = ref<HTMLElement | null>(null);
+const sourceMoreItem = ref<BookSourceListItem | null>(null);
+const sourceMoreMenu = useAnchoredAppShellMenu({
+  anchor: sourceMoreBtnRef,
+  placement: "below-end",
+  widthPx: 160,
+});
+const {
+  open: sourceMoreOpen,
+  left: sourceMoreLeft,
+  top: sourceMoreTop,
+  openMenu: openSourceMoreMenu,
+  closeMenu: closeSourceMoreMenu,
+  panelRef: sourceMorePanelRef,
+} = sourceMoreMenu;
+
+function bindSourceMorePanel(el: HTMLElement | null) {
+  sourceMorePanelRef.value = el;
+}
 
 function setSourceItemEl(url: string, el: Element | null) {
   if (el) sourceItemEls.set(url, el as HTMLElement);
@@ -230,6 +259,9 @@ async function loadKinds(source: BookSourceListItem, force = false) {
 function toggleExpand(source: BookSourceListItem) {
   if (expandedUrl.value === source.bookSourceUrl) {
     expandedUrl.value = null;
+    // 收起后移开鼠标仍显示按钮：因点击留在 head 上的焦点触发了 focus-within
+    const ae = document.activeElement;
+    if (ae instanceof HTMLElement) ae.blur();
     return;
   }
   expandedUrl.value = source.bookSourceUrl;
@@ -389,6 +421,37 @@ function onEditSource(source: BookSourceListItem) {
   showEdit.value = true;
 }
 
+function onSearchSource(source: BookSourceListItem) {
+  emit("searchSource", {
+    bookSourceUrl: source.bookSourceUrl,
+    bookSourceName: source.bookSourceName,
+  });
+}
+
+function onSourceMoreClick(source: BookSourceListItem, e: MouseEvent) {
+  sourceMoreItem.value = source;
+  sourceMoreBtnRef.value = e.currentTarget as HTMLElement;
+  void openSourceMoreMenu();
+}
+
+function onSourceMoreEdit() {
+  const source = sourceMoreItem.value;
+  closeSourceMoreMenu();
+  sourceMoreItem.value = null;
+  if (!source) return;
+  onEditSource(source);
+}
+
+async function onSourceMorePinTop() {
+  const source = sourceMoreItem.value;
+  closeSourceMoreMenu();
+  sourceMoreItem.value = null;
+  if (!source) return;
+  await reorderSource(source.bookSourceUrl, "top");
+  await refreshSources();
+  emit("sourcesChanged");
+}
+
 async function onEditDone() {
   const url = editingUrl.value;
   showEdit.value = false;
@@ -398,13 +461,28 @@ async function onEditDone() {
   await reloadKindsForUrl(url);
 }
 
+function onSearchFromEdit(item: {
+  bookSourceUrl: string;
+  bookSourceName: string;
+}) {
+  showEdit.value = false;
+  editingUrl.value = null;
+  emit("searchSource", item);
+}
+
 watch(
   () => props.active,
   (on) => {
     if (on) void refreshSources();
+    else closeSourceMoreMenu();
   },
   { immediate: true },
 );
+
+watch(expandedUrl, () => {
+  closeSourceMoreMenu();
+  sourceMoreItem.value = null;
+});
 
 defineExpose({ refreshSources });
 </script>
@@ -448,19 +526,33 @@ defineExpose({ refreshSources });
         <BookSourceCenterState v-else-if="!exploreBooks.length">
           暂无书籍
         </BookSourceCenterState>
-        <div v-else class="findDiscoverExploreBody" @scroll="onExploreScroll">
+        <div
+          v-else
+          ref="exploreBodyRef"
+          class="findDiscoverExploreBody"
+          @scroll="onExploreScroll"
+        >
           <div class="findBookResults">
-            <ul class="findBookResultsList">
-              <FindBookListItem
-                v-for="item in exploreBooks"
-                :key="item.id"
-                :item="item"
-                :show-origin="false"
-                :cover-url="getCoverUrl(item) ?? ''"
-                :cover-pending="isCoverPending(item)"
-                @click="onOpenBook"
-              />
-            </ul>
+            <VirtualList
+              class="findBookResultsVirtual"
+              role="list"
+              :item-count="exploreBooks.length"
+              :row-stride="FIND_BOOK_LIST_ROW_STRIDE"
+              :overscan="6"
+              :external-scroll-el="exploreBodyRef"
+              :item-key="(i) => exploreBooks[i]?.id ?? i"
+            >
+              <template #default="{ index }">
+                <FindBookListItem
+                  v-if="exploreBooks[index]"
+                  :item="exploreBooks[index]"
+                  :show-origin="false"
+                  :cover-url="getCoverUrl(exploreBooks[index]!) ?? ''"
+                  :cover-pending="isCoverPending(exploreBooks[index]!)"
+                  @click="onOpenBook"
+                />
+              </template>
+            </VirtualList>
             <div
               v-if="exploreLoadingMore"
               class="findBookResultsLoading"
@@ -514,14 +606,32 @@ defineExpose({ refreshSources });
                     aria-label="日志"
                     @click.stop="onShowKindsLogs(source.bookSourceUrl)"
                   />
-                  <IconButton
-                    v-if="expandedUrl === source.bookSourceUrl"
-                    :icon-html="icons.edit"
-                    title="编辑"
-                    aria-label="编辑"
-                    class="findDiscoverSourceBtn"
-                    @click.stop="onEditSource(source)"
-                  />
+                  <div
+                    class="findDiscoverSourceActions"
+                    :class="{
+                      'findDiscoverSourceActions--visible':
+                        expandedUrl === source.bookSourceUrl ||
+                        (sourceMoreOpen &&
+                          sourceMoreItem?.bookSourceUrl === source.bookSourceUrl),
+                    }"
+                  >
+                    <IconButton
+                      :icon-html="icons.find"
+                      title="搜索"
+                      aria-label="搜索"
+                      class="findDiscoverSourceBtn"
+                      @click.stop="onSearchSource(source)"
+                    />
+                    <IconButton
+                      :icon-html="icons.more"
+                      title="更多"
+                      aria-label="更多"
+                      class="findDiscoverSourceBtn"
+                      :active="sourceMoreOpen && sourceMoreItem?.bookSourceUrl === source.bookSourceUrl"
+                      :pressed="sourceMoreOpen && sourceMoreItem?.bookSourceUrl === source.bookSourceUrl"
+                      @click.stop="onSourceMoreClick(source, $event)"
+                    />
+                  </div>
                   <span
                     class="findDiscoverSourceArrow"
                     :class="{
@@ -577,11 +687,36 @@ defineExpose({ refreshSources });
         </ul>
     </div>
 
+    <AppShellMenuTeleport
+      v-model:open="sourceMoreOpen"
+      :left="sourceMoreLeft"
+      :top="sourceMoreTop"
+      :on-panel-mount="bindSourceMorePanel"
+    >
+      <button
+        type="button"
+        class="appShellMenuItem"
+        role="menuitem"
+        @click="onSourceMoreEdit"
+      >
+        <span class="appShellMenuLabel">编辑书源</span>
+      </button>
+      <button
+        type="button"
+        class="appShellMenuItem"
+        role="menuitem"
+        @click="onSourceMorePinTop"
+      >
+        <span class="appShellMenuLabel">置顶</span>
+      </button>
+    </AppShellMenuTeleport>
+
     <EditBookSourcePanel
       v-model="showEdit"
       :source-url="editingUrl"
       initial-tab="explore"
       @done="onEditDone"
+      @search-source="onSearchFromEdit"
     />
   </div>
 </template>
@@ -681,6 +816,17 @@ defineExpose({ refreshSources });
   gap: 10px;
   flex-shrink: 0;
   margin-left: auto;
+}
+.findDiscoverSourceActions {
+  display: none;
+  align-items: center;
+  gap: 10px;
+}
+/* 仅 hover 或按钮自身聚焦时显示；勿用 head:focus-within（点击收起会留焦导致常显） */
+.findDiscoverSourceHead:hover .findDiscoverSourceActions,
+.findDiscoverSourceActions:focus-within,
+.findDiscoverSourceActions--visible {
+  display: flex;
 }
 .findDiscoverSourceBtn {
   width: 26px;

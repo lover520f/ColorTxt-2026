@@ -355,22 +355,20 @@ function moveRule(fromIndex: number, toIndex: number) {
   items.value = arr;
 }
 
-function flattenPreviewText(text: string): string {
-  return text.replace(/\r\n|\r|\n/g, " ");
+/** 列表「替换范围」列：空=全部（对齐 Legado scope） */
+function displayReplaceRuleScope(rule: Pick<ReplaceRule, "scope">): string {
+  const scope = rule.scope?.trim() ?? "";
+  return scope || "全部";
 }
 
-function ruleReplacePreview(item: ReplaceRule): string {
-  const from = flattenPreviewText(item.pattern?.trim() || "");
-  const to = flattenPreviewText(item.replacement ?? "");
-  return `${from} → ${to}`;
-}
+const showScopeColumn = computed(() => props.bucket === "findBook");
 </script>
 
 <template>
   <AppModal
     v-model="modelValue"
     title="文本替换"
-    max-width="680px"
+    :max-width="showScopeColumn ? '760px' : '680px'"
     :mask-closable="false"
     :esc-closable="true"
   >
@@ -426,12 +424,14 @@ function ruleReplacePreview(item: ReplaceRule): string {
           <colgroup>
             <col class="colCheck" />
             <col class="colRule" />
+            <col v-if="showScopeColumn" class="colScope" />
             <col class="colActions" />
           </colgroup>
           <thead>
             <tr>
               <th class="colCheck" scope="col" aria-label="启用"></th>
               <th class="colRule" scope="col">替换规则</th>
+              <th v-if="showScopeColumn" class="colScope" scope="col">替换范围</th>
               <th class="colActions" scope="col">操作</th>
             </tr>
           </thead>
@@ -443,6 +443,7 @@ function ruleReplacePreview(item: ReplaceRule): string {
           <colgroup>
             <col class="colCheck" />
             <col class="colRule" />
+            <col v-if="showScopeColumn" class="colScope" />
             <col class="colActions" />
           </colgroup>
           <tbody ref="ruleTableBodyRef">
@@ -456,10 +457,22 @@ function ruleReplacePreview(item: ReplaceRule): string {
                 />
               </td>
               <td class="cellRule">
-                <div class="ruleTitle">{{ displayReplaceRuleName(item) }}</div>
-                <div class="rulePreview" :title="ruleReplacePreview(item)">
-                  {{ ruleReplacePreview(item) }}
+                <div v-if="displayReplaceRuleName(item)" class="ruleTitle">{{ displayReplaceRuleName(item) }}</div>
+                <div class="rulePreview" :class="{ 'rulePreview--toEmpty': !item.replacement }">
+                  <template v-if="item.replacement">
+                    <code>{{ item.pattern }}</code> → <code>{{ item.replacement }}</code>
+                  </template>
+                  <template v-else>
+                    <code>{{ item.pattern }}</code>
+                  </template>
                 </div>
+              </td>
+              <td v-if="showScopeColumn" class="cellScope">
+                <span
+                  class="scopeText"
+                  :class="{ 'scopeText--all': !(item.scope?.trim()) }"
+                  :title="displayReplaceRuleScope(item)"
+                >{{ displayReplaceRuleScope(item) }}</span>
               </td>
               <td class="cellActions">
                 <div class="cellActionsInner">
@@ -497,7 +510,7 @@ function ruleReplacePreview(item: ReplaceRule): string {
             添加替换规则
           </button>
           <button
-            class="btn"
+            class="btn success"
             type="button"
             size="large"
             :disabled="!items.length"
@@ -506,7 +519,7 @@ function ruleReplacePreview(item: ReplaceRule): string {
             全部启用
           </button>
           <button
-            class="btn"
+            class="btn danger"
             type="button"
             size="large"
             :disabled="!items.length"
@@ -704,6 +717,10 @@ function ruleReplacePreview(item: ReplaceRule): string {
   width: 44px;
 }
 
+.ruleTable col.colScope {
+  width: 140px;
+}
+
 .ruleTable col.colActions {
   width: 118px;
 }
@@ -746,14 +763,52 @@ function ruleReplacePreview(item: ReplaceRule): string {
 }
 
 .rulePreview {
-  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
-  line-height: 1.45;
   font-family: Consolas, "Courier New", monospace;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ruleTitle + .rulePreview {
+  margin-top: 5px;
+}
+
+.rulePreview code {
+  display: inline;
+  margin: 0 1px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--panel-elevated, rgba(127, 127, 127, 0.12));
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.rulePreview--toEmpty code {
+  text-decoration: line-through;
+}
+
+.cellScope {
+  min-width: 0;
+}
+
+.scopeText {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scopeText--all {
+  color: var(--muted);
 }
 
 .cellActions {

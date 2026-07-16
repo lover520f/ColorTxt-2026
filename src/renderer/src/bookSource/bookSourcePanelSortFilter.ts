@@ -240,10 +240,8 @@ export function filterAndSortBookSources(
   const q = textQuery.trim().toLowerCase();
   let result = items.filter((i) => matchesBookSourceFilter(i, filterMode));
   if (q) {
-    result = result.filter(
-      (i) =>
-        i.bookSourceName.toLowerCase().includes(q) ||
-        (i.bookSourceGroup ?? "").toLowerCase().includes(q),
+    result = result.filter((i) =>
+      i.bookSourceName.toLowerCase().includes(q),
     );
   }
   return [...result].sort((a, b) => compareBookSources(a, b, sortMode));

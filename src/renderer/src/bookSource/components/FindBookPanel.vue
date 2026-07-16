@@ -15,7 +15,9 @@ import FindBookReaderPanel from "./FindBookReaderPanel.vue";
 import FindDiscoverPanel from "./FindDiscoverPanel.vue";
 import FindBookshelfPanel from "./FindBookshelfPanel.vue";
 import FindBookListItem from "./FindBookListItem.vue";
+import { FIND_BOOK_LIST_ROW_STRIDE } from "./findBookListLayout";
 import FindBookSettingsPanel from "./FindBookSettingsPanel.vue";
+import VirtualList from "../../components/VirtualList.vue";
 import DisclaimerPanel from "./DisclaimerPanel.vue";
 import LoadingDotsBounce from "../../components/LoadingDotsBounce.vue";
 import type { FindBookSettingsTabId } from "./FindBookSettingsTabBar.vue";
@@ -277,6 +279,13 @@ const { getCoverUrl, isCoverPending } = useBookshelfCoverUrls(results);
 /** 全局是否有可搜索的启用书源（未限定单一源时的空状态用） */
 const hasEnabledSearchSources = ref(true);
 
+/**
+ * 有效「有搜索源」：特指某书源时视为只启用了该书源（与全局是否另有启用源无关）。
+ */
+const hasEffectiveSearchSources = computed(
+  () => Boolean(searchScope.value) || hasEnabledSearchSources.value,
+);
+
 async function refreshHasEnabledSearchSources() {
   hasEnabledSearchSources.value =
     (await countEligibleSearchSources()) > 0;
@@ -317,16 +326,16 @@ const showNoResults = computed(
     !hasResults.value &&
     hasSearched.value,
 );
-/** 未搜索空状态：有源邀请搜索，无源提示不可用 */
+/** 未搜索空状态：有源（含特指书源）邀请搜索，无源提示不可用 */
 const emptyIdleIcon = computed(() =>
-  hasEnabledSearchSources.value ? "(•◡•)و" : "(; '⌒' )",
+  hasEffectiveSearchSources.value ? "(•◡•)و" : "(; '⌒' )",
 );
 const emptyIdleText = computed(() =>
-  hasEnabledSearchSources.value ? "想找什么书呀" : "没有可用搜索源哦",
+  hasEffectiveSearchSources.value ? "想找什么书呀" : "没有可用搜索源哦",
 );
-/** 已搜索无结果：当前是否仍有可用搜索源 */
+/** 已搜索无结果：有源（含特指）显示无结果，否则提示无可用搜索源 */
 const noResultsText = computed(() =>
-  hasEnabledSearchSources.value
+  hasEffectiveSearchSources.value
     ? "没有找到相关内容哦"
     : "没有可用搜索源哦",
 );
@@ -697,11 +706,22 @@ function onSearchBlur() {
   searchInputFocused.value = false;
 }
 
-function onSearchFromSource(item: BookSourceListItem) {
+function onSearchFromSource(item: {
+  bookSourceUrl: string;
+  bookSourceName: string;
+}) {
   searchScope.value = {
     bookSourceUrl: item.bookSourceUrl,
     bookSourceName: item.bookSourceName,
   };
+  // 关闭可能盖住找书页的叠层（编辑书源已由子面板自行关闭）
+  showBookDetail.value = false;
+  showBookReader.value = false;
+  showBookSourcePanel.value = false;
+  showSettingsPanel.value = false;
+  showReplaceRulePanel.value = false;
+  showDisclaimerPanel.value = false;
+  mainTab.value = "search";
   if (query.value.trim()) {
     void search(query.value, buildSearchOptions());
   }
@@ -1244,16 +1264,25 @@ function onGoMain() {
           <p class="findBookEmptyText">{{ noResultsText }}</p>
         </div>
         <div v-else-if="showResults" class="findBookResults">
-          <ul class="findBookResultsList">
-            <FindBookListItem
-              v-for="item in results"
-              :key="item.id"
-              :item="item"
-              :cover-url="getCoverUrl(item) ?? ''"
-              :cover-pending="isCoverPending(item)"
-              @click="onOpenBook"
-            />
-          </ul>
+          <VirtualList
+            class="findBookResultsVirtual"
+            role="list"
+            :item-count="results.length"
+            :row-stride="FIND_BOOK_LIST_ROW_STRIDE"
+            :overscan="6"
+            :external-scroll-el="findBookBodyRef"
+            :item-key="(i) => results[i]?.id ?? i"
+          >
+            <template #default="{ index }">
+              <FindBookListItem
+                v-if="results[index]"
+                :item="results[index]"
+                :cover-url="getCoverUrl(results[index]!) ?? ''"
+                :cover-pending="isCoverPending(results[index]!)"
+                @click="onOpenBook"
+              />
+            </template>
+          </VirtualList>
           <div
             v-if="pageLoading && hasResults"
             class="findBookResultsLoading"
@@ -1272,6 +1301,8 @@ function onGoMain() {
         :active="mainTab === 'discover'"
         @open-book="onOpenBook"
         @explore-active-change="discoverExploreActive = $event"
+        @search-source="onSearchFromSource"
+        @sources-changed="onBookSourcesChanged"
       />
     </div>
 
@@ -1284,6 +1315,7 @@ function onGoMain() {
       @file-downloaded="onBookDownloaded"
       @read-chapter="onReadChapter"
       @chapter-cache-cleared="onChapterCacheCleared"
+      @search-source="onSearchFromSource"
     />
 
     <FindBookReaderPanel
@@ -1300,6 +1332,7 @@ function onGoMain() {
       @chapter-cache-cleared="onChapterCacheCleared"
       @toc-refreshed="onReaderTocRefreshed"
       @open-text-replace="onOpenReplaceRules"
+      @search-source="onSearchFromSource"
     />
 
     <FindBookSettingsPanel

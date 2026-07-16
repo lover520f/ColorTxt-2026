@@ -113,6 +113,8 @@ const emit = defineEmits<{
   /** 重新获取目录后同步父级 detail/chapters */
   tocRefreshed: [payload: { detail: Book; chapters: BookChapter[] }];
   openTextReplace: [];
+  /** 限定该书源搜索 */
+  searchSource: [item: { bookSourceUrl: string; bookSourceName: string }];
 }>();
 
 const readerRef = ref<InstanceType<typeof ReaderMain> | null>(null);
@@ -1445,6 +1447,15 @@ function onEditSourceDone() {
   editingSourceUrl.value = null;
 }
 
+function onSearchFromEdit(item: {
+  bookSourceUrl: string;
+  bookSourceName: string;
+}) {
+  showEditSource.value = false;
+  editingSourceUrl.value = null;
+  emit("searchSource", item);
+}
+
 async function onClearChapterCache() {
   closeTopMoreMenu();
   const bookUrl = props.detail.bookUrl?.trim() || props.item.bookUrl?.trim();
@@ -2206,6 +2217,7 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
       :source-url="editingSourceUrl"
       :initial-tab="editSourceInitialTab"
       @done="onEditSourceDone"
+      @search-source="onSearchFromEdit"
     />
     <BookSourceLoginPanel v-model="showLogin" :source="loginSource" />
   </AppModal>

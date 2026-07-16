@@ -5,12 +5,16 @@ import type {
   BookSourceSearchEvent,
   SearchBookItem,
 } from "@shared/bookSource/types";
+import { isTextBookSource } from "@shared/bookSource/types";
 
 import { searchMatchTier, searchResultRelevance } from "@shared/bookSource/url";
 
 import { searchBook } from "./engine/webBook";
 
-import { listEnabledTextSources } from "./store/bookSourceStore";
+import {
+  getBookSource,
+  listEnabledTextSources,
+} from "./store/bookSourceStore";
 import {
   hasActiveVerification,
   dismissAllActiveVerifications,
@@ -74,6 +78,29 @@ type SearchOptions = {
   sourceUrls?: string[];
   precisionSearch?: boolean;
 };
+
+/**
+ * 解析本次搜索参与的书源：
+ * - 未限定：仅启用且配置了 searchUrl 的文本源
+ * - 限定 sourceUrls：按 URL 取源，**不要求 enabled**（特指搜索某源时应可用）
+ */
+function resolveSearchSources(options?: SearchOptions): BookSourceRecord[] {
+  const scope = options?.sourceUrls?.filter((u) => typeof u === "string" && u.trim());
+  if (scope?.length) {
+    const out: BookSourceRecord[] = [];
+    const seen = new Set<string>();
+    for (const url of scope) {
+      if (seen.has(url)) continue;
+      seen.add(url);
+      const source = getBookSource(url);
+      if (!source || !isTextBookSource(source)) continue;
+      if (!source.searchUrl?.trim()) continue;
+      out.push(source);
+    }
+    return out;
+  }
+  return listEnabledTextSources().filter((s) => s.searchUrl?.trim());
+}
 
 type SourceSearchState = {
   nextPage: number;
@@ -196,10 +223,7 @@ async function runInitialSearch(
   options?: SearchOptions,
 ): Promise<void> {
   const searchId = session.id;
-  const scope = options?.sourceUrls?.length ? new Set(options.sourceUrls) : null;
-  session.sources = listEnabledTextSources()
-    .filter((s) => s.searchUrl?.trim())
-    .filter((s) => !scope || scope.has(s.bookSourceUrl));
+  session.sources = resolveSearchSources(options);
 
   const total = session.sources.length;
   let completed = 0;

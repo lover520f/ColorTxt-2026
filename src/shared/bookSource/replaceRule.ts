@@ -81,7 +81,8 @@ export function isReplaceRuleValid(rule: Pick<ReplaceRule, "pattern" | "isRegex"
 }
 
 export function displayReplaceRuleName(rule: Pick<ReplaceRule, "name">): string {
-  return rule.name?.trim() || "未命名";
+  // return rule.name?.trim() || "未命名";
+  return rule.name?.trim() || "";
 }
 
 function asBool(v: unknown, fallback: boolean): boolean {

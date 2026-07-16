@@ -55,6 +55,8 @@ const emit = defineEmits<{
   fileDownloaded: [filePath: string, size: number];
   readChapter: [payload: { index: number; detail: Book; chapters: BookChapter[] }];
   chapterCacheCleared: [];
+  /** 限定该书源搜索 */
+  searchSource: [item: { bookSourceUrl: string; bookSourceName: string }];
 }>();
 
 const modelValue = defineModel<boolean>({ default: false });
@@ -485,6 +487,15 @@ function onEditDone() {
   editingUrl.value = null;
 }
 
+function onSearchFromEdit(item: {
+  bookSourceUrl: string;
+  bookSourceName: string;
+}) {
+  showEdit.value = false;
+  editingUrl.value = null;
+  emit("searchSource", item);
+}
+
 function buildDetailLogLinks(): string[] {
   const item = displayItem.value;
   if (!item) return [];
@@ -791,6 +802,7 @@ async function onDownloadOrStop() {
       :source-url="editingUrl"
       :initial-tab="editInitialTab"
       @done="onEditDone"
+      @search-source="onSearchFromEdit"
     />
 
     <BookSourceLoginPanel v-model="showLogin" :source="loginSource" />

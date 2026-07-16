@@ -239,7 +239,14 @@ const listEmptyText = computed(() =>
   items.value.length === 0 ? "暂无书源" : "无匹配的书源",
 );
 
-const selectedCount = computed(() => selected.value.size);
+/** 当前列表（筛选后）中勾选的数量；被过滤掉的不计入 */
+const selectedCount = computed(() => {
+  let n = 0;
+  for (const item of filtered.value) {
+    if (selected.value.has(item.bookSourceUrl)) n += 1;
+  }
+  return n;
+});
 const allFilteredSelected = computed(
   () =>
     filtered.value.length > 0 &&
@@ -339,7 +346,7 @@ function selectedUrlsInListOrder(): string[] {
 }
 
 async function onDelete() {
-  const urls = [...selected.value];
+  const urls = selectedUrlsInListOrder();
   if (!urls.length) return;
   const ok = await appConfirm(`是否删除选中的 ${urls.length} 个书源？`);
   if (!ok) return;
@@ -473,6 +480,19 @@ function onEdit(item: BookSourceListItem) {
 function onSearchSource(item: BookSourceListItem) {
   modelValue.value = false;
   emit("searchSource", item);
+}
+
+function onSearchFromEdit(item: {
+  bookSourceUrl: string;
+  bookSourceName: string;
+}) {
+  showEdit.value = false;
+  editingUrl.value = null;
+  editingDraft.value = null;
+  onSearchSource({
+    bookSourceUrl: item.bookSourceUrl,
+    bookSourceName: item.bookSourceName,
+  } as BookSourceListItem);
 }
 
 function onRowMoreClick(item: BookSourceListItem, e: MouseEvent) {
@@ -894,6 +914,7 @@ function onEditDone() {
       :source-url="editingUrl"
       :draft-source="editingDraft ?? undefined"
       @done="onEditDone"
+      @search-source="onSearchFromEdit"
     />
     <BookSourceLoginPanel v-model="showLogin" :source="loginSource" />
     <CheckSourceConfigPanel v-model="showCheckConfig" />

@@ -24,6 +24,7 @@ import {
   type BookSourceFieldDef,
 } from "../editBookSourceFields";
 import { newEmptyBookSource } from "../composables/useBookSource";
+import BookSourceLoginPanel from "./BookSourceLoginPanel.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -38,6 +39,10 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   done: [source: BookSourceRecord];
+  /** 限定该书源搜索（书源 URL + 显示名） */
+  searchSource: [
+    item: { bookSourceUrl: string; bookSourceName: string },
+  ];
 }>();
 
 const modelValue = defineModel<boolean>({ default: false });
@@ -52,6 +57,8 @@ const activeTab = ref<BookSourceEditTab>("basic");
 const editFieldsRef = ref<HTMLElement | null>(null);
 const draft = ref<BookSourceRecord>(newEmptyBookSource());
 const saving = ref(false);
+const showLogin = ref(false);
+const loginSource = ref<BookSourceRecord | null>(null);
 
 const moreBtnRef = ref<HTMLElement | null>(null);
 const moreMenu = useAnchoredAppShellMenu({
@@ -78,6 +85,11 @@ const effectiveSourceUrl = computed(
     props.sourceUrl?.trim() ||
     props.draftSource?.bookSourceUrl?.trim() ||
     "",
+);
+
+/** 对齐书源列表 hasLoginUrl：有 loginUrl 才显示「登录」 */
+const showLoginMenuItem = computed(() =>
+  Boolean(draft.value.loginUrl?.trim()),
 );
 
 const fieldsForTab = computed((): BookSourceFieldDef[] => {
@@ -118,6 +130,8 @@ watch(modelValue, (open) => {
     void loadDraft();
   } else {
     closeMoreMenu();
+    showLogin.value = false;
+    loginSource.value = null;
   }
 });
 
@@ -180,6 +194,51 @@ function formatVariableComment(
 ): string {
   const c = sourceComment?.trim();
   return c ? `${c}\n${fallback}` : fallback;
+}
+
+async function onLogin() {
+  closeMoreMenu();
+  const url = effectiveSourceUrl.value;
+  if (!url) {
+    appToast("请先填写书源 URL", { kind: "warning" });
+    return;
+  }
+  if (!draft.value.loginUrl?.trim()) {
+    appToast("此书源未配置登录", { kind: "warning" });
+    return;
+  }
+  // 用当前草稿（含未保存的 loginUrl / loginUi），对齐 Legado SourceLoginActivity
+  const source: BookSourceRecord = {
+    ...draft.value,
+    bookSourceUrl: url,
+  };
+  if (!source.loginUi?.trim()) {
+    const r = await window.colorTxt.bookSourceBrowserLogin(
+      source.bookSourceUrl,
+      `登录 · ${source.bookSourceName}`,
+    );
+    if (r.ok) appToast("Cookie 已保存", { kind: "info" });
+    else if (!r.cancelled && r.message) appToast(r.message, { kind: "warning" });
+    return;
+  }
+  loginSource.value = source;
+  showLogin.value = true;
+}
+
+function onSearchSource() {
+  closeMoreMenu();
+  if (props.draftOnly) {
+    appToast("请先导入书源后再搜索", { kind: "warning" });
+    return;
+  }
+  const url = effectiveSourceUrl.value;
+  if (!url) {
+    appToast("请先填写书源 URL", { kind: "warning" });
+    return;
+  }
+  const name = draft.value.bookSourceName?.trim() || url;
+  modelValue.value = false;
+  emit("searchSource", { bookSourceUrl: url, bookSourceName: name });
 }
 
 async function onClearCookie() {
@@ -260,6 +319,25 @@ async function onSetSourceVariable() {
         :on-panel-mount="bindMorePanel"
       >
         <button
+          v-if="showLoginMenuItem"
+          type="button"
+          class="appShellMenuItem"
+          role="menuitem"
+          :disabled="!effectiveSourceUrl"
+          @click="onLogin"
+        >
+          <span class="appShellMenuLabel">登录</span>
+        </button>
+        <button
+          type="button"
+          class="appShellMenuItem"
+          role="menuitem"
+          :disabled="!effectiveSourceUrl"
+          @click="onSearchSource"
+        >
+          <span class="appShellMenuLabel">搜索</span>
+        </button>
+        <button
           type="button"
           class="appShellMenuItem appShellMenuItem--warning"
           role="menuitem"
@@ -278,6 +356,8 @@ async function onSetSourceVariable() {
           <span class="appShellMenuLabel">设置源变量</span>
         </button>
       </AppShellMenuTeleport>
+
+      <BookSourceLoginPanel v-model="showLogin" :source="loginSource" />
 
       <div ref="editFieldsRef" class="editFields">
         <label

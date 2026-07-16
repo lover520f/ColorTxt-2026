@@ -7,6 +7,17 @@
   gap: 10px;
 }
 
+/* 搜索 / 发现：VirtualList 行间距（含在 rowStride 内，见 findBookListLayout.ts）
+ * 本文件为全局 CSS，勿写 :deep()（仅 SFC scoped 有效） */
+.findBookResultsVirtual .virtualList-row {
+  padding-bottom: 10px;
+  box-sizing: border-box;
+}
+.findBookResultsVirtual .findBookListItem {
+  height: 100%;
+  overflow: hidden;
+}
+
 /* 搜索 / 发现：列表 + 底部「加载中」（剩余空白垂直居中） */
 .findBookResults {
   display: flex;

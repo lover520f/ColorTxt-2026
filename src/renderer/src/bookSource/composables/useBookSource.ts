@@ -100,7 +100,7 @@ export function useBookSourceApi() {
   };
 }
 
-/** 可参与搜索的启用文本书源数量（可选限定 sourceUrls） */
+/** 可参与搜索的文本书源数量（可选限定 sourceUrls） */
 export async function countEligibleSearchSources(
   options?: { sourceUrls?: string[] },
 ): Promise<number> {
@@ -109,11 +109,12 @@ export async function countEligibleSearchSources(
     ? new Set(options.sourceUrls)
     : null;
   return all.filter((s) => {
-    if (!s.enabled || !s.hasSearchUrl) return false;
+    if (!s.hasSearchUrl) return false;
     const t = s.bookSourceType;
     if (t !== 0 && t !== undefined && t !== null) return false;
-    if (scope && !scope.has(s.bookSourceUrl)) return false;
-    return true;
+    if (scope) return scope.has(s.bookSourceUrl);
+    // 未限定时仅统计启用源；特指 sourceUrls 时不要求 enabled
+    return s.enabled;
   }).length;
 }
 
