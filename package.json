@@ -79,6 +79,9 @@
     "productName": "彩读",
     "beforePack": "scripts/electron-before-pack.mjs",
     "onNodeModuleFile": "scripts/electron-on-node-module-file.mjs",
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
     "directories": {
       "output": "release"
     },

@@ -24,6 +24,8 @@
 
 - 多窗口下阅读进度可能被后关闭的窗口用旧进度覆盖 [#25](https://github.com/ssnangua/ColorTxt/issues/25)
 - 「设置 → 向量模型」设置为「内置本地模型」后如果 _未下载_ 模型，关闭「AI 阅读助手」会无法保存 [#21](https://github.com/ssnangua/ColorTxt/issues/21)
+- macOS Intel 包因交叉编译缺少 `@node-rs/jieba-darwin-x64` 导致打开即崩溃；打包时补装目标平台原生包
+- Linux AppImage 在 Ubuntu 24.04 等缺 FUSE2 的系统上无法启动（`libfuse.so.2`）；改为静态 AppImage runtime
 
 ## 2.8
 
