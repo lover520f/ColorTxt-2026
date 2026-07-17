@@ -63,12 +63,7 @@ watch(
 
 function feedbackFromLogs(logs: string[]) {
   lastLogs.value = logs;
-  const toastLines = logs.filter((l) => l.startsWith("[toast] "));
-  if (toastLines.length > 0) {
-    const last = toastLines[toastLines.length - 1]!;
-    appToast(last.slice("[toast] ".length));
-    return;
-  }
+  // java.toast 已由 AppToastHost 经 IPC 弹出；此处仅补错误类日志提示
   const errLine = [...logs]
     .reverse()
     .find((l) => l.startsWith("JS 错误:") || l.startsWith("loginCheckJs 错误:"));

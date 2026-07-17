@@ -274,7 +274,20 @@ const {
   cancel,
   clearShortCircuitSearch,
 } = useBookSourceSearch();
-const { getCoverUrl, isCoverPending } = useBookshelfCoverUrls(results);
+/** 搜索结果 VirtualList 可见窗（含 overscan）对应的书籍 id，用于封面懒解析 */
+const searchVisibleCoverIds = ref<string[]>([]);
+const { getCoverUrl, isCoverPending } = useBookshelfCoverUrls(results, {
+  visibleIds: searchVisibleCoverIds,
+});
+
+function onSearchVisibleIndices(indices: number[]) {
+  const next: string[] = [];
+  for (const i of indices) {
+    const id = results.value[i]?.id;
+    if (id) next.push(id);
+  }
+  searchVisibleCoverIds.value = next;
+}
 
 /** 全局是否有可搜索的启用书源（未限定单一源时的空状态用） */
 const hasEnabledSearchSources = ref(true);
@@ -1275,6 +1288,7 @@ function onGoMain() {
             :overscan="6"
             :external-scroll-el="findBookBodyRef"
             :item-key="(i) => results[i]?.id ?? i"
+            @visible-indices="onSearchVisibleIndices"
           >
             <template #default="{ index }">
               <FindBookListItem

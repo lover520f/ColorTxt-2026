@@ -1,11 +1,31 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from "vue";
 import {
+  appToast,
   appToastItems,
   dismissAppToast,
   type AppToastItem,
 } from "../services/appToast";
 import { APP_TOAST_Z_INDEX } from "../constants/appUi";
 import { icons } from "../icons";
+
+/** Legado Toast.LENGTH_LONG 量级；普通 toast 用 appToast 默认时长 */
+const LONG_TOAST_DURATION_MS = 5000;
+
+let offBookSourceToast: (() => void) | null = null;
+
+onMounted(() => {
+  offBookSourceToast = window.colorTxt.onBookSourceToast((ev) => {
+    const msg = ev.message?.trim();
+    if (!msg) return;
+    appToast(msg, ev.long ? { duration: LONG_TOAST_DURATION_MS } : undefined);
+  });
+});
+
+onUnmounted(() => {
+  offBookSourceToast?.();
+  offBookSourceToast = null;
+});
 
 function iconHtml(kind: AppToastItem["kind"]): string {
   switch (kind) {

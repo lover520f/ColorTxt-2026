@@ -284,17 +284,13 @@ watch(modelValue, (open) => {
     return;
   }
   clearSelection();
-  clearCheckDisplay();
-});
-
-function clearCheckDisplay() {
-  checkMessages.value = new Map();
+  // 关闭面板时保留各项校验结果文案；仅收起进度并停止进行中的校验
   checkProgressText.value = "";
   if (checking.value) {
     checking.value = false;
     void window.colorTxt.bookSourceCheckCancel();
   }
-}
+});
 
 watch(items, (next) => {
   if (selected.value.size === 0) return;
@@ -331,6 +327,24 @@ function invertSelect() {
   }
   for (const url of visibleKeys) {
     if (!selected.value.has(url)) next.add(url);
+  }
+  selected.value = next;
+}
+
+/** 对齐 Legado：选中当前过滤列表中已选首尾项之间的全部项 */
+function selectSelectedRange() {
+  const list = filtered.value;
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < list.length; i++) {
+    if (!selected.value.has(list[i]!.bookSourceUrl)) continue;
+    if (first < 0) first = i;
+    last = i;
+  }
+  if (first < 0 || last <= first) return;
+  const next = new Set(selected.value);
+  for (let i = first; i <= last; i++) {
+    next.add(list[i]!.bookSourceUrl);
   }
   selected.value = next;
 }
@@ -424,11 +438,16 @@ async function onExportSelected() {
   appToast(`已导出 ${sources.length} 个书源`, { kind: "success" });
 }
 
+async function onStopCheck() {
+  if (!checking.value) return;
+  await window.colorTxt.bookSourceCheckCancel();
+  appToast("正在停止校验…", { kind: "warning" });
+}
+
 async function startCheckSources(urls: string[]) {
   if (!urls.length) return;
   if (checking.value) {
-    await window.colorTxt.bookSourceCheckCancel();
-    appToast("正在停止校验…", { kind: "warning" });
+    await onStopCheck();
     return;
   }
   let keyword = "我的";
@@ -450,7 +469,12 @@ async function startCheckSources(urls: string[]) {
   if (input === null) return;
   const word = input.trim() || keyword;
   bindCheckEvents();
-  checkMessages.value = new Map();
+  // 仅清空本次将校验的项，保留其它书源已有校验结果
+  if (urls.length) {
+    const nextMsg = new Map(checkMessages.value);
+    for (const url of urls) nextMsg.delete(url);
+    checkMessages.value = nextMsg;
+  }
   checking.value = true;
   checkProgressText.value = `校验中 0/${urls.length}`;
   const r = await window.colorTxt.bookSourceCheckStart(urls, { keyword: word });
@@ -819,6 +843,18 @@ function onEditDone() {
 
     <template #footer>
       <div class="bsFooter">
+        <div v-if="checking" class="bsCheckProgressBar">
+          <p class="bsCheckProgressText" :title="checkProgressText">
+            {{ checkProgressText }}
+          </p>
+          <button
+            type="button"
+            class="link danger bsCheckStopLink"
+            @click="onStopCheck"
+          >
+            停止
+          </button>
+        </div>
         <div class="bsFooterRow">
           <AppCheckbox
             class="bsFooterSelectAll"
@@ -833,6 +869,16 @@ function onEditDone() {
           </AppCheckbox>
           <div class="bsFooterActions">
             <button type="button" class="btn bsFooterBtn" size="large" @click="invertSelect">反选</button>
+            <button
+              type="button"
+              class="btn bsFooterBtn"
+              size="large"
+              :disabled="selectedCount < 2"
+              title="选中当前列表中已选首尾项之间的全部书源"
+              @click="selectSelectedRange"
+            >
+              选中所选区间
+            </button>
             <button
               type="button"
               class="btn danger bsFooterBtn"
@@ -923,7 +969,6 @@ function onEditDone() {
             </div>
           </div>
         </div>
-        <p v-if="checkProgressText" class="bsFooterCheckProgress">{{ checkProgressText }}</p>
       </div>
     </template>
 
@@ -1102,7 +1147,7 @@ function onEditDone() {
   overflow: hidden;
 }
 .bsRowName {
-  font-weight: 600;
+  /* font-weight: 600; */
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1150,8 +1195,36 @@ function onEditDone() {
 .bsFooter {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   width: 100%;
+}
+.bsCheckProgressBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0 0 8px;
+  margin: 0 0 8px;
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+.bsCheckProgressText {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bsCheckStopLink {
+  flex-shrink: 0;
+  color: var(--accent, #409eff);
+  font-size: 12px;
 }
 .bsFooterRow {
   display: flex;
@@ -1159,14 +1232,6 @@ function onEditDone() {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-}
-.bsFooterCheckProgress {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .bsFooterSelectAll {
   font-size: 14px;

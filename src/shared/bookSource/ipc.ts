@@ -66,6 +66,8 @@ export const BOOK_SOURCE_IPC = {
   captchaRequest: "bookSource:captchaRequest",
   /** 主进程 → 渲染进程：关闭指定验证码弹框 */
   captchaDismiss: "bookSource:captchaDismiss",
+  /** 主进程 → 渲染进程：`java.toast` / `java.longToast` → appToast */
+  toast: "bookSource:toast",
   /** 渲染进程 → 主进程：提交验证码 */
   captchaReply: "bookSource:captchaReply",
   /** 校验书源（对齐 Legado CheckSource） */
@@ -133,6 +135,13 @@ export type BookSourceCaptchaReply = {
   requestId: string;
   ok: boolean;
   code: string;
+};
+
+/** `java.toast` / `java.longToast` → 渲染进程 appToast */
+export type BookSourceToastEvent = {
+  message: string;
+  /** 对齐 Legado longToast：稍长展示时间 */
+  long?: boolean;
 };
 
 export type BookSourceLoginOptions = {
@@ -311,6 +320,7 @@ export type BookSourceIpcApi = {
   onBookSourceCaptchaDismiss: (
     cb: (payload: { requestId: string }) => void,
   ) => () => void;
+  onBookSourceToast: (cb: (ev: BookSourceToastEvent) => void) => () => void;
   bookSourceCaptchaReply: (
     payload: BookSourceCaptchaReply,
   ) => Promise<{ ok: boolean }>;

@@ -29,6 +29,11 @@ const props = withDefaults(
   { overscan: 10, scrollPadding: 5 },
 );
 
+const emit = defineEmits<{
+  /** 当前虚拟窗下标（含 overscan），供封面等按可见项懒加载 */
+  visibleIndices: [indices: number[]];
+}>();
+
 /** 内置滚动模式时的滚动宿；外层模式时指向占位根（非滚动） */
 const scrollEl = ref<HTMLDivElement | null>(null);
 const listRootEl = ref<HTMLDivElement | null>(null);
@@ -356,11 +361,21 @@ function scrollToIndex(
   return applyScrollTop(nextScrollTop, behavior);
 }
 
+watch(
+  () => virtualWindow.value.indices,
+  (indices) => {
+    emit("visibleIndices", indices.slice());
+  },
+  { immediate: true },
+);
+
 defineExpose({
   scrollToIndex,
   scrollToTop,
   scrollEl,
   syncFromExternal,
+  /** 当前虚拟窗下标（含 overscan） */
+  getVisibleIndices: () => virtualWindow.value.indices.slice(),
 });
 </script>
 

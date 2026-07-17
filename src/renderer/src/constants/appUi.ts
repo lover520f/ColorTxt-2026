@@ -72,7 +72,7 @@ export const FULLSCREEN_SIDEBAR_FLOAT_SELECTOR =
 export const FULLSCREEN_HEADER_FLOAT_SELECTOR =
   "[data-fullscreen-header-float]";
 
-/** 须高于 `AppModal` 模态栈，弹层内 java.toast / appToast 反馈才能可见 */
+/** 须高于 `AppModal` 模态栈，弹层内 `java.toast`（IPC→appToast）才能可见 */
 export const APP_TOAST_Z_INDEX = MODAL_STACK_BASE_Z_INDEX + 500;
 
 export const persistKey = "colorTxt.ui.settings";

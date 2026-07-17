@@ -550,9 +550,16 @@ export class AnalyzeUrl {
   }
 
   private async replaceKeyPageJs(): Promise<void> {
+    /**
+     * 对齐 Legado AnalyzeUrl：先整串 `replaceKeyPageJs`（含 `{{js}}`），再在 analyzeUrl
+     * 阶段切 UrlOption。若先 `splitUrlFetchOptions`，会把
+     * `{{String(java.connect(\`…search.html,{…}\`))}}` 在模板内的 `,{}` 处截断，
+     * `{{…}}` 永不执行，相对路径变成字面 `{{String(java.connect…`。
+     */
+    this.ruleUrl = await this.applyTemplateAsync(this.ruleUrl);
     const split = splitUrlFetchOptions(this.ruleUrl);
     this.urlFetchOptions = { ...split.options };
-    this.ruleUrl = await this.applyTemplateAsync(split.urlPart);
+    this.ruleUrl = split.urlPart;
     if (typeof this.urlFetchOptions.body === "string" && this.urlFetchOptions.body) {
       this.urlFetchOptions.body = await this.applyTemplateAsync(
         this.urlFetchOptions.body,

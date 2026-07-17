@@ -1128,6 +1128,16 @@ const api = {
     ipcRenderer.on(BOOK_SOURCE_IPC.captchaDismiss, fn);
     return () => ipcRenderer.off(BOOK_SOURCE_IPC.captchaDismiss, fn);
   },
+  onBookSourceToast: (
+    cb: (ev: import("@shared/bookSource/ipc").BookSourceToastEvent) => void,
+  ) => {
+    const fn = (
+      _: unknown,
+      payload: import("@shared/bookSource/ipc").BookSourceToastEvent,
+    ) => cb(payload);
+    ipcRenderer.on(BOOK_SOURCE_IPC.toast, fn);
+    return () => ipcRenderer.off(BOOK_SOURCE_IPC.toast, fn);
+  },
   bookSourceCaptchaReply: (
     payload: import("@shared/bookSource/ipc").BookSourceCaptchaReply,
   ) =>

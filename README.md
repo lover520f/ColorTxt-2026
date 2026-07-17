@@ -1,6 +1,6 @@
 <h1>
   <p align="center">
-    <img src="./resources/icon.png" width="32"> 彩读｜ColorTxt 2.0 <span style="color: orange">AI+</span>
+    <img src="./resources/icon.png" width="32"> 彩读｜ColorTxt 3.0 <span style="color: orange">书源</span> × <span style="color: orange">AI+</span>
   </p>
 </h1>
 
@@ -15,53 +15,57 @@
 </p>
 
 <p align="center">
-还有章节识别、简繁互转、划线标注、记笔记、多角色语音朗读、AI 阅读助手、AI 智能排版等功能。
+还有章节识别、简繁互转、划线标注、记笔记、多角色语音朗读、AI 阅读助手、书源找书等功能。
 </p>
-
 <p align="center">
   <img src="./images/章节列表.jpg" width="600">
 </p>
 
+
 ## 功能特性 <span style="font-size: 18px; font-weight: normal">[[预览图](./IMAGES.md)]</span>
 
-- 本地文件阅读：可打开单个 `.txt`/`.md` 文件，也可以导入整个目录（会递归读取子目录）。
-- 支持其他格式：支持打开常见的电子书格式（如 `.epub`），打开时会转换为 `.md` 进行加载。
-- 流式读取文件：按块读取内容，降低大文件一次性加载的压力。
-- 自动编码识别：`UTF-8` 和 `ANSI` 都能正常打开。
-- **自动章节识别**：内置常用的章节匹配规则，也支持自定义匹配规则。
-- **个性内容上色**：使用一套自定义的高亮规则对内容进行着色，带来 _独特的阅读体验！_
-- **自定义高亮词**：可选择任意词语进行高亮显示（可用于突出主要角色、关键词语等）。
-- 支持**划线笔记**：可选中文本进行划线标注、记笔记。
-- 支持**定制配色**：可自定义阅读区、高亮词、划线标注的配色。
-- **章节标题常驻**：章节标题会常驻顶部，看到哪里一目了然。
-- 支持修改字体、字号、行高（内置 `京華老宋体`，也可以选择系统中安装的任意字体）。
-- 支持**空行压缩**、**行首缩进**。
-- 支持**简繁互转**、**字母数字全半角互转**。
-- **阅读进度恢复**：自动记录阅读进度，下次打开可以继续阅读。
-- 最近打开记录：默认记录最近打开的20个文件。
-- 文件列表功能：支持**分类**、**排序**、文件名**过滤**。
-- 支持内容查找：快速定位关键词。
-- 支持全文搜索：检索所有匹配项并给出结果列表（区别于阅读区的逐个查找）。
-- 支持**书签功能**：书签可以添加备注。
-- 支持全屏阅读：阅读区域宽度可自由调整。
-- 支持**主题切换**：内置明亮和暗黑两种主题。
-- 支持多个窗口：可同时打开多个窗口。
-- **摸鱼快捷键**：摸鱼时可以快速隐藏阅读器。
-- **AI 阅读助手**：可以让 **AI** 帮忙分析剧情，或者回答小说的相关问题（支持生成**思维导图**与**词云图**）。
-- **角色卡生成**：借助 **AI** 检索小说中角色的相关信息生成摘要，通过**文生图**生成角色立绘。
-- **支持编辑模式**：方便对小说内容进行修改（_错别字坚决不能忍！_）
-- **AI 智能排版**：让 AI 对文本进行排版，可自动处理硬换行、修正标点符号等。
-- **语音朗读功能**：支持 Edge TTS、系统语音、Qwen3-TTS、MiniMax；支持多角色语音朗读。
+|  | 功能 | 说明 |
+| :---: | --- | --- |
+|  | 本地文件阅读 | 支持本地 `.txt`／`.md` 文件 |
+|  | 其他电子书 | 支持常见的电子书格式（如 `.epub`），打开时会转换为 `.md` 进行加载 |
+|  | 自动编码识别 | `UTF-8` 和 `ANSI` 都能正常打开 |
+| <img src="./src/renderer/src/assets/chapter_list.svg" width="18" height="18" alt=""> | 自动章节识别 | 内置常用的章节匹配规则，也支持自定义匹配规则 |
+| <img src="./src/renderer/src/assets/palette.svg" width="18" height="18" alt=""> | **个性内容上色** | 使用一套自定义的高亮规则对内容进行着色，带来 **独特的阅读体验**！ |
+| <img src="./src/renderer/src/assets/highlight.svg" width="18" height="18" alt=""> | **自定义高亮词** | 可选择任意词语进行高亮显示（可用于突出主要角色、关键词语等） |
+| <img src="./src/renderer/src/assets/palette.svg" width="18" height="18" alt=""> | **自定义配色** | 可定制阅读区、高亮词、划线标注的配色 |
+| <img src="./src/renderer/src/assets/bookmark_active.svg" width="18" height="18" alt=""> | 书签 | 可添加带备注的书签 |
+| <img src="./src/renderer/src/assets/note.svg" width="18" height="18" alt=""> | **划线笔记** | 可选中文本进行划线标注、记笔记 |
+| <img src="./src/renderer/src/assets/edit.svg" width="18" height="18" alt=""> | **编辑模式** | 方便对小说内容进行修改（_错别字坚决不能忍！_） |
+| <img src="./src/renderer/src/assets/play.svg" width="18" height="18" alt=""> | 定时滚动 | 定时滚动一屏或一行 |
+| <img src="./src/renderer/src/assets/reading.svg" width="18" height="18" alt=""> | **语音朗读** | 支持旁白／对白多音色，配合 AI + 角色卡可实现多角色语音朗读 |
+| <img src="./src/renderer/src/assets/replace.svg" width="18" height="18" alt=""> | **文本替换** | 全局替换文本（可用于替换人名、去广告文本等） |
+| <img src="./src/renderer/src/assets/conver.svg" width="18" height="18" alt=""> | **简繁互转** | 简繁互转，字母／数字全半角互转 |
+| <img src="./src/renderer/src/assets/AI_chat.svg" width="18" height="18" alt=""> | **AI 阅读助手** | 可以让 **AI** 帮忙分析剧情、回答小说相关问题（支持生成 <img src="./src/renderer/src/assets/mindmap.svg" width="18" height="18" alt=""> **思维导图**／<img src="./src/renderer/src/assets/wordcloud.svg" width="18" height="18" alt=""> **词云图**） |
+| <img src="./src/renderer/src/assets/character.svg" width="18" height="18" alt=""> | **角色卡生成** | 借助 **AI** 检索小说中角色的相关信息生成摘要，通过 **文生图** 生成角色立绘 |
+| <img src="./src/renderer/src/assets/AI_compose.svg" width="18" height="18" alt=""> | **AI 智能排版** | 让 **AI** 对文本进行排版，可自动处理硬换行、修正标点符号等 |
+| <img src="./src/renderer/src/assets/findBook.svg" width="18" height="18" alt=""> | 书源找书 | 可多源搜索，支持在线阅读或整书下载 |
+| <img src="./src/renderer/src/assets/compress.svg" width="18" height="18" alt=""> | 空行压缩 | 压缩多余空行 |
+| <img src="./src/renderer/src/assets/indent.svg" width="18" height="18" alt=""> | 行首缩进 | 在行首添加全角缩进 |
+| <img src="./src/renderer/src/assets/ebook.svg" width="18" height="18" alt=""> | 文件列表 | 拖放添加文件／目录（会递归读取子目录），支持分类／排序／过滤 |
+| <img src="./src/renderer/src/assets/find.svg" width="18" height="18" alt=""> | 全文搜索 | 检索所有匹配项并给出结果列表（区别于阅读区的逐个查找） |
+| <img src="./src/renderer/src/assets/font_family.svg" width="18" height="18" alt=""> | 字体／字号／行高 | 内置 `京華老宋体`，也可以选择系统中安装的任意字体 |
+| <img src="./src/renderer/src/assets/dark.svg" width="18" height="18" alt=""> | 主题切换 | 内置明亮／暗黑两种主题 |
+| <img src="./src/renderer/src/assets/enter_fullscreen.svg" width="18" height="18" alt=""> | 全屏阅读 | **沉浸式阅读体验**，阅读区域宽度可自由调整 |
+|  | 粘性标题栏 | 章节标题会常驻顶部，看到哪里一目了然 |
+|  | 阅读进度恢复 | 自动记录阅读进度，下次打开可以继续阅读 |
+|  | 最近打开记录 | 记录最近打开的文件 |
+| <img src="./src/renderer/src/assets/shortcut.svg" width="18" height="18" alt=""> | **摸鱼快捷键** | 摸鱼时可以快速隐藏阅读器 |
+| <img src="./src/renderer/src/assets/new_window.svg" width="18" height="18" alt=""> | 多窗口 | 支持同时打开多个窗口 |
 
 ### 关于「其他电子书格式」的支持
 
 支持打开 `.md` 文件，章节按 ATX `#` 标题识别，章节列表按标题层级缩进。
 
-**说明**：只支持标题、链接、图片等少量 Markdown 语法，服务于小说文本。
+> 说明：只支持标题、链接、图片等少量 Markdown 语法，服务于小说文本。
 
 支持打开常见的电子书格式（`.epub`/`.mobi`/`.azw3`/`.fb2`/`.fbz`/`.pdf`/`.chm`），打开时会转换为 `.md` 进行加载。
 
-**说明**：会舍弃掉电子书自带的样式，只提取里面的文本进行展示。
+> 说明：会舍弃掉电子书自带的样式，只提取里面的文本进行展示。
 
 ### 关于「摸鱼快捷键」
 
@@ -71,7 +75,7 @@
 
 在 macOS 上，要隐藏程序坞图标，需要在 `系统设置` -> `桌面与程序坞` 中关掉 `在程序坞中显示建议App和最近使用的App`。
 
-**已知问题**：在 Linux Wayland 上，全局快捷键会失效，这个暂时没有解决办法。
+> 已知问题：在 Linux Wayland 上，全局快捷键会失效，这个暂时没有解决办法。
 
 ### 关于「高级换行策略」
 
@@ -81,7 +85,7 @@
 
 所以在做一些会影响布局的操作时（比如修改文字格式、调整窗口大小等），建议先关掉「高级换行策略」，等操作完后再重新开启。
 
-**已知问题**：启用「高级换行策略」会有很大的内存开销，且这个占用难以被释放，见 [#5311](https://github.com/microsoft/monaco-editor/issues/5311)。
+> 已知问题：启用「高级换行策略」会有很大的内存开销，且这个占用难以被释放，见 [#5311](https://github.com/microsoft/monaco-editor/issues/5311)。
 
 ### 关于「语音朗读」
 
@@ -213,8 +217,9 @@ OpenAI 接口拼接方式：
 - 使用 [font-list](https://github.com/oldj/node-font-list) 获取系统字体列表
 - 基于 [libmspack](https://github.com/kyz/libmspack) 移植了一套 JavaScript 实现，以支持对 `.chm` 格式的解析
 - 其他电子书格式的解析，主要参考 [foliate-js](https://github.com/johnfactotum/foliate-js) 的实现
-- AI 聊天助手和语音朗读的基础功能，参考了 [ReadAny](https://github.com/codedogQBY/ReadAny) 的实现
+- AI 阅读助手和语音朗读的基础功能，参考了 [ReadAny](https://github.com/codedogQBY/ReadAny) 的实现
 - 角色卡 3D 卡片效果的实现思路及部分样式、贴图资源来源于 [pokemon-cards-css](https://github.com/simeydotme/pokemon-cards-css)
 - 基于 [@node-rs/jieba](https://github.com/napi-rs/node-rs/tree/main/packages/jieba) 实现中文分词，以支持词云生成
 - 基于 [OpenCC](https://github.com/byvoid/opencc) 实现简繁互转
 - 划线/笔记功能的交互，参考了 [微信读书网页版](https://weread.qq.com/)
+- 书源解析逻辑参考开源阅读：[Legado_Max 帮助文档](https://github.com/youfengknight/Legado_Max/tree/main/app/src/main/assets/web/help/md) | [Legado 书源规则说明](https://mgz0227.github.io/The-tutorial-of-Legado/Rule/source.html) | [破冰的源教程](https://www.yuque.com/legado/yuan/pe61gy)

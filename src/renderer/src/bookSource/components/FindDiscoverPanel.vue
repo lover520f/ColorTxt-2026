@@ -52,7 +52,20 @@ const exploreShow = ref<{
 } | null>(null);
 const explorePaneOpen = ref(false);
 const exploreBooks = ref<SearchBookItem[]>([]);
-const { getCoverUrl, isCoverPending } = useBookshelfCoverUrls(exploreBooks);
+/** 发现列表 VirtualList 可见窗书籍 id，用于封面懒解析 */
+const exploreVisibleCoverIds = ref<string[]>([]);
+const { getCoverUrl, isCoverPending } = useBookshelfCoverUrls(exploreBooks, {
+  visibleIds: exploreVisibleCoverIds,
+});
+
+function onExploreVisibleIndices(indices: number[]) {
+  const next: string[] = [];
+  for (const i of indices) {
+    const id = exploreBooks.value[i]?.id;
+    if (id) next.push(id);
+  }
+  exploreVisibleCoverIds.value = next;
+}
 const exploreLoading = ref(false);
 const exploreLoadingMore = ref(false);
 /** 用户点击顶栏「刷新」触发的加载（用于图标旋转，不含初次进入 / 滚动加载更多） */
@@ -590,6 +603,7 @@ defineExpose({ refreshSources });
               :overscan="6"
               :external-scroll-el="exploreBodyRef"
               :item-key="(i) => exploreBooks[i]?.id ?? i"
+              @visible-indices="onExploreVisibleIndices"
             >
               <template #default="{ index }">
                 <FindBookListItem

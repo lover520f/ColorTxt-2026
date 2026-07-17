@@ -50,6 +50,7 @@ import { runBackstageWebView } from "./backstageWebView";
 import { cacheFile, importScript, readTxtFile } from "./scriptImport";
 import { updateConcurrentRate } from "./concurrentRateLimiter";
 import { toNumChapter } from "./legadoStringUtils";
+import { emitBookSourceToast } from "./bookSourceToast";
 
 /** 对齐 Legado JsEncodeUtils.digestHex / Hutool DigestUtil.digester */
 function normalizeDigestAlgorithm(algorithm: string): string {
@@ -364,8 +365,16 @@ export function createJsExtensionHost(
     post: (url: unknown, body: unknown, header?: unknown) =>
       legadoHttpPost(host, String(url ?? ""), body, header),
     log: (msg: unknown) => host.log(String(msg)),
-    toast: (msg: unknown) => host.log(`[toast] ${String(msg)}`),
-    longToast: (msg: unknown) => host.log(`[toast] ${String(msg)}`),
+    toast: (msg: unknown) => {
+      const text = String(msg ?? "");
+      host.log(`[toast] ${text}`);
+      emitBookSourceToast(text, false);
+    },
+    longToast: (msg: unknown) => {
+      const text = String(msg ?? "");
+      host.log(`[toast] ${text}`);
+      emitBookSourceToast(text, true);
+    },
     base64Encode: (s: unknown) =>
       Buffer.from(String(s), "utf8").toString("base64"),
     base64Decode: (s: unknown) =>

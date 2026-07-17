@@ -391,8 +391,13 @@ export function ensureLegadoScriptReturn(script: string): string {
     const indent = lines[i].match(/^\s*/)?.[0] ?? "";
     return `${trimmed}\n${indent}return ${declNameFromLast};`;
   }
-  // switch/if 等块末尾给 result 赋值：Rhino 从作用域读 result，Node 须补 return
-  if (last.endsWith("}")) {
+  /**
+   * switch/if 等块末尾给 result 赋值：Rhino 从作用域读 result，Node 须补 return。
+   * 末行常为 `}` 或 `};`（部分书源 if/else 后多余分号）；若只认 `endsWith("}")`，
+   * `};` 会落到下方被改成 `return }` → SyntaxError，搜索 bookUrl 整批失败。
+   */
+  const lastNoTrailSemi = last.replace(/;\s*$/, "");
+  if (lastNoTrailSemi.endsWith("}")) {
     if (/\bresult\s*=/.test(trimmed) && !/\breturn\s+result\b/.test(trimmed)) {
       return `${trimmed}\nreturn result;`;
     }
