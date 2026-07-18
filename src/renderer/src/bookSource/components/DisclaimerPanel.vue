@@ -7,7 +7,7 @@ const modelValue = defineModel<boolean>({ default: false });
 const appName = APP_DISPLAY_NAME;
 
 const paragraphs = [
-  `「${appName}找书」支持接入用户自行导入的 Legado（开源阅读）兼容书源，用于搜索、试读网络文学作品，旨在为广大文学爱好者提供方便、快捷、舒适的阅读体验。`,
+  `「${appName}找书」支持接入用户自行导入的 Legado（阅读）兼容书源，用于搜索、试读网络文学作品，旨在为广大文学爱好者提供方便、快捷、舒适的阅读体验。`,
   [
     `书源由用户自行编辑、导入、启用与管理。`,
     `「${appName}」不提供、不内置、不分发任何书源，亦不对书源的可用性、合法性、安全性或内容作任何背书。`,

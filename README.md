@@ -222,4 +222,4 @@ OpenAI 接口拼接方式：
 - 基于 [@node-rs/jieba](https://github.com/napi-rs/node-rs/tree/main/packages/jieba) 实现中文分词，以支持词云生成
 - 基于 [OpenCC](https://github.com/byvoid/opencc) 实现简繁互转
 - 划线/笔记功能的交互，参考了 [微信读书网页版](https://weread.qq.com/)
-- 书源解析逻辑参考开源阅读：[Legado_Max 帮助文档](https://github.com/youfengknight/Legado_Max/tree/main/app/src/main/assets/web/help/md) | [Legado 书源规则说明](https://mgz0227.github.io/The-tutorial-of-Legado/Rule/source.html) | [破冰的源教程](https://www.yuque.com/legado/yuan/pe61gy)
+- 书源解析逻辑参考 `阅读 App`：[Legado_Max 帮助文档](https://github.com/youfengknight/Legado_Max/tree/main/app/src/main/assets/web/help/md) | [Legado 书源规则说明](https://mgz0227.github.io/The-tutorial-of-Legado/Rule/source.html) | [破冰的源教程](https://www.yuque.com/legado/yuan/pe61gy)
