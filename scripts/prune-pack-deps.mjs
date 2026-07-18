@@ -9,8 +9,9 @@
  * 用法：node scripts/prune-pack-deps.mjs [--platform win32|darwin|linux] [--arch x64|arm64] [--node-modules <path>]
  *
  * 交叉编译（如 macos-latest arm64 打 darwin-x64）：npm ci 不会安装目标架构的 optional
- * 原生包；本脚本会在裁剪前补装并校验 @node-rs/jieba-* / sqlite-vec-*，避免 Intel Mac 等
- * 产物缺 .node 导致启动崩溃。
+ * 原生包；本脚本会在裁剪前补装并校验 @node-rs/jieba-* / sqlite-vec-*。opencc /
+ * better-sqlite3 依赖 electron-rebuild，须在目标架构上重建（CI macOS-x64 用
+ * macos-15-intel）；darwin 打包前用 lipo 校验 Mach-O，避免打入错误架构的 .node。
  */
 import { execSync } from "node:child_process";
 import fs from "node:fs";
@@ -94,6 +95,44 @@ function dirHasNativeBinary(dir) {
     if (/\.(node|dylib|dll|so)$/i.test(name)) return true;
   }
   return false;
+}
+
+/**
+ * 在 darwin 宿主上校验 .node 的 Mach-O 架构与打包目标一致。
+ * @param {string} filePath
+ * @param {string} arch x64 | arm64
+ * @param {string} label
+ */
+function assertDarwinMachOArch(filePath, arch, label) {
+  if (process.platform !== "darwin") return;
+  if (!fs.existsSync(filePath)) return;
+  const want = arch === "arm64" ? "arm64" : "x86_64";
+  let archs = "";
+  try {
+    archs = execSync(`lipo -archs ${JSON.stringify(filePath)}`, {
+      encoding: "utf8",
+      shell: true,
+    }).trim();
+  } catch {
+    try {
+      archs = execSync(`file ${JSON.stringify(filePath)}`, {
+        encoding: "utf8",
+        shell: true,
+      }).trim();
+    } catch (err) {
+      console.error(
+        `[prune-pack-deps] ${label}: cannot inspect Mach-O arch of ${filePath}`,
+        err,
+      );
+      process.exit(1);
+    }
+  }
+  if (!archs.includes(want)) {
+    console.error(
+      `[prune-pack-deps] ${label}: expected Mach-O ${want} for darwin/${arch}, got "${archs}" (${filePath}). Rebuild with electron-rebuild --arch ${arch} on a matching host (CI: macos-15-intel for x64).`,
+    );
+    process.exit(1);
+  }
 }
 
 /**
@@ -308,9 +347,19 @@ function pruneHuggingfaceJinja(nodeModulesRoot) {
 }
 
 /** 运行时只需 build/Release/*.node 与 lib/；deps/sqlite3.c 等为编译期产物 */
-function pruneBetterSqlite3(nodeModulesRoot) {
+function pruneBetterSqlite3(nodeModulesRoot, plat, arch) {
   const pkgRoot = path.join(nodeModulesRoot, "better-sqlite3");
   if (!fs.existsSync(pkgRoot)) return;
+
+  const releaseNode = path.join(
+    pkgRoot,
+    "build",
+    "Release",
+    "better_sqlite3.node",
+  );
+  if (plat === "darwin") {
+    assertDarwinMachOArch(releaseNode, arch, "better-sqlite3");
+  }
 
   for (const name of ["deps", "src", "binding.gyp", "README.md"]) {
     rm(path.join(pkgRoot, name));
@@ -572,6 +621,9 @@ function pruneOpencc(nodeModulesRoot, plat, arch) {
   const releaseNode = path.join(buildRoot, "Release", "opencc.node");
 
   if (fs.existsSync(releaseNode)) {
+    if (plat === "darwin") {
+      assertDarwinMachOArch(releaseNode, arch, "opencc");
+    }
     const nodeBytes = fs.readFileSync(releaseNode);
     try {
       rm(buildRoot);
@@ -613,7 +665,7 @@ function main() {
   ensureSharpPackStub(nm);
   pruneOnnxWebOrphans(nm);
 
-  pruneBetterSqlite3(nm);
+  pruneBetterSqlite3(nm, plat, arch);
   pruneFontList(nm, plat);
   pruneSqliteVec(nm, plat, arch);
   pruneJiebaPlatformPackages(nm, plat, arch);

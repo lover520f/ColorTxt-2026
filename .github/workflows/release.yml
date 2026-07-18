@@ -32,7 +32,9 @@ jobs:
             prune_platform: darwin
             builder_target: mac
             arch: arm64
-          - os: macos-latest
+          # Intel 原生构建：opencc / better-sqlite3 需 electron-rebuild 产物；
+          # 在 arm64 runner 上交叉打包会打入 arm64 .node，Intel Mac 打开即崩溃。
+          - os: macos-15-intel
             name: macOS-x64
             prune_platform: darwin
             builder_target: mac
@@ -95,6 +97,10 @@ jobs:
 
       - name: Build application
         run: npx electron-vite build
+
+      # 按目标架构重建 Electron 原生模块（与 postinstall 宿主架构可能不同）
+      - name: Rebuild native modules for target arch
+        run: npx electron-rebuild -f -w better-sqlite3,opencc --arch ${{ matrix.arch }}
 
       - name: Prune pack dependencies
         run: node scripts/prune-pack-deps.mjs --platform ${{ matrix.prune_platform }} --arch ${{ matrix.arch }}
