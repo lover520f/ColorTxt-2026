@@ -28,7 +28,7 @@
 - 多窗口下阅读进度可能被后关闭的窗口用旧进度覆盖 [#25](https://github.com/ssnangua/ColorTxt/issues/25)
 - 「设置 → 向量模型」设置为「内置本地模型」后如果 _未下载_ 模型，关闭「AI 阅读助手」会无法保存 [#21](https://github.com/ssnangua/ColorTxt/issues/21)
 - 词云弹框字体列表层级问题
-- macOS Intel 包因交叉编译缺少 `@node-rs/jieba-darwin-x64` 导致打开即崩溃；打包时补装目标平台原生包
+- macOS Intel 包因交叉编译缺少 `@node-rs/jieba-darwin-x64` 导致打开即崩溃；现在改成 macos-15-intel 打 x64
 - macOS Intel 包在 arm64 CI 交叉构建时打入 arm64 的 `opencc.node`（`have 'arm64', need 'x86_64'`）；改为 `macos-15-intel` 原生构建并校验 Mach-O 架构
 - Linux AppImage 在 Ubuntu 24.04 等缺 FUSE2 的系统上无法启动（`libfuse.so.2`）；改为静态 AppImage runtime [#28](https://github.com/ssnangua/ColorTxt/issues/28)
 
