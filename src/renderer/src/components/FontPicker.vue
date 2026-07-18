@@ -25,8 +25,10 @@ const props = withDefaults(
     /** 已钉在外层列表的「其他字体」名称 */
     pinnedOtherFonts?: string[];
     disabled?: boolean;
+    /** 菜单层叠（Teleport 到 body；需高于外层模态时传入更大值） */
+    menuZIndex?: number;
   }>(),
-  { pinnedOtherFonts: () => [], disabled: false },
+  { pinnedOtherFonts: () => [], disabled: false, menuZIndex: 7200 },
 );
 
 const emit = defineEmits<{
@@ -130,7 +132,7 @@ const fontMenu = useAnchoredAppShellMenu({
   placement: "below-center",
   widthPx: 140,
   gap: 6,
-  zIndex: 7200,
+  zIndex: props.menuZIndex,
   onClose: () => {
     showOtherFontsPanel.value = false;
     otherFontFilter.value = "";
