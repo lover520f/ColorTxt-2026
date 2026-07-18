@@ -3145,22 +3145,23 @@ watch(
 );
 
 onMounted(() => {
-  // Register language + providers once (across HMR)。
+  // 语言只需注册一次（跨 HMR）；章节粘性 DocumentSymbolProvider 须随本实例挂载/卸载。
+  // AppModal 用 v-if 关闭阅读器会销毁 ReaderMain：若只注册一次，卸载后 provider 已 dispose，
+  // 第二次打开不会再注册 → 粘性章节标题失效。
   const g = globalThis as any;
   if (!g[globalKey]) {
     monaco.languages.register({ id: languageId });
-
-    const chapterSticky = registerChapterStickyScrollProviders(
-      monaco,
-      languageId,
-      () => chaptersSnapshot,
-    );
-    providersDisposables.push(chapterSticky.disposable);
-    notifyChapterStickyFoldingRanges =
-      chapterSticky.notifyChapterFoldingRangesChanged;
-
     g[globalKey] = true;
   }
+
+  const chapterSticky = registerChapterStickyScrollProviders(
+    monaco,
+    languageId,
+    () => chaptersSnapshot,
+  );
+  providersDisposables.push(chapterSticky.disposable);
+  notifyChapterStickyFoldingRanges =
+    chapterSticky.notifyChapterFoldingRangesChanged;
 
   applyTxtrMonarchTokenizer();
   applyReaderSyntaxFromProps();
