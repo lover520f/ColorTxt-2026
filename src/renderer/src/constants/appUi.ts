@@ -155,6 +155,8 @@ export const maxRecentFilesHistoryLimit = 1000;
 export const defaultFullscreenReaderWidthPercent = 50;
 export const minFullscreenReaderWidthPercent = 30;
 export const maxFullscreenReaderWidthPercent = 100;
+/** 全屏时是否在左下角显示系统时间 */
+export const defaultFullscreenShowSystemTime = true;
 
 export const minFontSize = 10;
 export const maxFontSize = 100;

@@ -217,5 +217,6 @@ export function applyReaderSurfaceToDocument(
   const p = theme === "vs" ? lightPalette : darkPalette;
   const root = document.documentElement;
   root.style.setProperty("--reader-bg", p.readerBg);
+  root.style.setProperty("--reader-body-text", p.bodyText);
   root.style.setProperty("--reader-chapter-title", p.chapterTitle);
 }

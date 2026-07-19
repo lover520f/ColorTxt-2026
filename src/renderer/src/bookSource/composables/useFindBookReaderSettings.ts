@@ -281,6 +281,7 @@ export function useFindBookReaderSettings() {
     readerEditShowLineNumbers: fb.readerEditShowLineNumbers,
     readerEditMinimap: fb.readerEditMinimap,
     fullscreenReaderWidthPercent: fb.fullscreenReaderWidthPercent,
+    fullscreenShowSystemTime: fb.fullscreenShowSystemTime,
     chapterMinCharCount,
     timedScrollSettings: fb.timedScrollSettings,
     aiFeaturesEnabled,

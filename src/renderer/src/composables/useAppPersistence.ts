@@ -86,6 +86,7 @@ import {
 import {
   defaultChapterMinCharCount,
   defaultFullscreenReaderWidthPercent,
+  defaultFullscreenShowSystemTime,
   defaultRecentFilesHistoryLimit,
   maxFullscreenReaderWidthPercent,
   clampLineHeightMultipleForFontSize,
@@ -215,6 +216,7 @@ export function useAppPersistence(deps: {
   editAutoRefreshChapterList: Ref<boolean>;
   aiSmartFormat: Ref<AiSmartFormatSettings>;
   fullscreenReaderWidthPercent: Ref<number>;
+  fullscreenShowSystemTime: Ref<boolean>;
   timedScrollSettings: Ref<TimedScrollSettings>;
   fileMetaRecords: Ref<FileMetaRecord[]>;
   shortcutBindings: Ref<ShortcutBindingMap>;
@@ -943,6 +945,11 @@ export function useAppPersistence(deps: {
       deps.fullscreenReaderWidthPercent.value =
         defaultFullscreenReaderWidthPercent;
     }
+    if (typeof data.fullscreenShowSystemTime === "boolean") {
+      deps.fullscreenShowSystemTime.value = data.fullscreenShowSystemTime;
+    } else {
+      deps.fullscreenShowSystemTime.value = defaultFullscreenShowSystemTime;
+    }
     deps.timedScrollSettings.value = mergeTimedScrollSettings(data.timedScroll);
     deps.shortcutBindings.value = mergeShortcutBindings(
       deps.defaultShortcutBindings,
@@ -1135,6 +1142,7 @@ export function useAppPersistence(deps: {
       editAutoRefreshChapterList: deps.editAutoRefreshChapterList.value,
       aiSmartFormat: deps.aiSmartFormat.value,
       fullscreenReaderWidthPercent: deps.fullscreenReaderWidthPercent.value,
+      fullscreenShowSystemTime: deps.fullscreenShowSystemTime.value,
       timedScroll: deps.timedScrollSettings.value,
       shortcutBindings: deps.shortcutBindings.value,
       readerPaletteOverridesLight:

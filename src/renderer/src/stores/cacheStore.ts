@@ -99,6 +99,8 @@ export type PersistedSettingsData = {
   >;
   /** 全屏时阅读区宽度（百分比） */
   fullscreenReaderWidthPercent?: number;
+  /** 全屏时是否在左下角显示系统时间 */
+  fullscreenShowSystemTime?: boolean;
   /** 定时滚动：范围与间隔 */
   timedScroll?: Partial<TimedScrollSettings>;
   /** 用户自定义快捷键（动作ID -> accelerator） */
@@ -347,6 +349,9 @@ export function loadPersistedSettingsData(
       30,
       Math.min(100, Math.floor(obj.fullscreenReaderWidthPercent)),
     );
+  }
+  if (typeof obj.fullscreenShowSystemTime === "boolean") {
+    data.fullscreenShowSystemTime = obj.fullscreenShowSystemTime;
   }
   if (obj.timedScroll && typeof obj.timedScroll === "object") {
     data.timedScroll = mergeTimedScrollSettings(

@@ -18,6 +18,7 @@ import VirtualList from "../../components/VirtualList.vue";
 import ReaderMain from "../../components/ReaderMain.vue";
 import VoiceReadToolbar from "../../components/VoiceReadToolbar.vue";
 import ReaderChapterNavBar from "../../components/ReaderChapterNavBar.vue";
+import FullscreenSystemClock from "../../components/FullscreenSystemClock.vue";
 import FindBookReaderHeader from "./FindBookReaderHeader.vue";
 import EditBookSourcePanel from "./EditBookSourcePanel.vue";
 import BookSourceLoginPanel from "./BookSourceLoginPanel.vue";
@@ -195,6 +196,7 @@ const {
   readerEditShowLineNumbers,
   readerEditMinimap,
   fullscreenReaderWidthPercent,
+  fullscreenShowSystemTime,
   chapterMinCharCount,
   timedScrollSettings,
   aiFeaturesEnabled,
@@ -2264,6 +2266,9 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
       >
         按 ESC 退出全屏
       </div>
+      <FullscreenSystemClock
+        :visible="isFullscreenView && fullscreenShowSystemTime"
+      />
     </div>
 
     <EditBookSourcePanel

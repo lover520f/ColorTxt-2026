@@ -77,6 +77,7 @@
 
   /* 首帧回退；运行时常量见 constants/readerPalette.ts，由 applyReaderSurfaceToDocument 写入 html */
   --reader-bg: #f4ead7;
+  --reader-body-text: #000000;
   --reader-chapter-title: #b88230;
 
   --female: #cc0033;
@@ -150,6 +151,7 @@ html.dark {
   --switch-track-off-bg: #4c4d4f;
 
   --reader-bg: #1e1e1e;
+  --reader-body-text: #d4d4d4;
   --reader-chapter-title: #569cd6;
 }
 

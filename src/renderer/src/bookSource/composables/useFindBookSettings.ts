@@ -43,6 +43,7 @@ function createFindBookSettingsStore() {
   const readerEditShowLineNumbers = ref(initial.readerEditShowLineNumbers);
   const readerEditMinimap = ref(initial.readerEditMinimap);
   const fullscreenReaderWidthPercent = ref(initial.fullscreenReaderWidthPercent);
+  const fullscreenShowSystemTime = ref(initial.fullscreenShowSystemTime);
   const sidebarWidth = ref(initial.sidebarWidth);
   const timedScrollSettings = ref(initial.timedScrollSettings);
 
@@ -89,6 +90,7 @@ function createFindBookSettingsStore() {
         readerEditShowLineNumbers: readerEditShowLineNumbers.value,
         readerEditMinimap: readerEditMinimap.value,
         fullscreenReaderWidthPercent: fullscreenReaderWidthPercent.value,
+        fullscreenShowSystemTime: fullscreenShowSystemTime.value,
         sidebarWidth: sidebarWidth.value,
         timedScrollSettings: timedScrollSettings.value,
       }),
@@ -132,6 +134,7 @@ function createFindBookSettingsStore() {
     readerEditShowLineNumbers,
     readerEditMinimap,
     fullscreenReaderWidthPercent,
+    fullscreenShowSystemTime,
     sidebarWidth,
     timedScrollSettings,
     persistAll,

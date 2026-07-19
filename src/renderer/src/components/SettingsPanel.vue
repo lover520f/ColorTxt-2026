@@ -34,6 +34,7 @@ import {
   defaultChapterMinCharCount,
   defaultCompressBlankKeepOneBlank,
   defaultFullscreenReaderWidthPercent,
+  defaultFullscreenShowSystemTime,
   defaultMonacoSmoothScrolling,
   defaultStickyChapterTitleEnabled,
   defaultChapterNavToolbarEnabled,
@@ -103,6 +104,7 @@ export type SettingsApplyPayload = {
   recentFilesHistoryLimit: number;
   chapterMinCharCount: number;
   fullscreenReaderWidthPercent: number;
+  fullscreenShowSystemTime: boolean;
   monacoSmoothScrolling: boolean;
   stickyChapterTitleEnabled: boolean;
   chapterNavToolbarEnabled: boolean;
@@ -134,6 +136,7 @@ const props = defineProps<{
   recentFilesHistoryLimit: number;
   chapterMinCharCount: number;
   fullscreenReaderWidthPercent: number;
+  fullscreenShowSystemTime: boolean;
   readerFontSize: number;
   readerLineHeightMultiple: number;
   monacoSmoothScrolling: boolean;
@@ -186,6 +189,7 @@ const draftSyncCurrentFile = ref(false);
 const draftRecentLimit = ref(20);
 const draftChapterMinCharCount = ref(defaultChapterMinCharCount);
 const draftFullscreenReaderWidthPercent = ref(50);
+const draftFullscreenShowSystemTime = ref(defaultFullscreenShowSystemTime);
 const draftFontSize = ref(14);
 const draftLineHeightMultiple = ref(1.5);
 const draftMonacoSmoothScrolling = ref(true);
@@ -236,6 +240,7 @@ function syncDraftFromProps() {
   draftRecentLimit.value = props.recentFilesHistoryLimit;
   draftChapterMinCharCount.value = props.chapterMinCharCount;
   draftFullscreenReaderWidthPercent.value = props.fullscreenReaderWidthPercent;
+  draftFullscreenShowSystemTime.value = props.fullscreenShowSystemTime;
   draftFontSize.value = props.readerFontSize;
   draftLineHeightMultiple.value = clampLineHeightMultipleForFontSize(
     props.readerFontSize,
@@ -360,6 +365,7 @@ function resetReadingDraft() {
   draftCompressBlankKeepOneBlank.value = defaultCompressBlankKeepOneBlank;
   draftTxtrDelimitedMatchCrossLine.value = defaultTxtrDelimitedMatchCrossLine;
   draftFullscreenReaderWidthPercent.value = defaultFullscreenReaderWidthPercent;
+  draftFullscreenShowSystemTime.value = defaultFullscreenShowSystemTime;
   draftTimedScrollRange.value = defaultTimedScrollRange;
   draftTimedScrollIntervalMs.value = defaultTimedScrollIntervalMs;
 }
@@ -539,6 +545,7 @@ async function onConfirm() {
     recentFilesHistoryLimit: draftRecentLimit.value,
     chapterMinCharCount: draftChapterMinCharCount.value,
     fullscreenReaderWidthPercent: draftFullscreenReaderWidthPercent.value,
+    fullscreenShowSystemTime: draftFullscreenShowSystemTime.value,
     monacoSmoothScrolling: draftMonacoSmoothScrolling.value,
     stickyChapterTitleEnabled: draftStickyChapterTitleEnabled.value,
     chapterNavToolbarEnabled: draftChapterNavToolbarEnabled.value,
@@ -651,6 +658,9 @@ async function onClearCache() {
               "
               v-model:draft-fullscreen-reader-width-percent="
                 draftFullscreenReaderWidthPercent
+              "
+              v-model:draft-fullscreen-show-system-time="
+                draftFullscreenShowSystemTime
               "
               v-model:draft-timed-scroll-range="draftTimedScrollRange"
               v-model:draft-timed-scroll-interval-ms="

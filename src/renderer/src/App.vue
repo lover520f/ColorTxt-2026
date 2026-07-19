@@ -26,6 +26,7 @@ import AppDialogHost from "./components/AppDialogHost.vue";
 import AppCaptchaHost from "./components/AppCaptchaHost.vue";
 import AppToastHost from "./components/AppToastHost.vue";
 import AppOverlays from "./components/AppOverlays.vue";
+import FullscreenSystemClock from "./components/FullscreenSystemClock.vue";
 import type { SettingsApplyPayload } from "./components/SettingsPanel.vue";
 import type { AiCustomSkill, AiSkillUserOverride } from "@shared/aiSkills";
 import type { ColorTxtShowMessageBoxOptions } from "@shared/colorTxtShowMessageBox";
@@ -120,6 +121,7 @@ import {
   defaultCompressBlankLines,
   defaultChapterMinCharCount,
   defaultFullscreenReaderWidthPercent,
+  defaultFullscreenShowSystemTime,
   defaultLeadIndentFullWidth,
   defaultTextConvertDigitMode,
   defaultTextConvertLetterMode,
@@ -585,6 +587,8 @@ const canUseAiSmartFormat = computed(() =>
 );
 /** 全屏时阅读区域宽度（百分比） */
 const fullscreenReaderWidthPercent = ref(defaultFullscreenReaderWidthPercent);
+/** 全屏时是否在左下角显示系统时间 */
+const fullscreenShowSystemTime = ref(defaultFullscreenShowSystemTime);
 const timedScrollSettings = ref<TimedScrollSettings>(
   mergeTimedScrollSettings(undefined),
 );
@@ -1189,6 +1193,7 @@ const persistence = useAppPersistence({
   editAutoRefreshChapterList,
   aiSmartFormat,
   fullscreenReaderWidthPercent,
+  fullscreenShowSystemTime,
   timedScrollSettings,
   fileMetaRecords,
   shortcutBindings,
@@ -2940,6 +2945,7 @@ async function applySettings(payload: SettingsApplyPayload) {
       Math.floor(payload.fullscreenReaderWidthPercent),
     ),
   );
+  fullscreenShowSystemTime.value = payload.fullscreenShowSystemTime;
   ebookConvertOutputDir.value = payload.ebookConvertOutputDir;
   const prevPortraitCache = characterPortraitCacheDir.value.trim();
   const nextPortraitCache = payload.characterPortraitCacheDir.trim();
@@ -3540,6 +3546,9 @@ useAppShellThemeWatch({
     >
       按 ESC 退出全屏
     </div>
+    <FullscreenSystemClock
+      :visible="isFullscreenView && fullscreenShowSystemTime"
+    />
 
     <div
       :ref="setFullscreenFooterOverlayEl"
@@ -3613,6 +3622,7 @@ useAppShellThemeWatch({
       :recent-files-history-limit="recentFilesHistoryLimit"
       :chapter-min-char-count="chapterMinCharCount"
       :fullscreen-reader-width-percent="fullscreenReaderWidthPercent"
+      :fullscreen-show-system-time="fullscreenShowSystemTime"
       :reader-font-size="readerFontSize"
       :reader-line-height-multiple="readerLineHeightMultiple"
       :compress-blank-keep-one-blank="compressBlankKeepOneBlank"

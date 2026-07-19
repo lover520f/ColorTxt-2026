@@ -37,6 +37,7 @@ const props = defineProps<{
   recentFilesHistoryLimit: number;
   chapterMinCharCount: number;
   fullscreenReaderWidthPercent: number;
+  fullscreenShowSystemTime: boolean;
   readerFontSize: number;
   readerLineHeightMultiple: number;
   monacoSmoothScrolling: boolean;
@@ -211,6 +212,7 @@ onBeforeUnmount(() => {
     :recent-files-history-limit="recentFilesHistoryLimit"
     :chapter-min-char-count="chapterMinCharCount"
     :fullscreen-reader-width-percent="fullscreenReaderWidthPercent"
+    :fullscreen-show-system-time="fullscreenShowSystemTime"
     :reader-font-size="readerFontSize"
     :reader-line-height-multiple="readerLineHeightMultiple"
     :monaco-smooth-scrolling="monacoSmoothScrolling"

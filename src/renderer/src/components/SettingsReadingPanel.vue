@@ -29,6 +29,7 @@ const props = defineProps<{
   draftCompressBlankKeepOneBlank: boolean;
   draftTxtrDelimitedMatchCrossLine: boolean;
   draftFullscreenReaderWidthPercent: number;
+  draftFullscreenShowSystemTime: boolean;
   draftTimedScrollRange: TimedScrollRange;
   draftTimedScrollIntervalMs: number;
   monacoCustomHighlight: boolean;
@@ -43,6 +44,7 @@ defineEmits<{
   "update:draftCompressBlankKeepOneBlank": [v: boolean];
   "update:draftTxtrDelimitedMatchCrossLine": [v: boolean];
   "update:draftFullscreenReaderWidthPercent": [v: number];
+  "update:draftFullscreenShowSystemTime": [v: boolean];
   "update:draftTimedScrollRange": [v: TimedScrollRange];
   "update:draftTimedScrollIntervalMs": [v: number];
 }>();
@@ -165,6 +167,10 @@ const draftMaxLineHeightMultiple = computed(() =>
         </div>
         <p class="settingsHint">关闭后，阅读区滚动不再使用平滑动画。</p>
       </div>
+    </div>
+
+    <div class="settingsBody settingsBody--fullscreen">
+      <h3 class="settingsSectionTitle settingsSectionTitle--fullscreen">全屏阅读</h3>
 
       <div class="settingsRow">
         <div class="settingsRowMain">
@@ -184,6 +190,22 @@ const draftMaxLineHeightMultiple = computed(() =>
           />
         </div>
         <p class="settingsHint">仅在全屏模式生效，用于控制阅读区域宽度。</p>
+      </div>
+
+      <div class="settingsRow">
+        <div class="settingsRowMain">
+          <span class="settingsLabel">全屏时在左下角显示系统时间</span>
+          <SwitchToggle
+            :model-value="draftFullscreenShowSystemTime"
+            aria-label="全屏时在左下角显示系统时间"
+            @update:model-value="
+              $emit('update:draftFullscreenShowSystemTime', $event)
+            "
+          />
+        </div>
+        <p class="settingsHint">
+          进入全屏后在屏幕左下角显示当前系统时间（时:分）。
+        </p>
       </div>
     </div>
 
@@ -281,10 +303,12 @@ const draftMaxLineHeightMultiple = computed(() =>
   color: var(--muted);
 }
 
+.settingsBody--fullscreen,
 .settingsBody--timedScroll {
   gap: 10px;
 }
 
+.settingsSectionTitle--fullscreen,
 .settingsSectionTitle--timedScroll {
   margin-bottom: 10px;
 }

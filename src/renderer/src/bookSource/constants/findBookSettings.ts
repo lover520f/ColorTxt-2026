@@ -150,6 +150,7 @@ export type PersistedFindBookSettings = {
   /** 编辑模式：启用小地图（默认关闭） */
   readerEditMinimap?: boolean;
   fullscreenReaderWidthPercent?: number;
+  fullscreenShowSystemTime?: boolean;
   sidebarWidth?: number;
   timedScroll?: Partial<TimedScrollSettings>;
 };
