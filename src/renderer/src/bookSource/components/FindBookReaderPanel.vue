@@ -19,7 +19,13 @@ import ReaderMain from "../../components/ReaderMain.vue";
 import VoiceReadToolbar from "../../components/VoiceReadToolbar.vue";
 import ReaderChapterNavBar from "../../components/ReaderChapterNavBar.vue";
 import FullscreenSystemClock from "../../components/FullscreenSystemClock.vue";
+import FindBookReaderFooter from "./FindBookReaderFooter.vue";
 import FindBookReaderHeader from "./FindBookReaderHeader.vue";
+import {
+  countCharsForLine,
+  floorReadingProgressPercentByLines,
+  formatCharCount,
+} from "../../utils/format";
 import EditBookSourcePanel from "./EditBookSourcePanel.vue";
 import BookSourceLoginPanel from "./BookSourceLoginPanel.vue";
 import AppShellMenuTeleport from "../../components/AppShellMenuTeleport.vue";
@@ -164,6 +170,8 @@ const viewportTopLine = ref(1);
 const viewportEndLine = ref(1);
 const viewportVisualProgressPercent = ref(0);
 const viewportAtBottom = ref(false);
+/** 当前章节在阅读器中的展示总行数 */
+const totalLineCount = ref(0);
 const readerEditMode = ref(false);
 const readerEditorDirty = ref(false);
 const loading = ref(false);
@@ -772,6 +780,7 @@ async function renderChapterText(
     heavy: false,
     resetScroll: opts?.resetScroll ?? true,
   });
+  totalLineCount.value = reader.getModelLineCount?.() ?? formatted.lineCount;
   if (rawTitle) {
     const lineNumber =
       formatted.chapterTitleDisplayLineByPhysical.get(1) ?? 1;
@@ -785,6 +794,18 @@ async function renderChapterText(
   } else {
     reader.setChapters([]);
   }
+}
+
+function syncFooterLineCountFromReader() {
+  const n = readerRef.value?.getModelLineCount?.();
+  if (typeof n === "number" && Number.isFinite(n) && n >= 0) {
+    totalLineCount.value = n;
+  }
+}
+
+function onFindBookViewportEndLineChange(line: number) {
+  readerUi.onViewportEndLineChange(line);
+  syncFooterLineCountFromReader();
 }
 
 function stripLeadingChapterTitleFromBody(body: string, title: string): string {
@@ -856,6 +877,7 @@ async function onToggleReaderEdit() {
   const reader = readerRef.value;
   if (reader) {
     await reader.setFullText(editText, { heavy: false, resetScroll: false });
+    totalLineCount.value = reader.getModelLineCount?.() ?? 0;
     if (lastChapterTitle.value.trim()) {
       reader.setChapters([
         {
@@ -927,6 +949,7 @@ async function loadChapterAtDisplayIndex(
     readerContentKey.value = null;
     lastChapterTitle.value = "";
     lastChapterBody.value = "";
+    totalLineCount.value = 0;
   }
   const listLen = displayChapters.value.length;
   const readingIdx = readingOrderIndexFromDisplay(
@@ -1008,6 +1031,45 @@ const currentReadingOrderIndex = computed(() =>
     displayChapters.value.length,
     chapterSortDesc.value,
   ),
+);
+
+const footerReadingProgress = computed(() => {
+  const totalChapters = displayChapters.value.length;
+  const hasContent = Boolean(readerContentKey.value);
+  if (!hasContent || totalChapters <= 0 || currentReadingOrderIndex.value < 0) {
+    return {
+      percentPart: "-",
+      detailPart: "",
+      placeholder: true,
+      complete: false,
+    };
+  }
+  const chapterRo1 = currentReadingOrderIndex.value + 1;
+  const percentValue = floorReadingProgressPercentByLines(
+    chapterRo1,
+    totalChapters,
+  );
+  const totalLines = Math.max(0, totalLineCount.value);
+  const currentLine =
+    totalLines > 0
+      ? Math.min(totalLines, Math.max(1, viewportEndLine.value))
+      : 0;
+  const percent = percentValue.toFixed(1).replace(/\.0$/, "");
+  return {
+    percentPart: `${percent}%`,
+    detailPart: ` (${chapterRo1}/${totalChapters}，${currentLine}/${totalLines})`,
+    placeholder: false,
+    complete: chapterRo1 >= totalChapters,
+  };
+});
+
+const footerChapterCharCountText = computed(() =>
+  formatCharCount(countCharsForLine(lastChapterBody.value)),
+);
+
+const footerHasContent = computed(() => Boolean(readerContentKey.value));
+const footerLoading = computed(
+  () => readerBootLoading.value || showChapterLoadingUi.value,
 );
 
 const canGoPrevChapter = computed(() => currentReadingOrderIndex.value > 0);
@@ -1693,6 +1755,7 @@ watch(
       readerContentKey.value = null;
       lastChapterBody.value = "";
       lastChapterTitle.value = "";
+      totalLineCount.value = 0;
       if (isFullscreenView.value) {
         try {
           await window.colorTxt.setFullscreen(false);
@@ -2221,7 +2284,7 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
             :reader-edit-minimap="readerEditMinimap"
             :monaco-font-family="monacoFontFamily"
             @viewport-top-line-change="readerUi.onViewportTopLineChange"
-            @viewport-end-line-change="readerUi.onViewportEndLineChange"
+            @viewport-end-line-change="onFindBookViewportEndLineChange"
             @viewport-visual-progress-change="readerUi.onViewportVisualProgressChange"
             @reader-edit-dirty-change="onReaderEditDirtyChange"
             @reader-edit-save-request="onSaveReaderChapter"
@@ -2245,18 +2308,41 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
             @stop="voiceRead.exitVoiceRead"
           />
           <ReaderChapterNavBar
-            v-if="chapterNavUiVisible"
-            :ref="setFullscreenFooterOverlayEl"
+            v-if="chapterNavUiVisible && !isFullscreenView"
             :visible="chapterNavVisible"
             :can-go-prev="canGoPrevChapter"
             :can-go-next="canGoNextChapter"
             :disabled="chapterNavBusy"
-            :fixed="isFullscreenView"
             @prev="goToPrevChapter"
             @next="goToNextChapter"
-            @mouseleave="onFullscreenFooterMouseLeave"
           />
         </div>
+      </div>
+
+      <div
+        :ref="setFullscreenFooterOverlayEl"
+        class="findBookReaderFooterWrap"
+        v-show="!isFullscreenView || showFullscreenFooter"
+        @mouseleave="onFullscreenFooterMouseLeave"
+      >
+        <ReaderChapterNavBar
+          v-if="chapterNavUiVisible && isFullscreenView"
+          :visible="chapterNavVisible"
+          :can-go-prev="canGoPrevChapter"
+          :can-go-next="canGoNextChapter"
+          :disabled="chapterNavBusy"
+          @prev="goToPrevChapter"
+          @next="goToNextChapter"
+        />
+        <FindBookReaderFooter
+          :loading="footerLoading"
+          :has-content="footerHasContent"
+          :reading-progress-percent-part="footerReadingProgress.percentPart"
+          :reading-progress-detail-part="footerReadingProgress.detailPart"
+          :reading-progress-placeholder="footerReadingProgress.placeholder"
+          :reading-progress-complete="footerReadingProgress.complete"
+          :chapter-char-count-text="footerChapterCharCountText"
+        />
       </div>
 
       <div
@@ -2307,6 +2393,31 @@ const modalRef = ref<InstanceType<typeof AppModal> | null>(null);
 
 .findBookReaderShell.fullscreen .findBookReaderBody {
   background: var(--reader-bg);
+}
+
+.findBookReaderFooterWrap {
+  flex: 0 0 auto;
+}
+
+.findBookReaderShell.fullscreen .findBookReaderFooterWrap {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 3400;
+  background: var(--bg);
+  animation: findBookReaderFullscreenFooterIn 140ms ease-out;
+}
+
+@keyframes findBookReaderFullscreenFooterIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .findBookReaderShell.fullscreen .findBookReaderHeaderWrap {
