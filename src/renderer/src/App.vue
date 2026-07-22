@@ -2425,6 +2425,102 @@ async function clearCurrentFileHighlightTerms() {
   persistFileMeta();
 }
 
+async function onExportBookHighlightsJson() {
+  const path = currentFile.value;
+  const map = currentFileHighlightWords.value;
+  if (!path || !map) return;
+  const {
+    buildHighlightExportDefaultName,
+    buildReaderHighlightsExportJson,
+    countHighlightWordsInMap,
+    saveHighlightExportFile,
+  } = await import("./utils/readerHighlightExport");
+  if (countHighlightWordsInMap(map) <= 0) return;
+  const name = buildHighlightExportDefaultName(fileNameKey(path));
+  const data = buildReaderHighlightsExportJson(map);
+  const r = await saveHighlightExportFile(name, data);
+  if (!r.ok && "error" in r) await appAlert(r.error);
+}
+
+async function onImportBookHighlightsJson() {
+  const path = currentFile.value;
+  if (!path) return;
+  const {
+    countHighlightWordsInMap,
+    mergeImportedHighlightWords,
+    parseReaderHighlightsExportJson,
+    pickAndReadHighlightJsonFile,
+  } = await import("./utils/readerHighlightExport");
+  const picked = await pickAndReadHighlightJsonFile("导入本书高亮词（JSON）");
+  if (!picked.ok) {
+    if ("error" in picked) await appAlert(picked.error);
+    return;
+  }
+  const envelope = parseReaderHighlightsExportJson(picked.text);
+  if (!envelope) {
+    await appAlert("无效的高亮词 JSON 文件");
+    return;
+  }
+  const imported = envelope.highlightWordsByIndex;
+  const merged = mergeImportedHighlightWords(
+    currentFileHighlightWords.value,
+    imported,
+  );
+  fileMetaRecords.value = upsertFileMetaRecord(
+    fileMetaRecords.value,
+    path,
+    () => ({ highlightWordsByIndex: merged }),
+  );
+  persistFileMeta();
+  appToast(`已导入 ${countHighlightWordsInMap(imported)} 个高亮词到本书`, {
+    kind: "success",
+  });
+}
+
+async function onExportFavoriteHighlightsJson() {
+  const map = highlightWordsByIndexGlobal.value;
+  if (!map) return;
+  const {
+    buildFavoriteHighlightExportDefaultName,
+    buildReaderHighlightsExportJson,
+    countHighlightWordsInMap,
+    saveHighlightExportFile,
+  } = await import("./utils/readerHighlightExport");
+  if (countHighlightWordsInMap(map) <= 0) return;
+  const name = buildFavoriteHighlightExportDefaultName();
+  const data = buildReaderHighlightsExportJson(map);
+  const r = await saveHighlightExportFile(name, data);
+  if (!r.ok && "error" in r) await appAlert(r.error);
+}
+
+async function onImportFavoriteHighlightsJson() {
+  const {
+    countHighlightWordsInMap,
+    mergeImportedHighlightWords,
+    parseReaderHighlightsExportJson,
+    pickAndReadHighlightJsonFile,
+  } = await import("./utils/readerHighlightExport");
+  const picked = await pickAndReadHighlightJsonFile("导入收藏高亮词（JSON）");
+  if (!picked.ok) {
+    if ("error" in picked) await appAlert(picked.error);
+    return;
+  }
+  const envelope = parseReaderHighlightsExportJson(picked.text);
+  if (!envelope) {
+    await appAlert("无效的高亮词 JSON 文件");
+    return;
+  }
+  const imported = envelope.highlightWordsByIndex;
+  highlightWordsByIndexGlobal.value = mergeImportedHighlightWords(
+    highlightWordsByIndexGlobal.value,
+    imported,
+  );
+  persistSettings();
+  appToast(`已导入 ${countHighlightWordsInMap(imported)} 个收藏高亮词`, {
+    kind: "success",
+  });
+}
+
 function onFindHighlightTermFromSidebar(text: string) {
   if (!currentFile.value || loading.value || totalLineCount.value <= 0) return;
   if (isVoiceReadNavigationBlocked.value) return;
@@ -3383,6 +3479,10 @@ useAppShellThemeWatch({
           @favorite-highlight-term="onFavoriteHighlightTerm"
           @unfavorite-highlight-term="onUnfavoriteHighlightTerm"
           @clear-highlights="clearCurrentFileHighlightTerms"
+          @export-book-highlights-json="onExportBookHighlightsJson"
+          @import-book-highlights-json="onImportBookHighlightsJson"
+          @export-favorite-highlights-json="onExportFavoriteHighlightsJson"
+          @import-favorite-highlights-json="onImportFavoriteHighlightsJson"
           @jump-to-annotation="onJumpToReaderAnnotation"
           @remove-annotation="onRemoveReaderAnnotation"
           @clear-annotations="onClearReaderAnnotationsWithConfirm"

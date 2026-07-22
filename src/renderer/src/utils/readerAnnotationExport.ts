@@ -151,13 +151,15 @@ export async function saveAnnotationExportFile(
   });
 }
 
-export async function pickAndReadJsonFile(): Promise<
+export async function pickAndReadJsonFile(
+  title = "导入笔记（JSON）",
+): Promise<
   | { ok: true; text: string; path: string }
   | { ok: false; cancelled: true }
   | { ok: false; error: string }
 > {
   const r = await window.colorTxt.showOpenDialog({
-    title: "导入笔记（JSON）",
+    title,
     filters: [{ name: "JSON", extensions: ["json"] }],
     properties: ["openFile"],
   });

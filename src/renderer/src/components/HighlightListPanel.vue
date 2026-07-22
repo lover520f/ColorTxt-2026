@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { icons } from "../icons";
 import type { HighlightListTerm } from "../utils/highlightWords";
+import { useAnchoredAppShellMenu } from "../composables/useAnchoredAppShellMenu";
+import AppShellMenuTeleport from "./AppShellMenuTeleport.vue";
+
+const HIGHLIGHTS_HEADER_MORE_MENU_W = 228;
 
 type HighlightListRow = HighlightListTerm & { listKey: string };
 
@@ -27,12 +31,14 @@ const props = withDefaults(
     hasInlineSearchHighlight?: boolean;
     highlightPreviewBg?: string;
     monacoFontFamily: string;
+    menuAnchorEl?: HTMLButtonElement | null;
   }>(),
   {
     currentFilePath: null,
     highlightTerms: () => [],
     hasInlineSearchHighlight: false,
     highlightPreviewBg: "var(--reader-bg, var(--bg))",
+    menuAnchorEl: null,
   },
 );
 
@@ -43,7 +49,42 @@ const emit = defineEmits<{
   unfavoriteHighlightTerm: [payload: { text: string; colorIndex: number }];
   clearInlineSearchHighlight: [];
   clearHighlights: [];
+  exportBookHighlightsJson: [];
+  importBookHighlightsJson: [];
+  exportFavoriteHighlightsJson: [];
+  importFavoriteHighlightsJson: [];
 }>();
+
+const moreBtnRef = ref<HTMLButtonElement | null>(null);
+const anchorRef = ref<HTMLButtonElement | null>(null);
+watch(
+  () => props.menuAnchorEl ?? moreBtnRef.value,
+  (el) => {
+    anchorRef.value = el;
+  },
+  { immediate: true },
+);
+const moreMenu = useAnchoredAppShellMenu({
+  anchor: anchorRef,
+  placement: "below-end",
+  widthPx: HIGHLIGHTS_HEADER_MORE_MENU_W,
+});
+const {
+  open: moreOpen,
+  left: moreLeft,
+  top: moreTop,
+  panelRef: morePanelRef,
+  toggleMenu: toggleMoreMenu,
+  closeMenu: closeMoreMenu,
+} = moreMenu;
+
+function bindMorePanel(el: HTMLElement | null) {
+  morePanelRef.value = el;
+}
+
+defineExpose({
+  openMoreMenu: toggleMoreMenu,
+});
 
 function onRemoveHighlightTermClick(
   ev: MouseEvent,
@@ -70,8 +111,24 @@ function onFavoriteClick(ev: MouseEvent, item: HighlightListTerm) {
   }
 }
 
+function onMoreSelect(action: string) {
+  closeMoreMenu();
+  if (action === "exportBook") emit("exportBookHighlightsJson");
+  else if (action === "importBook") emit("importBookHighlightsJson");
+  else if (action === "exportFavorite") emit("exportFavoriteHighlightsJson");
+  else if (action === "importFavorite") emit("importFavoriteHighlightsJson");
+}
+
 const highlightRows = computed(() =>
   attachStableListKeys(props.highlightTerms),
+);
+
+const bookTermCount = computed(
+  () => props.highlightTerms.filter((t) => t.scope === "book").length,
+);
+
+const favoriteTermCount = computed(
+  () => props.highlightTerms.filter((t) => t.scope === "global").length,
 );
 
 const emptyMessage = computed(() => {
@@ -163,6 +220,51 @@ const emptyMessage = computed(() => {
         </button>
       </div>
     </div>
+    <AppShellMenuTeleport
+      v-model:open="moreOpen"
+      :left="moreLeft"
+      :top="moreTop"
+      :width="HIGHLIGHTS_HEADER_MORE_MENU_W"
+      :on-panel-mount="bindMorePanel"
+      aria-label="高亮词更多"
+    >
+      <button
+        type="button"
+        class="appShellMenuItem"
+        role="menuitem"
+        :disabled="!currentFilePath || bookTermCount <= 0"
+        @click="onMoreSelect('exportBook')"
+      >
+        导出本书高亮词（JSON）
+      </button>
+      <button
+        type="button"
+        class="appShellMenuItem"
+        role="menuitem"
+        :disabled="!currentFilePath"
+        @click="onMoreSelect('importBook')"
+      >
+        导入本书高亮词（JSON）
+      </button>
+      <div class="appShellMenuDivider" role="separator" />
+      <button
+        type="button"
+        class="appShellMenuItem"
+        role="menuitem"
+        :disabled="favoriteTermCount <= 0"
+        @click="onMoreSelect('exportFavorite')"
+      >
+        导出收藏高亮词（JSON）
+      </button>
+      <button
+        type="button"
+        class="appShellMenuItem"
+        role="menuitem"
+        @click="onMoreSelect('importFavorite')"
+      >
+        导入收藏高亮词（JSON）
+      </button>
+    </AppShellMenuTeleport>
   </div>
 </template>
 
