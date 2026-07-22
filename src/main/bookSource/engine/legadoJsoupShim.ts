@@ -1,11 +1,14 @@
 import type { AnyNode, Element as DomElement } from "domhandler";
 import type { Cheerio, CheerioAPI } from "cheerio";
+import { decodeHttpResponseBody } from "../../detectTextEncoding";
+import { getBookSourceJsHost } from "./bookSourceJsContext";
 import { normalizeLegadoCssAttrContains } from "./legadoAttrSelector";
 import { loadCheerioHtml } from "./legadoDefaultRule";
+import { syncBookSourceHttpBody } from "./syncBookSourceFetch";
 
 /**
  * Legado / Rhino `org.jsoup.*` 兼容层（cheerio 实现）。
- * 书源常用：Jsoup.parse().select() / selectFirst() / attr / text / hasClass / Elements.get|size
+ * 书源常用：Jsoup.parse / Jsoup.connect().get() / select / selectFirst / attr / text
  */
 
 type JsoupNode = {
@@ -602,12 +605,133 @@ function wrapLegadoHtmlListForJs(items: unknown[]): unknown[] {
   return arr;
 }
 
+/**
+ * 对齐 org.jsoup.Jsoup.connect(url)：可链式 header/timeout，`.get()`/`.post()` 同步拉页并 parse。
+ * 常见用法：`org.jsoup.Jsoup.connect(url).get()` 后接选择器规则。
+ */
+function createJsoupConnection(url: string): Record<string, unknown> {
+  const state: {
+    url: string;
+    headers: Record<string, string>;
+    method: string;
+    body: string | null;
+  } = {
+    url: String(url ?? "").trim(),
+    headers: {},
+    method: "GET",
+    body: null,
+  };
+
+  const self: Record<string, unknown> = {};
+  const chain = (): typeof self => self;
+
+  const fetchDocument = (): JsoupElement => {
+    if (!state.url) return parseHtml("");
+    const host = getBookSourceJsHost();
+    const buf = syncBookSourceHttpBody(
+      {
+        url: state.url,
+        headers: { ...state.headers },
+        method: state.method,
+        body: state.body,
+      },
+      host?.source,
+    );
+    const html = decodeHttpResponseBody(buf, {});
+    return parseHtml(html);
+  };
+
+  Object.assign(self, {
+    url(u: unknown) {
+      state.url = String(u ?? "").trim();
+      return chain();
+    },
+    userAgent(ua: unknown) {
+      state.headers["User-Agent"] = String(ua ?? "");
+      return chain();
+    },
+    header(name: unknown, value: unknown) {
+      state.headers[String(name ?? "")] = String(value ?? "");
+      return chain();
+    },
+    headers(map: unknown) {
+      if (map && typeof map === "object") {
+        for (const [k, v] of Object.entries(map as Record<string, unknown>)) {
+          state.headers[k] = String(v ?? "");
+        }
+      }
+      return chain();
+    },
+    timeout(_ms: unknown) {
+      return chain();
+    },
+    ignoreContentType(_v?: unknown) {
+      return chain();
+    },
+    ignoreHttpErrors(_v?: unknown) {
+      return chain();
+    },
+    followRedirects(_v?: unknown) {
+      return chain();
+    },
+    referrer(ref: unknown) {
+      state.headers.Referer = String(ref ?? "");
+      return chain();
+    },
+    cookie(name: unknown, value: unknown) {
+      const prev = state.headers.Cookie ?? state.headers.cookie ?? "";
+      const pair = `${String(name ?? "")}=${String(value ?? "")}`;
+      state.headers.Cookie = prev ? `${prev}; ${pair}` : pair;
+      return chain();
+    },
+    method(m: unknown) {
+      state.method = String(m ?? "GET").toUpperCase();
+      return chain();
+    },
+    requestBody(body: unknown) {
+      state.body = body == null ? null : String(body);
+      return chain();
+    },
+    data(body: unknown) {
+      state.body = body == null ? null : String(body);
+      if (state.method === "GET") state.method = "POST";
+      return chain();
+    },
+    postData(body: unknown) {
+      state.body = body == null ? null : String(body);
+      state.method = "POST";
+      return chain();
+    },
+    get() {
+      state.method = "GET";
+      state.body = null;
+      return fetchDocument();
+    },
+    post() {
+      state.method = "POST";
+      return fetchDocument();
+    },
+    execute() {
+      const doc = fetchDocument();
+      return {
+        statusCode: () => 200,
+        body: () => doc.outerHtml(),
+        parse: () => doc,
+      };
+    },
+  });
+  return self;
+}
+
 /** 顶层 `org` / `Packages.org` */
 export function createOrgPackage(): Record<string, unknown> {
   return {
     jsoup: {
       Jsoup: {
         parse: parseHtml,
+        connect(url: unknown) {
+          return createJsoupConnection(String(url ?? ""));
+        },
       },
     },
   };

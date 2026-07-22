@@ -334,8 +334,9 @@ function runNodeUndiciFetch(input: string): {
 /**
  * 子进程同步 HTTP（对齐 Legado OkHttp 阻塞 execute）。
  * Electron 内用 Chromium session.fetch 子进程，与 java.ajax 网络栈一致。
+ * 返回原始字节（含文本 HTML）；调用方自行解码 / 校验。
  */
-export function syncBookSourceHttpBinary(
+export function syncBookSourceHttpBody(
   req: SyncHttpRequest,
   source?: BookSourceRecord | null,
 ): Buffer {
@@ -373,6 +374,15 @@ export function syncBookSourceHttpBinary(
       body = executeOnce(retryReq);
     }
   }
+  return body;
+}
+
+/** 同步拉取二进制正文：拒绝空响应与误当密文的 JSON 错误体 */
+export function syncBookSourceHttpBinary(
+  req: SyncHttpRequest,
+  source?: BookSourceRecord | null,
+): Buffer {
+  const body = syncBookSourceHttpBody(req, source);
   assertBinaryResponse(req.url, body);
   return body;
 }
