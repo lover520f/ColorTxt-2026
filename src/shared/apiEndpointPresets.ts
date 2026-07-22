@@ -21,11 +21,8 @@ export const AGNES_API_KEY_CONSOLE_URL =
 /** MiniMax 平台统一品牌名（对话、文生图等；语音朗读 TTS 单独密钥） */
 export const MINIMAX_PLATFORM_LABEL = "MiniMax";
 
-/** MiniMax OpenAI 兼容 API Base URL（中国大陆） */
+/** MiniMax OpenAI 兼容 API Base URL（中国大陆；对话 / 文生图 / models 共用） */
 export const MINIMAX_API_BASE_URL = "https://api.minimaxi.com/v1";
-
-/** MiniMax 文生图 API 根地址（不含 `/v1/image_generation`） */
-export const MINIMAX_IMAGE_API_ROOT = "https://api.minimaxi.com";
 
 /** MiniMax 控制台 API 密钥页 */
 export const MINIMAX_API_KEY_CONSOLE_URL =
@@ -168,6 +165,19 @@ export function minimaxApiLikely(baseUrl: string): boolean {
   return u.includes("minimaxi.com") || u.includes("minimax.io");
 }
 
+/**
+ * MiniMax 文生图 / 测试连接用 Base URL（应含 `/v1`，与对话一致）。
+ * 兼容旧配置里仅填主机根（如 `https://api.minimaxi.com`）的情况。
+ */
+export function resolveMinimaxImageApiBase(apiBaseUrl: string): string {
+  const custom = normalizeChatPresetBaseUrl(apiBaseUrl);
+  const base = custom || MINIMAX_API_BASE_URL;
+  if (/^https?:\/\/[^/]+$/i.test(base) && minimaxApiLikely(base)) {
+    return `${base}/v1`;
+  }
+  return base;
+}
+
 /** 接口地址是否为小米 MiMo 官方 API */
 export function mimoApiLikely(baseUrl: string): boolean {
   const u = normalizeChatPresetBaseUrl(baseUrl).toLowerCase();
@@ -283,7 +293,7 @@ export const TXT2IMG_BACKEND_PRESETS: readonly Txt2ImgBackendPreset[] = [
   {
     id: "minimax_images",
     label: MINIMAX_PLATFORM_LABEL,
-    baseUrl: MINIMAX_IMAGE_API_ROOT,
+    baseUrl: MINIMAX_API_BASE_URL,
   },
   {
     id: "stability",

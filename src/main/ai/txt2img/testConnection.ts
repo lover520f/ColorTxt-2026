@@ -1,8 +1,5 @@
 import type { AITxt2ImgConfig } from "@shared/aiTypes";
-import {
-  MINIMAX_API_BASE_URL,
-  normalizeChatPresetBaseUrl,
-} from "@shared/apiEndpointPresets";
+import { resolveMinimaxImageApiBase } from "@shared/apiEndpointPresets";
 import { fetchOpenAiCompatModelIds } from "../infra/openAiCompatModelList";
 import {
   errorFromTxt2ImgCatch,
@@ -138,10 +135,7 @@ async function testStability(txt2img: AITxt2ImgConfig): Promise<TestResult> {
 async function testMinimax(txt2img: AITxt2ImgConfig): Promise<TestResult> {
   const keyR = requireTxt2ImgApiKey(txt2img.apiKey, "MiniMax");
   if (!keyR.ok) return keyR;
-  const modelsBase =
-    normalizeChatPresetBaseUrl(txt2img.apiBaseUrl.trim()) ||
-    MINIMAX_API_BASE_URL;
-  const url = `${modelsBase}/models`;
+  const url = `${resolveMinimaxImageApiBase(txt2img.apiBaseUrl)}/models`;
   try {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${keyR.key}` },

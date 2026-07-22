@@ -156,7 +156,7 @@ OpenAI 接口拼接方式：
 | OpenAI Images               | `https://api.openai.com/v1`      |
 | Agnes AI                    | `https://apihub.agnes-ai.com/v1` |
 | 阿里云通义万相（DashScope） | `https://dashscope.aliyuncs.com` |
-| MiniMax                     | `https://api.minimaxi.com`       |
+| MiniMax                     | `https://api.minimaxi.com/v1`    |
 | Stability AI                | `https://api.stability.ai`       |
 | _自定义 OpenAI 兼容服务_    | _（手动输入接口地址）_           |
 

@@ -1,5 +1,5 @@
 import type { AITxt2ImgConfig } from "@shared/aiTypes";
-import { MINIMAX_IMAGE_API_ROOT } from "@shared/apiEndpointPresets";
+import { resolveMinimaxImageApiBase } from "@shared/apiEndpointPresets";
 import {
   minimaxAspectRatio,
   TXT2IMG_DEFAULT_CLOUD_MODEL,
@@ -7,19 +7,12 @@ import {
 import {
   bufferFromImageUrl,
   errorFromTxt2ImgCatch,
-  normalizeTxt2ImgBase,
   requireTxt2ImgApiKey,
 } from "./shared";
 
 function resolveMinimaxModel(txt2img: AITxt2ImgConfig): string {
   const m = txt2img.cloudModel.trim();
   return m || TXT2IMG_DEFAULT_CLOUD_MODEL.minimax_images;
-}
-
-function minimaxApiRoot(txt2img: AITxt2ImgConfig): string {
-  const custom = normalizeTxt2ImgBase(txt2img.apiBaseUrl.trim());
-  if (custom) return custom;
-  return MINIMAX_IMAGE_API_ROOT;
 }
 
 function parseMiniMaxBaseResp(body: Record<string, unknown>): void {
@@ -62,7 +55,7 @@ function firstMinimaxImageUrl(data: Record<string, unknown>): string {
   return "";
 }
 
-/** MiniMax Image：`POST /v1/image_generation` */
+/** MiniMax Image：`POST {baseUrl}/image_generation`（baseUrl 含 `/v1`） */
 export async function fetchMinimaxImagesBuffer(
   txt2img: AITxt2ImgConfig,
   prompt: string,
@@ -71,14 +64,14 @@ export async function fetchMinimaxImagesBuffer(
   const keyR = requireTxt2ImgApiKey(txt2img.apiKey, "MiniMax");
   if (!keyR.ok) return keyR;
 
-  const root = minimaxApiRoot(txt2img);
+  const base = resolveMinimaxImageApiBase(txt2img.apiBaseUrl);
   const model = resolveMinimaxModel(txt2img);
   const aspectRatio = minimaxAspectRatio({
     width: txt2img.width,
     height: txt2img.height,
   });
 
-  const url = `${root}/v1/image_generation`;
+  const url = `${base}/image_generation`;
   const body = {
     model,
     prompt: prompt.trim(),

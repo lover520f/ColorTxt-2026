@@ -80,7 +80,7 @@
 | OpenAI Images | `openai_images` | `https://api.openai.com/v1` | `gpt-image-2` |
 | Agnes AI | `agnes_images` | `https://apihub.agnes-ai.com/v1` | `agnes-image-2.1-flash` |
 | 阿里云通义万相（DashScope） | `dashscope_wanx` | `https://dashscope.aliyuncs.com` | `wan2.6-t2i` |
-| MiniMax | `minimax_images` | `https://api.minimaxi.com` | `image-01` |
+| MiniMax | `minimax_images` | `https://api.minimaxi.com/v1` | `image-01` |
 | Stability AI | `stability` | `https://api.stability.ai` | `ultra` |
 | OpenAI 兼容 Images 代理 | `openai_compat_images` | （用户填写） | `gpt-image-2` |
 
@@ -90,7 +90,7 @@
 - **ComfyUI**：经 **`/prompt`** 提交工作流并轮询 **`/history`**；需在设置中粘贴 **Comfy 工作流 JSON**（导出 API 格式）；尺寸同为自定义宽高。
 - **云端（除自定义兼容代理外）**：各方案 **`txt2img.apiKey`** 经 **`ai.txt2imgProfileKeys`** 加密保存（与语音朗读、AI 阅读助手等密钥在应用内**分开保存**，见 **「API 密钥保险库」**）。出图前由对话模型将 **画风 + 角色形象** 整理为自然语言 prompt（**`natural`** 族）或 SD tag（**`sd`** 族，含 Stability）。**尺寸**为各后端**固定档位**（**`txt2ImgCloudSizePresets`**）；切换服务商时写入该后端 **默认云端模型**（**`txt2ImgCloudModelPresets`** / **`TXT2IMG_DEFAULT_CLOUD_MODEL`**），并按 **512×768** 参考比例选取档位（在比例足够接近的候选中选 **像素最少**，利于立绘省额度）。
 - **自定义 OpenAI 兼容 Images**（`openai_compat_images`）：走 **`ai/txt2img/openAI.ts`**（标准 OpenAI Images：`response_format: b64_json`、可选 `quality`）；**尺寸为自由宽高 64–2048**（与本地 WebUI 相同 UI），便于对接未知网关（如仅支持非 OpenAI 官方分辨率的代理）。
-- **MiniMax**（`minimax_images`）：专用 **`ai/txt2img/minimax.ts`**，`POST …/v1/image_generation`，按宽高推导 **`aspect_ratio`**；默认模型 **`image-01`**；测试连接走 **`GET …/v1/models`**（不出图）。
+- **MiniMax**（`minimax_images`）：专用 **`ai/txt2img/minimax.ts`**，`POST {baseUrl}/image_generation`（默认 Base 含 `/v1`，与对话一致），按宽高推导 **`aspect_ratio`**；默认模型 **`image-01`**；测试连接走 **`GET {baseUrl}/models`**（不出图）。
 - **Agnes AI**（`agnes_images`）：专用 **`ai/txt2img/agnes.ts`**，仍走 `POST …/images/generations`，但文生图 Base64 用顶层 **`return_base64: true`**（**勿**发顶层 `response_format`，与 OpenAI 官方不同）；默认模型 **`agnes-image-2.1-flash`**；固定尺寸档含 **1024×768** 等（见 **`txt2ImgCloudSizePresets`**）。API Key 控制台：**`AGNES_API_KEY_CONSOLE_URL`**。
 - **测试连接**：**`ai:txt2img`** 的 **`testConnection`** 走 **`ai/txt2img/testConnection.ts`**，仅校验地址/密钥（如 OpenAI `/models`、万相 models、MiniMax models、Stability 账户等），**不出图、不消耗图像额度**；设置页由 **`AppConnectionTestButton`** + **`useConnectionTest`** 展示 pending/成功/失败（成功不弹框）。
 - **侧栏「角色立绘生成」**：**画风（本书）** + **角色形象** + **负面描述**（仅 **SD 系** backend 显示输入框；云端不展示，负面由设置内通用项与 prompt 整理承担）。字段仍持久化为 `characterBookStyle.stylePrefixZh` 与角色的 `promptZh` / `negativeZh`。关闭弹窗（应用 / 取消 / 关闭按钮）时同步草稿并 **`characterFileMetaPatch`**；打开弹窗或设置 **确定** 后递增的 **`aiConfigSyncNonce`** 会刷新侧栏对当前 **`txt2img.backend`** 的判断（实际出图 IPC 每次 **`configGet`** 读最新配置）。
