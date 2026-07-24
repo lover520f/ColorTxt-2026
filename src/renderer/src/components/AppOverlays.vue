@@ -272,6 +272,7 @@ onBeforeUnmount(() => {
   />
 
   <AppModal
+    v-model="addBookmarkOpen"
     :title="editingBookmarkLine == null ? '添加书签' : '编辑书签'"
     max-width="480px"
   >
